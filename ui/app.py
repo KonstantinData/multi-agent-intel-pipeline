@@ -25,6 +25,7 @@ st.set_page_config(
     layout="wide",
 )
 
+from src.config import get_model_selection
 from src.pipeline_runner import run_pipeline, AGENT_META, PIPELINE_STEPS, _extract_pipeline_data
 from src.exporters.pdf_report import generate_pdf
 
@@ -44,6 +45,7 @@ def _init_state():
         "usage": {},
         "budget": {},
         "run_id": None,
+        "status": None,
         "error": None,
         "worker_queue": None,
         "loaded_run_notice": None,
@@ -78,7 +80,8 @@ def _drain_worker_queue() -> None:
             st.session_state.usage = payload.get("usage", {})
             st.session_state.budget = payload.get("budget", {})
             st.session_state.run_id = payload["run_id"]
-            st.session_state.error = None
+            st.session_state.status = payload.get("status")
+            st.session_state.error = payload.get("error")
             st.session_state.done = True
             st.session_state.running = False
             st.session_state.pipeline_started = False
@@ -173,6 +176,8 @@ def _load_artifact_run(run_dir: Path) -> dict:
         pipeline_data = json.loads(pipeline_data_path.read_text(encoding="utf-8"))
     else:
         pipeline_data = _extract_pipeline_data(normalized_messages)
+    if "research_readiness" not in pipeline_data:
+        pipeline_data = _extract_pipeline_data(normalized_messages)
     target_company = (
         pipeline_data.get("company_profile", {}).get("company_name")
         or pipeline_data.get("synthesis", {}).get("target_company")
@@ -186,7 +191,16 @@ def _load_artifact_run(run_dir: Path) -> dict:
         "usage": run_meta.get("usage", {}),
         "budget": run_meta.get("budget", {}),
         "input_company": target_company,
+        "error": run_meta.get("error"),
+        "status": run_meta.get("status", "completed"),
     }
+
+
+def _ui_model_hint() -> str:
+    preferred_model, structured_model = get_model_selection()
+    if preferred_model == structured_model:
+        return preferred_model
+    return f"{preferred_model} / {structured_model}"
 
 
 # --- Sidebar ---
@@ -219,7 +233,7 @@ with st.sidebar:
     else:
         load_latest_btn = False
 
-    if st.session_state.done and not st.session_state.error:
+    if st.session_state.done and st.session_state.status in {"completed", "completed_but_not_usable"}:
         st.markdown("---")
         st.markdown("### 📥 Report Download")
 
@@ -243,7 +257,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        "<small>Powered by AutoGen + GPT-4</small>",
+        f"<small>Powered by AG2 + OpenAI · Models: {_ui_model_hint()}</small>",
         unsafe_allow_html=True,
     )
 
@@ -263,6 +277,7 @@ if start_btn:
     st.session_state.pipeline_data = {}
     st.session_state.usage = {}
     st.session_state.budget = {}
+    st.session_state.status = None
     st.session_state.error = None
     st.session_state.input_company = company_name
     st.session_state.input_domain = web_domain
@@ -282,7 +297,8 @@ if load_latest_btn and latest_run is not None:
         st.session_state.usage = loaded_run.get("usage", {})
         st.session_state.budget = loaded_run.get("budget", {})
         st.session_state.run_id = loaded_run["run_id"]
-        st.session_state.error = None
+        st.session_state.status = loaded_run.get("status")
+        st.session_state.error = loaded_run.get("error")
         st.session_state.worker_queue = None
         if loaded_run["input_company"]:
             st.session_state.input_company = loaded_run["input_company"]
@@ -408,7 +424,10 @@ elif st.session_state.done:
         st.markdown("### Chat-Log")
         _render_message_feed(st.session_state.messages, live=False)
     else:
-        st.success(f"✅ Pipeline abgeschlossen – Run ID: {st.session_state.run_id}")
+        if st.session_state.status == "completed_but_not_usable":
+            st.warning(f"Pipeline technisch abgeschlossen, aber fachlich noch nicht meeting-tauglich – Run ID: {st.session_state.run_id}")
+        else:
+            st.success(f"✅ Pipeline abgeschlossen – Run ID: {st.session_state.run_id}")
         if st.session_state.loaded_run_notice == st.session_state.run_id:
             st.info("Diese Ansicht wurde aus dem zuletzt gespeicherten Artifact-Run geladen.")
 
@@ -416,6 +435,13 @@ elif st.session_state.done:
         usage = st.session_state.usage if isinstance(st.session_state.usage, dict) else {}
         usage_total = usage.get("total", {}) if isinstance(usage, dict) else {}
         budget = st.session_state.budget if isinstance(st.session_state.budget, dict) else {}
+        readiness = data.get("research_readiness", {})
+        if st.session_state.status == "completed_but_not_usable":
+            reasons = readiness.get("reasons", []) if isinstance(readiness, dict) else []
+            if reasons:
+                st.caption("Hauptgruende:")
+                for reason in reasons:
+                    st.warning(reason)
         validation_errors = data.get("validation_errors", [])
         if validation_errors:
             st.warning("Einige Agentenantworten konnten nicht gegen die Schemas validiert werden. Die betroffenen Abschnitte wurden verworfen.")
@@ -529,6 +555,23 @@ elif st.session_state.done:
                     st.markdown("**Offene Lücken:**")
                     for g in gaps:
                         st.warning(g)
+                gap_details = qa.get("gap_details", [])
+                if gap_details:
+                    st.markdown("**QA-Details:**")
+                    for detail in gap_details:
+                        if not isinstance(detail, dict):
+                            continue
+                        severity = str(detail.get("severity", "n/v")).upper()
+                        agent = detail.get("agent", "QA")
+                        field_path = detail.get("field_path", "")
+                        label = f"{severity} · {agent}"
+                        if field_path and field_path != "*":
+                            label += f" · {field_path}"
+                        with st.expander(label):
+                            st.write(detail.get("summary", "n/v"))
+                            recommendation = detail.get("recommendation", "")
+                            if recommendation:
+                                st.caption(f"Empfehlung: {recommendation}")
             else:
                 st.info("Keine QA-Daten verfügbar")
 

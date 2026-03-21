@@ -1,0 +1,220 @@
+<mxfile host="app.diagrams.net" agent="Codex" version="29.3.0">
+  <diagram id="hierarchical-target-model" name="Target Model">
+    <mxGraphModel dx="1766" dy="1039" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Hierarchisches Multi-Agent-Zielmodell fuer Liquisto Market Intel" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="980" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Supervisor-gesteuerte Orchestrierung, wenige echte Fachagenten, kontrollierte A2A-Schleifen in definierten Rollenpaaren, Liquisto-spezifische Outputs statt Workflow-Steps" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#4b5563;" vertex="1" parent="1">
+          <mxGeometry x="40" y="52" width="1320" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="band_left" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1200" height="790" as="geometry" />
+        </mxCell>
+        <mxCell id="band_right" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="90" width="480" height="790" as="geometry" />
+        </mxCell>
+        <mxCell id="band_bottom" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="910" width="1710" height="300" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lbl_control" value="Steuerung und Agentenhierarchie" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="60" y="105" width="320" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_services" value="Deterministische Services und Outputs" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="105" width="360" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_terms" value="Leitplanken und Begriffsgrenzen" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="60" y="925" width="360" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="runtime_note" value="&lt;b&gt;Aktueller Repo-Kern&lt;/b&gt;&lt;br&gt;Das Repository ist jetzt ein supervisor-gesteuertes Multi-Agent-System.&lt;br&gt;Die Liquisto-Anforderungen leben in Fachmandaten, Repair-Loops und strukturierten Exporten,&lt;br&gt;nicht in einem starren linearen Step-Workflow." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="140" width="410" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user_ui" value="&lt;b&gt;User / UI&lt;/b&gt;&lt;br&gt;Input: Firmenname, Domain, optionale Produktkategorien&lt;br&gt;Run starten, Status verfolgen, Report lesen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=13;spacing=8;fontColor=#0c4a6e;" vertex="1" parent="1">
+          <mxGeometry x="80" y="340" width="200" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="concierge" value="&lt;b&gt;Case Concierge Agent&lt;/b&gt;&lt;br&gt;Nimmt das Mandat an und normalisiert das Intake in einen kanonischen Research Brief&lt;br&gt;Klaert Ziel, Liquisto-Kontext, Produktkategorien und offene Fragen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=13;spacing=8;fontColor=#14532d;" vertex="1" parent="1">
+          <mxGeometry x="330" y="330" width="230" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="supervisor" value="&lt;b&gt;Supervisor Runtime&lt;/b&gt;&lt;br&gt;Zentrale Koordination fuer Mandate, Phasen, Retries, Repair-Loops und Gates&lt;br&gt;Definiert erlaubte direkte A2A-Paare und promoted nur validierte Ergebnisse in den kanonischen Zustand" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" vertex="1" parent="1">
+          <mxGeometry x="610" y="305" width="350" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="rule_note" value="&lt;b&gt;Kommunikationsregel&lt;/b&gt;&lt;br&gt;Keine freie Agent-zu-Agent-Kommunikation&lt;br&gt;Direkte A2A nur in supervisor-definierten Rollenpaaren mit Schema, Turn-Limit und klarer Zustaendigkeit&lt;br&gt;Beispiele: Producer&lt;-&gt;Critic, Producer&lt;-&gt;Repair-Agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef2f2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" vertex="1" parent="1">
+          <mxGeometry x="990" y="320" width="230" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="critics" value="&lt;b&gt;Stage Critics&lt;/b&gt;&lt;br&gt;Fachliche Review-Instanzen fuer Coverage, Evidenz und Passung&lt;br&gt;&lt;i&gt;Erlaubtes Paar:&lt;/i&gt; Producer&lt;-&gt;Critic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" vertex="1" parent="1">
+          <mxGeometry x="620" y="500" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="repair" value="&lt;b&gt;Repair / Code Agent&lt;/b&gt;&lt;br&gt;Formuliert gezielte Nachbesserungen, Subtasks und Rewrites&lt;br&gt;&lt;i&gt;Erlaubtes Paar:&lt;/i&gt; Producer&lt;-&gt;Repair-Agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" vertex="1" parent="1">
+          <mxGeometry x="805" y="500" width="185" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="company" value="&lt;b&gt;Company Intelligence Agent&lt;/b&gt;&lt;br&gt;Intake Company Profil&lt;br&gt;Wirtschaftslage und Bestandsdruck&lt;br&gt;&lt;br&gt;&lt;i&gt;Output:&lt;/i&gt; intake_company_profile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfccb;strokeColor=#65a30d;fontSize=12;spacing=8;fontColor=#365314;" vertex="1" parent="1">
+          <mxGeometry x="90" y="565" width="240" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="market" value="&lt;b&gt;Market Network Agent&lt;/b&gt;&lt;br&gt;Peer-, Ersatzteil- und Cross-Industry-Abnehmer&lt;br&gt;Marktrelevanz und Kontaktansatz&lt;br&gt;&lt;br&gt;&lt;i&gt;Outputs:&lt;/i&gt; peer_buyers, spare_part_buyers, cross_industry_buyers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfccb;strokeColor=#65a30d;fontSize=12;spacing=8;fontColor=#365314;" vertex="1" parent="1">
+          <mxGeometry x="360" y="565" width="255" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="signals" value="&lt;b&gt;Strategic Signals Agent&lt;/b&gt;&lt;br&gt;Branchenanalyse, Trendrichtung, Ueberkapazitaet, Nachfrageausblick&lt;br&gt;&lt;br&gt;&lt;i&gt;Output:&lt;/i&gt; industry_analysis" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfccb;strokeColor=#65a30d;fontSize=12;spacing=8;fontColor=#365314;" vertex="1" parent="1">
+          <mxGeometry x="645" y="565" width="250" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence" value="&lt;b&gt;Evidence QA Agent&lt;/b&gt;&lt;br&gt;Prueft Evidenzqualitaet, n/v-Dichte und offene Luecken&lt;br&gt;&lt;br&gt;&lt;i&gt;Output:&lt;/i&gt; quality_review + Repair Backlog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfccb;strokeColor=#65a30d;fontSize=12;spacing=8;fontColor=#365314;" vertex="1" parent="1">
+          <mxGeometry x="925" y="565" width="230" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="synthesis" value="&lt;b&gt;Synthesis Agent&lt;/b&gt;&lt;br&gt;Fuehrt validierte Artefakte ohne neue Fakten zusammen&lt;br&gt;&lt;br&gt;&lt;i&gt;Output:&lt;/i&gt; negotiation_brief + report sections" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" vertex="1" parent="1">
+          <mxGeometry x="500" y="780" width="320" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="svc_brief" value="&lt;b&gt;Research Brief / Run Memory&lt;/b&gt;&lt;br&gt;company_name, web_domain, product_categories,&lt;br&gt;objective, language, constraints, notes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="160" width="420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_tools" value="&lt;b&gt;Tool Gateway&lt;/b&gt;&lt;br&gt;OpenAI Responses, optional web_search_preview,&lt;br&gt;WebResearchClient, seed URLs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="255" width="420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_contracts" value="&lt;b&gt;Contract Catalog&lt;/b&gt;&lt;br&gt;Pflichtsektionen, Artefakt-Keys, Confidence-Schwellen,&lt;br&gt;erlaubte Entitaetstypen" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="350" width="420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_validator" value="&lt;b&gt;Validator Suite&lt;/b&gt;&lt;br&gt;Contract-, Evidence- und Crossref-Validation&lt;br&gt;&lt;i&gt;Kein Agent&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="445" width="420" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_registry" value="&lt;b&gt;Entity Registry&lt;/b&gt;&lt;br&gt;Kanonische Entities, Relations, Findings, Sources,&lt;br&gt;Provenance, Konflikte, IDs&lt;br&gt;&lt;i&gt;Kein Agent&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="555" width="420" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_artifacts" value="&lt;b&gt;Artifact Store&lt;/b&gt;&lt;br&gt;Mandate, Episodes, Submissions, Logs, Registry-Snapshots,&lt;br&gt;Run Status und Meta-Artefakte" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="670" width="420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="svc_exports" value="&lt;b&gt;Export Package&lt;/b&gt;&lt;br&gt;report.pdf, report_de.pdf, report_en.pdf,&lt;br&gt;entities.json, buyer_contacts.json, run_meta.json" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="765" width="420" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="term_agent" value="&lt;b&gt;Echter Agent&lt;/b&gt;&lt;br&gt;Runtime-Akteur mit Mandat, eigenem Arbeitsloop und supervisor-gebundener Submission&lt;br&gt;Beispiele: company_intelligence, market_network, evidence_qa, critics, repair_agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" vertex="1" parent="1">
+          <mxGeometry x="70" y="960" width="390" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="term_supervisor" value="&lt;b&gt;Supervisor&lt;/b&gt;&lt;br&gt;Koordiniert, plant, validiert, erlaubt A2A-Paare und promoted,&lt;br&gt;ist aber selbst kein fachlicher Research-Agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" vertex="1" parent="1">
+          <mxGeometry x="490" y="960" width="360" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="term_service" value="&lt;b&gt;Deterministischer Service&lt;/b&gt;&lt;br&gt;Nicht-agentische Governance- oder Infrastrukturkomponente&lt;br&gt;Beispiele: validator, entity_registry, artifact_store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" vertex="1" parent="1">
+          <mxGeometry x="880" y="960" width="390" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="term_output" value="&lt;b&gt;Liquisto Output&lt;/b&gt;&lt;br&gt;Strukturierte Agentenartefakte fuer Verhandlungsvorbereitung,&lt;br&gt;nicht starre Workflow-Step-Dateien" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="960" width="380" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="hard_rules" value="&lt;b&gt;Harte Regeln&lt;/b&gt;&lt;br&gt;1. Keine freie Agent-zu-Agent-Kommunikation&lt;br&gt;2. Direkte A2A nur in erlaubten Rollenpaaren mit Schema und Turn-Limit&lt;br&gt;3. Nur validierte Ergebnisse werden promoted&lt;br&gt;4. Synthese fuehrt keine neuen unbelegten Fakten ein&lt;br&gt;5. Liquisto-Logik lebt in Agentenmandaten, nicht in einem linearen Workflow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="1090" width="760" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="run_flow" value="&lt;b&gt;Laufbild&lt;/b&gt;&lt;br&gt;Input - case concierge - supervisor dispatch - parallel: company_intelligence / market_network / strategic_signals - critic / repair loops - evidence_qa - synthesis - exports" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=12;spacing=8;fontColor=#312e81;" vertex="1" parent="1">
+          <mxGeometry x="860" y="1090" width="820" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_user_concierge" style="endArrow=block;html=1;strokeWidth=2;strokeColor=#0284c7;" edge="1" parent="1" source="user_ui" target="concierge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_concierge_supervisor" style="endArrow=block;html=1;strokeWidth=2;strokeColor=#2563eb;" edge="1" parent="1" source="concierge" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_supervisor_concierge" value="clarify / reframe" style="endArrow=block;html=1;strokeWidth=1;dashed=1;strokeColor=#2563eb;fontColor=#1e3a8a;" edge="1" parent="1" source="supervisor" target="concierge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_supervisor_company" style="endArrow=block;html=1;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;strokeColor=#2563eb;" edge="1" parent="1" source="supervisor" target="company">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="700" y="525" />
+              <mxPoint x="210" y="525" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_supervisor_market" style="endArrow=block;html=1;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;strokeColor=#2563eb;" edge="1" parent="1" source="supervisor" target="market">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="720" y="530" />
+              <mxPoint x="490" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_supervisor_signals" style="endArrow=block;html=1;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;strokeColor=#2563eb;" edge="1" parent="1" source="supervisor" target="signals">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="780" y="530" />
+              <mxPoint x="770" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_supervisor_evidence" style="endArrow=block;html=1;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;strokeColor=#2563eb;" edge="1" parent="1" source="supervisor" target="evidence">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="840" y="530" />
+              <mxPoint x="1040" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_supervisor_synthesis" style="endArrow=block;html=1;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;strokeColor=#2563eb;" edge="1" parent="1" source="supervisor" target="synthesis">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="785" y="750" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_supervisor_critics" value="review mandate" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#ca8a04;fontColor=#713f12;" edge="1" parent="1" source="supervisor" target="critics">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_critics_supervisor" value="approved / repair needed" style="endArrow=block;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;fontColor=#713f12;" edge="1" parent="1" source="critics" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_supervisor_repair" value="repair mandate" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#ca8a04;fontColor=#713f12;" edge="1" parent="1" source="supervisor" target="repair">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_repair_supervisor" value="subtask_delta / rewrite" style="endArrow=block;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;fontColor=#713f12;" edge="1" parent="1" source="repair" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_company_supervisor" value="intake_company_profile" style="endArrow=block;html=1;strokeWidth=1;dashed=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#16a34a;fontColor=#14532d;" edge="1" parent="1" source="company" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_market_supervisor" value="buyer lists" style="endArrow=block;html=1;strokeWidth=1;dashed=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#16a34a;fontColor=#14532d;" edge="1" parent="1" source="market" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_signals_supervisor" value="industry_analysis" style="endArrow=block;html=1;strokeWidth=1;dashed=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#16a34a;fontColor=#14532d;" edge="1" parent="1" source="signals" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_evidence_supervisor" value="quality_review / repair" style="endArrow=block;html=1;strokeWidth=1;dashed=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#16a34a;fontColor=#14532d;" edge="1" parent="1" source="evidence" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_synthesis_supervisor" value="negotiation_brief" style="endArrow=block;html=1;strokeWidth=1;dashed=1;edgeStyle=orthogonalEdgeStyle;strokeColor=#d97706;fontColor=#78350f;" edge="1" parent="1" source="synthesis" target="supervisor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_supervisor_brief" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#7c3aed;" edge="1" parent="1" source="supervisor" target="svc_brief">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_supervisor_tools" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#7c3aed;" edge="1" parent="1" source="supervisor" target="svc_tools">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_supervisor_contracts" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#7c3aed;" edge="1" parent="1" source="supervisor" target="svc_contracts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_supervisor_validator" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#dc2626;" edge="1" parent="1" source="supervisor" target="svc_validator">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_validator_registry" value="PASS only" style="endArrow=block;html=1;strokeWidth=2;strokeColor=#dc2626;fontColor=#7f1d1d;" edge="1" parent="1" source="svc_validator" target="svc_registry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_supervisor_artifacts" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#7c3aed;" edge="1" parent="1" source="supervisor" target="svc_artifacts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_registry_exports" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#7c3aed;" edge="1" parent="1" source="svc_registry" target="svc_exports">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exports_user" style="endArrow=block;html=1;strokeWidth=1;strokeColor=#0284c7;" edge="1" parent="1" source="svc_exports" target="user_ui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

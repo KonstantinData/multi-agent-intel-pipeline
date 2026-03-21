@@ -2,6 +2,10 @@
 
 AG2/AutoGen-native multi-agent workflow for preparing Liquisto sales conversations from a company name and web domain.
 
+Kompatibilitätsziel dieses Repos:
+- AG2 `0.11.x`
+- Python `3.10` bis `3.13`
+
 ## Zweck
 
 Dieses Repository baut aus einem einfachen Intake
@@ -197,6 +201,8 @@ Zusätzlich gibt es Budgetgrenzen:
 - `PIPELINE_MAX_RUN_SECONDS`
 - `LLM_MAX_TOKENS`
 
+Standardmäßig gibt es keinen expliziten Dollar-Hardcap pro Run. Die in der UI angezeigten Kosten sind primär beobachtend; die eigentlichen Schutzgrenzen sind Attempts, Tool-Calls, Laufzeit und Modell-`max_tokens`.
+
 Die Budgetdaten landen mit im Run-Meta-Export und werden in der UI angezeigt. Das Laufzeitbudget wird vom Runner überwacht; überschreitet ein Run die Grenze, wird der Workflow nach dem aktuellen AG2-Zug abgebrochen und als Fehler beendet.
 
 ## Projektstruktur
@@ -241,8 +247,8 @@ Wichtig:
 - Für Structured Outputs wird bei Bedarf automatisch auf `STRUCTURED_LLM_MODEL` gewechselt.
 
 Standardmäßig bedeutet das:
-- freies bevorzugtes Modell: `gpt-4`
-- strukturiertes Fallback-Modell: `gpt-4o-mini`
+- freies bevorzugtes Modell: `gpt-4.1-mini`
+- strukturiertes Fallback-Modell: `gpt-4.1-mini`
 
 Das ist relevant, weil AG2-`response_format` nur mit Modellen funktioniert, die Structured Outputs sauber unterstützen.
 
@@ -251,9 +257,16 @@ Das ist relevant, weil AG2-`response_format` nur mit Modellen funktioniert, die 
 ### Vorbereitung
 
 ```bash
-pip install -r requirements.txt
-python preflight.py
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.lock
+python3 preflight.py
 ```
+
+Hinweise:
+- `requirements.txt` enthält die unterstützten Versionsbereiche.
+- `requirements.lock` pinnt die freigegebenen Top-Level-Runtime-Versionen für reproduzierbare lokale Setups.
 
 In `.env` muss mindestens gesetzt sein:
 
@@ -264,19 +277,19 @@ OPENAI_API_KEY=...
 ### Start über Launcher
 
 ```bash
-python launcher.py
+python3 launcher.py
 ```
 
 ### Direkt über Streamlit
 
 ```bash
-python -m streamlit run ui/app.py
+python3 -m streamlit run ui/app.py
 ```
 
 ### Direkt über CLI
 
 ```bash
-python -m src.pipeline
+python3 -m src.pipeline
 ```
 
 ## Artefakte
@@ -306,6 +319,11 @@ Das bedeutet:
 - keine manuell verdrahteten Stage-Loops im Runner
 - echte AG2-Tool-Ausführung
 - echte Producer/Critic-Rework-Schleifen
+
+Versions- und Laufzeitannahmen:
+- das Repo ist auf AG2 `0.11.x` ausgerichtet
+- [src/pipeline_runner.py](/Users/konstantinmac/Documents/repositories/multi-agent-group-chat/src/pipeline_runner.py) kapselt die dokumentierte `prepare_group_chat(...)`-Rückgabeform von AG2 `0.11.x` bewusst an genau einer Stelle
+- wenn sich diese AG2-Rückgabeform ändert, soll der Runner früh und laut fehlschlagen statt stillschweigend falsche Zustände weiterzureichen
 
 Offen bleibt weiter die fachliche Qualität einzelner Runs:
 - öffentliche Quellen können dünn sein

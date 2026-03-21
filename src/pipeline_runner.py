@@ -1,6 +1,7 @@
 """Pipeline runner with callback support for live UI updates."""
 from __future__ import annotations
 
+import autogen
 import json
 import logging
 import os
@@ -13,7 +14,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic, sleep
 from typing import Any, Callable
+from urllib.parse import urlparse
 
+from autogen.exception_utils import NoEligibleSpeakerError
 from pydantic import ValidationError
 
 from src.models.schemas import (
@@ -38,6 +41,7 @@ AGENT_META = {
     "Admin":                {"icon": "👤", "color": "#6c757d"},
     "Concierge":            {"icon": "🛎️", "color": "#0d6efd"},
     "ConciergeCritic":      {"icon": "🧪", "color": "#6f42c1"},
+    "RepairPlanner":        {"icon": "🛠️", "color": "#a16207"},
     "CompanyIntelligence":  {"icon": "🏢", "color": "#198754"},
     "CompanyIntelligenceCritic": {"icon": "🧪", "color": "#146c43"},
     "StrategicSignals":     {"icon": "📡", "color": "#6610f2"},
@@ -59,17 +63,127 @@ PIPELINE_STEPS = [
     ("EvidenceQA", "Evidenz prüfen"),
     ("Synthesis", "Briefing erstellen"),
 ]
+WORKFLOW_PRODUCERS = {
+    "Concierge",
+    "CompanyIntelligence",
+    "StrategicSignals",
+    "MarketNetwork",
+    "EvidenceQA",
+    "Synthesis",
+}
+STAGE_RECOVERY_CONFIG = {
+    "Concierge": {
+        "stage_key": "concierge",
+        "critic_name": "ConciergeCritic",
+        "attempts_key": "concierge_attempts",
+        "next_target_name": "CompanyIntelligence",
+        "critic_agent_key": "concierge_critic",
+    },
+    "CompanyIntelligence": {
+        "stage_key": "company_intelligence",
+        "critic_name": "CompanyIntelligenceCritic",
+        "attempts_key": "company_intelligence_attempts",
+        "next_target_name": "StrategicSignals",
+        "critic_agent_key": "company_intelligence_critic",
+    },
+    "StrategicSignals": {
+        "stage_key": "strategic_signals",
+        "critic_name": "StrategicSignalsCritic",
+        "attempts_key": "strategic_signals_attempts",
+        "next_target_name": "MarketNetwork",
+        "critic_agent_key": "strategic_signals_critic",
+    },
+    "MarketNetwork": {
+        "stage_key": "market_network",
+        "critic_name": "MarketNetworkCritic",
+        "attempts_key": "market_network_attempts",
+        "next_target_name": "EvidenceQA",
+        "critic_agent_key": "market_network_critic",
+    },
+    "EvidenceQA": {
+        "stage_key": "evidence_qa",
+        "critic_name": "EvidenceQACritic",
+        "attempts_key": "evidence_qa_attempts",
+        "next_target_name": "Synthesis",
+        "critic_agent_key": "evidence_qa_critic",
+    },
+    "Synthesis": {
+        "stage_key": "synthesis",
+        "critic_name": "SynthesisCritic",
+        "attempts_key": "synthesis_attempts",
+        "next_target_name": "Terminate",
+        "critic_agent_key": "synthesis_critic",
+    },
+}
 
 COMPANY_SOURCE_MAX_AGE_DAYS = 730
 INDUSTRY_SOURCE_MAX_AGE_DAYS = 540
 BUYER_SOURCE_MAX_AGE_DAYS = 730
-MAX_STAGE_ATTEMPTS = int(os.environ.get("PIPELINE_MAX_STAGE_ATTEMPTS", "3"))
-MAX_TOOL_CALLS = int(os.environ.get("PIPELINE_MAX_TOOL_CALLS", "24"))
-MAX_RUN_SECONDS = int(os.environ.get("PIPELINE_MAX_RUN_SECONDS", "600"))
-MAX_GROUPCHAT_ROUNDS = 1 + (len(PIPELINE_STEPS) * MAX_STAGE_ATTEMPTS * 2) + 2
+STAGE_CONTRACTS = {
+    "company_profile": {"min_sources": 1},
+    "industry_analysis": {"min_sources": 1},
+    "market_network": {"min_sources": 0},
+}
+
+
+def _env_int_with_min(name: str, default: int, minimum: int) -> int:
+    raw = os.environ.get(name)
+    try:
+        value = int(raw) if raw is not None else int(default)
+    except (TypeError, ValueError):
+        value = int(default)
+    return max(int(minimum), value)
+
+
+MAX_STAGE_ATTEMPTS = _env_int_with_min("PIPELINE_MAX_STAGE_ATTEMPTS", 4, 2)
+MAX_TOOL_CALLS = _env_int_with_min("PIPELINE_MAX_TOOL_CALLS", 48, 12)
+MAX_RUN_SECONDS = _env_int_with_min("PIPELINE_MAX_RUN_SECONDS", 1200, 600)
+COMPANY_INTELLIGENCE_MAX_STAGE_TOOL_CALLS = _env_int_with_min("PIPELINE_COMPANY_INTELLIGENCE_MAX_TOOL_CALLS", 4, 3)
+STRATEGIC_SIGNALS_MAX_STAGE_TOOL_CALLS = _env_int_with_min("PIPELINE_STRATEGIC_SIGNALS_MAX_STAGE_TOOL_CALLS", 6, 4)
+MARKET_NETWORK_MAX_STAGE_TOOL_CALLS = _env_int_with_min("PIPELINE_MARKET_NETWORK_MAX_STAGE_TOOL_CALLS", 6, 4)
+MAX_CONSECUTIVE_TOOL_TURNS_PER_AGENT = int(
+    _env_int_with_min(
+        "PIPELINE_MAX_CONSECUTIVE_TOOL_TURNS",
+        max(7, STRATEGIC_SIGNALS_MAX_STAGE_TOOL_CALLS + 1, MARKET_NETWORK_MAX_STAGE_TOOL_CALLS + 1),
+        5,
+    )
+)
+COMPANY_INTELLIGENCE_MAX_CONSECUTIVE_TOOL_TURNS = int(
+    _env_int_with_min(
+        "PIPELINE_COMPANY_INTELLIGENCE_MAX_CONSECUTIVE_TOOL_TURNS",
+        COMPANY_INTELLIGENCE_MAX_STAGE_TOOL_CALLS + 1,
+        COMPANY_INTELLIGENCE_MAX_STAGE_TOOL_CALLS,
+    )
+)
+STRATEGIC_SIGNALS_MAX_CONSECUTIVE_TOOL_TURNS = int(
+    _env_int_with_min(
+        "PIPELINE_STRATEGIC_SIGNALS_MAX_CONSECUTIVE_TOOL_TURNS",
+        STRATEGIC_SIGNALS_MAX_STAGE_TOOL_CALLS + 1,
+        STRATEGIC_SIGNALS_MAX_STAGE_TOOL_CALLS,
+    )
+)
+MARKET_NETWORK_MAX_CONSECUTIVE_TOOL_TURNS = int(
+    _env_int_with_min(
+        "PIPELINE_MARKET_NETWORK_MAX_CONSECUTIVE_TOOL_TURNS",
+        MARKET_NETWORK_MAX_STAGE_TOOL_CALLS + 1,
+        MARKET_NETWORK_MAX_STAGE_TOOL_CALLS,
+    )
+)
+MAX_GROUPCHAT_ROUNDS = 1 + (len(PIPELINE_STEPS) * MAX_STAGE_ATTEMPTS * 3) + 2
 GROUPCHAT_POLL_INTERVAL_SECONDS = 0.2
-GROUPCHAT_STOP_GRACE_SECONDS = 5.0
+GROUPCHAT_STOP_GRACE_SECONDS = float(os.environ.get("PIPELINE_GROUPCHAT_STOP_GRACE_SECONDS", "20"))
+GROUPCHAT_AUTO_RESUME_LIMIT = 2
+GROUPCHAT_CRITIC_RECOVERY_LIMIT = 2
+# AG2 0.11.x documents prepare_group_chat(...) as a 13-item tuple. Keep this
+# unpacking isolated here so version drift fails loudly in one place.
 PREPARE_GROUP_CHAT_RESULT_LEN = 13
+PREPARE_GROUP_CHAT_FIELD_INDEXES = {
+    "context_variables": 3,
+    "groupchat": 7,
+    "manager": 8,
+    "processed_messages": 9,
+    "last_agent": 10,
+}
 
 
 @dataclass
@@ -107,7 +221,14 @@ def run_pipeline(
 ) -> dict[str, Any]:
     """Run the full pipeline. Calls on_message(event) for each agent message."""
     from src.config import get_llm_config
-    from src.agents.definitions import create_agents, create_group_pattern
+    from src.agents.definitions import (
+        ENFORCE_STRATEGIC_SIGNALS_SOURCE_PACK_KEY,
+        create_agents,
+        create_group_pattern,
+    )
+
+    emitted_system_errors: set[str] = set()
+    emitted_duplicate_turn_warnings: set[str] = set()
 
     def _emit(event_type: str, agent: str, content: str):
         event = {
@@ -120,6 +241,12 @@ def run_pipeline(
         collected_messages.append(event)
         if on_message:
             on_message(event)
+
+    def _emit_error(content: str) -> None:
+        if content in emitted_system_errors:
+            return
+        emitted_system_errors.add(content)
+        _emit("error", "System", content)
 
     collected_messages: list[dict[str, Any]] = []
     chat_history: list[dict[str, Any]] = []
@@ -138,32 +265,33 @@ def run_pipeline(
         _emit("debug", "System", f"LLM Model: {model}")
     except Exception as e:
         log.error("Failed to load LLM config: %s", e)
-        _emit("error", "System", f"LLM Config Fehler: {e}")
+        _emit_error(f"LLM Config Fehler: {e}")
         raise
 
     try:
         log.debug("Creating agents...")
-        agents = create_agents(llm_config)
+        agents = create_agents()
         log.info("Agents created: %s", list(agents.keys()))
         _emit("debug", "System", f"Agenten erstellt: {', '.join(agents.keys())}")
     except Exception as e:
         log.error("Failed to create agents: %s", e)
-        _emit("error", "System", f"Agent-Erstellung fehlgeschlagen: {e}")
+        _emit_error(f"Agent-Erstellung fehlgeschlagen: {e}")
         raise
 
     try:
         log.debug("Creating AG2 workflow pattern...")
-        pattern = create_group_pattern(agents, llm_config)
+        pattern = create_group_pattern(agents)
         prepared_chat = _prepare_group_chat(
             pattern,
             max_rounds=budget_state["max_groupchat_rounds"],
             messages=build_pipeline_task(company_name, web_domain),
         )
+        prepared_chat.context_variables.set(ENFORCE_STRATEGIC_SIGNALS_SOURCE_PACK_KEY, True)
         log.info("AG2 pattern created: max_round=%s", prepared_chat.groupchat.max_round)
         _emit("debug", "System", f"AG2 Pattern erstellt: max_round={prepared_chat.groupchat.max_round}")
     except Exception as e:
         log.error("Failed to create AG2 workflow pattern: %s", e)
-        _emit("error", "System", f"AG2 Pattern Fehler: {e}")
+        _emit_error(f"AG2 Pattern Fehler: {e}")
         raise
 
     task = (
@@ -189,6 +317,7 @@ def run_pipeline(
         chat_result_holder: dict[str, Any] = {}
         chat_error_holder: dict[str, BaseException] = {}
         sender, initial_message, clear_history = _resolve_group_chat_entrypoint(prepared_chat, fallback_message=task)
+        interruption_reason: str | None = None
 
         def _run_groupchat() -> None:
             try:
@@ -205,37 +334,155 @@ def run_pipeline(
         worker = threading.Thread(target=_run_groupchat, daemon=True)
         worker.start()
         emitted_count = 0
-        timed_out = False
         while worker.is_alive():
             emitted_count = _emit_groupchat_messages(prepared_chat.groupchat.messages, emitted_count, _emit)
             if _run_budget_exceeded(budget_state):
-                timed_out = True
+                interruption_reason = (
+                    "Laufzeitbudget überschritten "
+                    f"({budget_state['max_run_seconds']}s). Stoppe den Workflow nach dem aktuellen AG2-Zug."
+                )
                 _request_group_chat_stop(prepared_chat, sender)
+                _emit_error(interruption_reason)
+                break
+            tool_calls_used = _count_tool_calls_from_chat_messages(prepared_chat.groupchat.messages)
+            if tool_calls_used >= budget_state["max_tool_calls"]:
+                interruption_reason = (
+                    "Tool-Budget überschritten "
+                    f"({tool_calls_used}/{budget_state['max_tool_calls']}). Stoppe den Workflow nach dem aktuellen AG2-Zug."
+                )
+                _request_group_chat_stop(prepared_chat, sender)
+                _emit_error(interruption_reason)
+                break
+            stalled = _detect_stalled_tool_agent(prepared_chat.groupchat.messages)
+            if stalled:
+                stalled_agent, stalled_threshold = stalled
+                interruption_reason = (
+                    f"Agent-Schleife erkannt: {stalled_agent} hat {stalled_threshold} "
+                    "aufeinanderfolgende Tool-Zuege ohne strukturierten Abschluss erzeugt. Stoppe den Workflow."
+                )
+                _request_group_chat_stop(prepared_chat, sender)
+                _emit_error(interruption_reason)
+                break
+            duplicate_producer = _detect_duplicate_structured_producer_turn(prepared_chat.groupchat.messages)
+            if duplicate_producer and duplicate_producer not in emitted_duplicate_turn_warnings:
+                emitted_duplicate_turn_warnings.add(duplicate_producer)
                 _emit(
-                    "error",
+                    "debug",
                     "System",
                     (
-                        "Laufzeitbudget überschritten "
-                        f"({budget_state['max_run_seconds']}s). Stoppe den Workflow nach dem aktuellen AG2-Zug."
+                        f"Warnung: {duplicate_producer} hat mehrfach strukturierte Outputs vor dem Critic erzeugt. "
+                        "Der letzte strukturierte Output bleibt maßgeblich, sofern der Critic danach sauber übernimmt."
                     ),
                 )
-                break
             sleep(GROUPCHAT_POLL_INTERVAL_SECONDS)
 
-        if timed_out:
+        if interruption_reason:
             worker.join(timeout=GROUPCHAT_STOP_GRACE_SECONDS)
             emitted_count = _emit_groupchat_messages(prepared_chat.groupchat.messages, emitted_count, _emit)
             if worker.is_alive():
-                raise TimeoutError(
-                    "Pipeline exceeded the configured runtime budget and did not stop cleanly."
+                interruption_reason = (
+                    f"{interruption_reason} Der aktuelle AG2-Zug lief auch nach {GROUPCHAT_STOP_GRACE_SECONDS:.0f}s "
+                    "Grace-Timeout weiter; verwende den bis dahin vorliegenden Teillauf."
                 )
-            raise TimeoutError("Pipeline exceeded the configured runtime budget.")
+                log.warning("Pipeline stop request did not stop the workflow cleanly; exporting partial run.")
+                _emit_error(interruption_reason)
 
-        worker.join()
+        if worker.is_alive():
+            log.warning("Worker thread still alive after partial-stop handling; continuing with current snapshot.")
+        else:
+            worker.join()
         emitted_count = _emit_groupchat_messages(prepared_chat.groupchat.messages, emitted_count, _emit)
 
         if "error" in chat_error_holder:
             raise chat_error_holder["error"]
+
+        auto_resume_attempts = 0
+        while (
+            not interruption_reason
+            and auto_resume_attempts < GROUPCHAT_AUTO_RESUME_LIMIT
+            and _should_auto_resume_groupchat(prepared_chat.groupchat.messages)
+        ):
+            auto_resume_attempts += 1
+            _emit(
+                "debug",
+                "System",
+                (
+                    "AG2-Fortsetzung: Workflow endete auf einem strukturierten Producer-Output ohne nachfolgenden Critic-Handoff. "
+                    f"Starte Resume-Versuch {auto_resume_attempts}/{GROUPCHAT_AUTO_RESUME_LIMIT}."
+                ),
+            )
+            try:
+                resume_sender, resume_message = prepared_chat.manager.resume(
+                    messages=prepared_chat.groupchat.messages,
+                    silent=True,
+                )
+            except NoEligibleSpeakerError:
+                break
+            except Exception as exc:
+                log.warning("Resume attempt failed while preparing continuation: %s", exc)
+                break
+
+            try:
+                resume_sender.initiate_chat(
+                    prepared_chat.manager,
+                    message=resume_message,
+                    clear_history=False,
+                    summary_method=pattern.summary_method,
+                    silent=True,
+                )
+            except NoEligibleSpeakerError:
+                break
+            except BaseException as exc:
+                log.warning("Resume attempt failed during continuation: %s", exc)
+                break
+
+            emitted_count = _emit_groupchat_messages(prepared_chat.groupchat.messages, emitted_count, _emit)
+
+        critic_recovery_attempts = 0
+        while (
+            not interruption_reason
+            and critic_recovery_attempts < GROUPCHAT_CRITIC_RECOVERY_LIMIT
+            and _should_auto_resume_groupchat(prepared_chat.groupchat.messages)
+        ):
+            injected_critic = _inject_missing_critic_turn(prepared_chat, agents)
+            if not injected_critic:
+                break
+            critic_recovery_attempts += 1
+            _emit(
+                "debug",
+                "System",
+                (
+                    "AG2-Handoff-Recovery: Der Critic-Turn wurde nach einem haengengebliebenen Producer-Output "
+                    f"deterministisch als {injected_critic} nachgezogen ({critic_recovery_attempts}/{GROUPCHAT_CRITIC_RECOVERY_LIMIT})."
+                ),
+            )
+            emitted_count = _emit_groupchat_messages(prepared_chat.groupchat.messages, emitted_count, _emit)
+            try:
+                resume_sender, resume_message = prepared_chat.manager.resume(
+                    messages=prepared_chat.groupchat.messages,
+                    silent=True,
+                )
+            except NoEligibleSpeakerError:
+                break
+            except Exception as exc:
+                log.warning("Critic recovery resume failed while preparing continuation: %s", exc)
+                break
+
+            try:
+                resume_sender.initiate_chat(
+                    prepared_chat.manager,
+                    message=resume_message,
+                    clear_history=False,
+                    summary_method=pattern.summary_method,
+                    silent=True,
+                )
+            except NoEligibleSpeakerError:
+                break
+            except BaseException as exc:
+                log.warning("Critic recovery resume failed during continuation: %s", exc)
+                break
+
+            emitted_count = _emit_groupchat_messages(prepared_chat.groupchat.messages, emitted_count, _emit)
 
         chat_result = chat_result_holder.get("result")
         chat_history = list(getattr(chat_result, "chat_history", None) or prepared_chat.groupchat.messages)
@@ -243,16 +490,38 @@ def run_pipeline(
         _emit("debug", "System", f"Chat beendet. {len(chat_history)} Nachrichten.")
     except Exception as e:
         log.error("AG2 workflow FAILED: %s\n%s", e, traceback.format_exc())
-        _emit("error", "System", f"Chat-Fehler: {e}")
+        _emit_error(f"Chat-Fehler: {e}")
         raise
 
     result = {"chat_history": chat_history}
     pipeline_messages = _normalize_chat_history(result)
     pipeline_data = _extract_pipeline_data(pipeline_messages)
+    workflow_completed = _workflow_completed(chat_history, pipeline_data)
+    readiness = _assess_research_usability(pipeline_data)
+    pipeline_data["research_readiness"] = readiness
+    run_error = interruption_reason if 'interruption_reason' in locals() else None
+    if not workflow_completed and not run_error:
+        run_error = _build_incomplete_run_message(chat_history, pipeline_data)
+    completed = bool(workflow_completed and not run_error and readiness.get("research_usable") is True)
+    if run_error:
+        run_status = "incomplete"
+    elif readiness.get("research_usable") is True:
+        run_status = "completed"
+    else:
+        run_status = "completed_but_not_usable"
     usage_summary = _collect_usage_summary(agents)
     filled = [k for k, v in pipeline_data.items() if k != "validation_errors" and v]
     log.info("Parsed pipeline data. Filled keys: %s", filled)
     _emit("debug", "System", f"Ergebnisse geparst: {', '.join(filled) or 'keine'}")
+    if run_error:
+        _emit_error(run_error)
+    elif run_status == "completed_but_not_usable":
+        _emit(
+            "debug",
+            "System",
+            "Workflow abgeschlossen, aber der Brief ist noch nicht meeting-tauglich: "
+            + "; ".join(readiness.get("reasons", [])[:4]),
+        )
     if usage_summary["total"].get("total_cost"):
         _emit(
             "debug",
@@ -272,7 +541,7 @@ def run_pipeline(
             section = error.get("section", "unknown")
             details = error.get("details", "Schema validation failed")
             log.warning("Validation failed for %s/%s: %s", agent, section, details)
-            _emit("error", "System", f"Schema-Validierung fehlgeschlagen ({agent}/{section}): {details}")
+            _emit_error(f"Schema-Validierung fehlgeschlagen ({agent}/{section}): {details}")
 
     # --- Step 8: Export ---
     try:
@@ -282,12 +551,18 @@ def run_pipeline(
             result,
             pipeline_data=pipeline_data,
             run_meta_extra={
+                "status": run_status,
+                "completed": completed,
+                "workflow_completed": bool(workflow_completed and not run_error),
+                "research_usable": bool(readiness.get("research_usable") is True),
+                "research_usability_reasons": list(readiness.get("reasons", [])),
+                "error": run_error,
                 "usage": usage_summary,
                 "budget": {
                     "max_groupchat_rounds": budget_state["max_groupchat_rounds"],
                     "max_stage_attempts": budget_state["max_stage_attempts"],
                     "max_tool_calls": budget_state["max_tool_calls"],
-                    "tool_calls_used": int(prepared_chat.context_variables.get("tool_calls_used", 0) or 0),
+                    "tool_calls_used": _count_tool_calls_from_chat_messages(chat_history),
                     "groupchat_rounds_used": len(chat_history),
                     "max_run_seconds": budget_state["max_run_seconds"],
                     "elapsed_seconds": round(monotonic() - budget_state["started_at"], 3),
@@ -310,12 +585,18 @@ def run_pipeline(
         "run_dir": str(run_dir),
         "messages": collected_messages,
         "pipeline_data": pipeline_data,
+        "completed": completed,
+        "workflow_completed": bool(workflow_completed and not run_error),
+        "research_usable": bool(readiness.get("research_usable") is True),
+        "research_usability_reasons": list(readiness.get("reasons", [])),
+        "status": run_status,
+        "error": run_error,
         "usage": usage_summary,
         "budget": {
             "max_groupchat_rounds": budget_state["max_groupchat_rounds"],
             "max_stage_attempts": budget_state["max_stage_attempts"],
             "max_tool_calls": budget_state["max_tool_calls"],
-            "tool_calls_used": int(prepared_chat.context_variables.get("tool_calls_used", 0) or 0),
+            "tool_calls_used": _count_tool_calls_from_chat_messages(chat_history),
             "groupchat_rounds_used": len(chat_history),
             "max_run_seconds": budget_state["max_run_seconds"],
             "elapsed_seconds": round(monotonic() - budget_state["started_at"], 3),
@@ -325,17 +606,26 @@ def run_pipeline(
 
 def _prepare_group_chat(pattern: Any, max_rounds: int, messages: list[dict[str, Any]] | str) -> PreparedGroupChat:
     prepared = pattern.prepare_group_chat(max_rounds=max_rounds, messages=messages)
+    return _coerce_prepared_group_chat(prepared)
+
+
+def _coerce_prepared_group_chat(prepared: Any) -> PreparedGroupChat:
+    """Unpack the documented AG2 0.11.x prepare_group_chat tuple shape."""
     if not isinstance(prepared, tuple) or len(prepared) != PREPARE_GROUP_CHAT_RESULT_LEN:
+        installed_ag2 = getattr(autogen, "__version__", "unknown")
+        actual_shape = len(prepared) if isinstance(prepared, tuple) else type(prepared).__name__
         raise RuntimeError(
-            "Unexpected AG2 prepare_group_chat result shape. Review the installed autogen/ag2 version."
+            "Unexpected AG2 prepare_group_chat result shape. "
+            f"Expected the documented AG2 0.11.x {PREPARE_GROUP_CHAT_RESULT_LEN}-item tuple, "
+            f"got {actual_shape} (installed ag2/autogen: {installed_ag2})."
         )
 
     return PreparedGroupChat(
-        context_variables=prepared[3],
-        groupchat=prepared[7],
-        manager=prepared[8],
-        processed_messages=list(prepared[9]),
-        last_agent=prepared[10],
+        context_variables=prepared[PREPARE_GROUP_CHAT_FIELD_INDEXES["context_variables"]],
+        groupchat=prepared[PREPARE_GROUP_CHAT_FIELD_INDEXES["groupchat"]],
+        manager=prepared[PREPARE_GROUP_CHAT_FIELD_INDEXES["manager"]],
+        processed_messages=list(prepared[PREPARE_GROUP_CHAT_FIELD_INDEXES["processed_messages"]]),
+        last_agent=prepared[PREPARE_GROUP_CHAT_FIELD_INDEXES["last_agent"]],
     )
 
 
@@ -369,6 +659,9 @@ def _run_budget_exceeded(budget_state: dict[str, Any]) -> bool:
 
 
 def _request_group_chat_stop(prepared_chat: PreparedGroupChat, sender: Any) -> None:
+    def _raise_no_speaker(*_args: Any, **_kwargs: Any) -> Any:
+        raise NoEligibleSpeakerError("Pipeline stop requested.")
+
     for participant in getattr(prepared_chat.groupchat, "agents", []):
         if hasattr(participant, "stop_reply_at_receive"):
             participant.stop_reply_at_receive()
@@ -377,6 +670,8 @@ def _request_group_chat_stop(prepared_chat: PreparedGroupChat, sender: Any) -> N
         prepared_chat.manager.stop_reply_at_receive()
     if hasattr(sender, "stop_reply_at_receive"):
         sender.stop_reply_at_receive()
+    prepared_chat.manager._is_termination_msg = lambda _message: True
+    prepared_chat.groupchat.select_speaker = _raise_no_speaker
     if hasattr(prepared_chat.groupchat, "max_round"):
         prepared_chat.groupchat.max_round = min(
             int(prepared_chat.groupchat.max_round),
@@ -404,6 +699,277 @@ def _emit_groupchat_messages(
         emit("agent_message", agent, str(content))
         emitted_count += 1
     return emitted_count
+
+
+def _count_tool_calls_from_chat_messages(messages: list[dict[str, Any]]) -> int:
+    total = 0
+    for msg in messages:
+        tool_calls = msg.get("tool_calls")
+        if isinstance(tool_calls, list):
+            total += len(tool_calls)
+    return total
+
+
+def _tool_turn_threshold_for_agent(agent_name: str) -> int:
+    if agent_name == "CompanyIntelligence":
+        return COMPANY_INTELLIGENCE_MAX_CONSECUTIVE_TOOL_TURNS
+    if agent_name == "StrategicSignals":
+        return STRATEGIC_SIGNALS_MAX_CONSECUTIVE_TOOL_TURNS
+    if agent_name == "MarketNetwork":
+        return MARKET_NETWORK_MAX_CONSECUTIVE_TOOL_TURNS
+    return MAX_CONSECUTIVE_TOOL_TURNS_PER_AGENT
+
+
+def _detect_stalled_tool_agent(messages: list[dict[str, Any]]) -> tuple[str, int] | None:
+    streak_agent: str | None = None
+    streak = 0
+    for msg in reversed(messages):
+        name = msg.get("name", msg.get("role", "unknown"))
+        if name == "_Group_Tool_Executor":
+            continue
+        tool_calls = msg.get("tool_calls")
+        if not isinstance(tool_calls, list) or not tool_calls:
+            break
+        if streak_agent is None:
+            streak_agent = str(name)
+        if str(name) != streak_agent:
+            break
+        streak += 1
+        threshold = _tool_turn_threshold_for_agent(streak_agent)
+        if threshold > 0 and streak >= threshold:
+            return streak_agent, threshold
+    return None
+
+
+def _detect_duplicate_structured_producer_turn(messages: list[dict[str, Any]]) -> str | None:
+    previous_name: str | None = None
+    for msg in messages:
+        name = str(msg.get("name", msg.get("role", "unknown")) or "unknown")
+        if name in {"_Group_Tool_Executor", "chat_manager"}:
+            continue
+        if name not in WORKFLOW_PRODUCERS:
+            previous_name = None
+            continue
+        content = str(msg.get("content", "") or "")
+        if _try_parse_json(content) is None:
+            previous_name = None
+            continue
+        if previous_name is None:
+            previous_name = name
+            continue
+        if name == previous_name:
+            return name
+        previous_name = name
+    return None
+
+
+def _workflow_completed(chat_history: list[dict[str, Any]], pipeline_data: dict[str, Any]) -> bool:
+    if not chat_history:
+        return False
+    required_sections = ("company_profile", "industry_analysis", "market_network", "synthesis")
+    if not all(bool(pipeline_data.get(section)) for section in required_sections):
+        return False
+
+    last_named = _last_workflow_actor_name(chat_history)
+    if last_named == "Admin":
+        return True
+    if last_named != "SynthesisCritic":
+        return False
+
+    for msg in reversed(chat_history):
+        name = str(msg.get("name", msg.get("role", "unknown")) or "unknown")
+        if name != "SynthesisCritic":
+            continue
+        payload = _try_parse_json(str(msg.get("content", "") or ""))
+        return bool(isinstance(payload, dict) and payload.get("approved") is True)
+    return False
+
+
+def _assess_research_usability(pipeline_data: dict[str, Any]) -> dict[str, Any]:
+    reasons: list[str] = []
+    profile = pipeline_data.get("company_profile", {})
+    industry = pipeline_data.get("industry_analysis", {})
+    market = pipeline_data.get("market_network", {})
+    quality = pipeline_data.get("quality_review", {})
+
+    missing_company_basics = [
+        label
+        for label, key in (
+            ("Rechtsform", "legal_form"),
+            ("Gegruendet", "founded"),
+            ("Hauptsitz", "headquarters"),
+        )
+        if _is_nv(profile.get(key))
+    ]
+    if missing_company_basics:
+        reasons.append(
+            "Firmenprofil unvollstaendig: "
+            + ", ".join(missing_company_basics)
+            + " fehlen."
+        )
+
+    economic = profile.get("economic_situation", {}) if isinstance(profile, dict) else {}
+    missing_economic = [
+        label
+        for label, value in (
+            ("Umsatztrend", economic.get("revenue_trend")),
+            ("Profitabilitaet", economic.get("profitability")),
+            ("Finanzdruck", economic.get("financial_pressure")),
+            ("Einschaetzung", economic.get("assessment")),
+        )
+        if _is_nv(value)
+    ]
+    if len(missing_economic) >= 3:
+        reasons.append(
+            "Wirtschaftslage nicht verwertbar: "
+            + ", ".join(missing_economic)
+            + " stehen auf n/v."
+        )
+
+    industry_sources = _as_list(industry.get("sources", []))
+    if not industry_sources:
+        reasons.append("Branchenanalyse ohne belastbare externe Quellen.")
+    elif _sources_lack_external_market_evidence(industry_sources, profile):
+        reasons.append("Branchenanalyse ohne belastbare externe Quellen.")
+
+    missing_industry = [
+        label
+        for label, value in (
+            ("Marktgroesse", industry.get("market_size")),
+            ("Wachstumsrate", industry.get("growth_rate")),
+            ("Nachfrageausblick", industry.get("demand_outlook")),
+            ("Ueberschussbestand-Indikatoren", industry.get("excess_stock_indicators")),
+        )
+        if _is_nv(value)
+    ]
+    if len(missing_industry) >= 3:
+        reasons.append(
+            "Branchenanalyse nicht verwertbar: "
+            + ", ".join(missing_industry)
+            + " fehlen."
+        )
+
+    buyer_total = _count_market_buyers(market)
+    if buyer_total == 0:
+        reasons.append("MarketNetwork ohne belastbare Buyer-, Competitor- oder Service-Treffer.")
+
+    evidence_health = str(quality.get("evidence_health", "n/v") or "n/v").strip().lower()
+    if evidence_health in {"niedrig", "low", "n/v", "unklar"}:
+        reasons.append(f"Evidenzqualitaet ist nur {quality.get('evidence_health', 'n/v')}.")
+
+    return {
+        "research_usable": len(reasons) == 0,
+        "reasons": reasons,
+    }
+
+
+def _build_incomplete_run_message(chat_history: list[dict[str, Any]], pipeline_data: dict[str, Any]) -> str:
+    missing_sections = [
+        section
+        for section in ("company_profile", "industry_analysis", "market_network", "synthesis")
+        if not pipeline_data.get(section)
+    ]
+    last_named = _last_workflow_actor_name(chat_history)
+    if missing_sections:
+        return (
+            "Workflow unvollständig beendet. Fehlende Kernartefakte: "
+            f"{', '.join(missing_sections)}. Letzter Agent: {last_named}."
+        )
+    return f"Workflow unvollständig beendet. Letzter Agent: {last_named}."
+
+
+def _last_workflow_actor_name(chat_history: list[dict[str, Any]]) -> str:
+    ignored_names = {"_Group_Tool_Executor", "chat_manager"}
+    for msg in reversed(chat_history):
+        name = str(msg.get("name", msg.get("role", "unknown")) or "unknown")
+        if name in ignored_names:
+            continue
+        return name
+    if not chat_history:
+        return "unknown"
+    return str(chat_history[-1].get("name", chat_history[-1].get("role", "unknown")) or "unknown")
+
+
+def _should_auto_resume_groupchat(chat_history: list[dict[str, Any]]) -> bool:
+    last_name = _last_workflow_actor_name(chat_history)
+    if last_name not in {
+        "Concierge",
+        "CompanyIntelligence",
+        "StrategicSignals",
+        "MarketNetwork",
+        "EvidenceQA",
+        "Synthesis",
+    }:
+        return False
+
+    for msg in reversed(chat_history):
+        name = str(msg.get("name", msg.get("role", "unknown")) or "unknown")
+        if name in {"_Group_Tool_Executor", "chat_manager"}:
+            continue
+        content = str(msg.get("content", "") or "")
+        return _try_parse_json(content) is not None
+    return False
+
+
+def _inject_missing_critic_turn(
+    prepared_chat: PreparedGroupChat,
+    agents: dict[str, Any],
+) -> str | None:
+    last_name = _last_workflow_actor_name(prepared_chat.groupchat.messages)
+    config = STAGE_RECOVERY_CONFIG.get(last_name)
+    if not config:
+        return None
+
+    last_content = ""
+    for msg in reversed(prepared_chat.groupchat.messages):
+        name = str(msg.get("name", msg.get("role", "unknown")) or "unknown")
+        if name != last_name:
+            continue
+        content = str(msg.get("content", "") or "")
+        if _try_parse_json(content) is None:
+            continue
+        last_content = content
+        break
+    if not last_content:
+        return None
+
+    from src.agents.definitions import _pre_critic_check
+
+    precheck = _pre_critic_check(
+        output=last_content,
+        context_variables=prepared_chat.context_variables,
+        stage_key=config["stage_key"],
+        producer_name=last_name,
+        critic_name=config["critic_name"],
+        next_target_name=config["next_target_name"],
+        attempts_key=config["attempts_key"],
+    )
+    target_name = getattr(getattr(precheck, "target", None), "agent_name", None)
+    if target_name != config["critic_name"]:
+        return None
+
+    critic = agents.get(config["critic_agent_key"])
+    if critic is None or not hasattr(critic, "generate_reply"):
+        return None
+
+    critic_reply = critic.generate_reply(messages=prepared_chat.groupchat.messages, sender=prepared_chat.manager)
+    if critic_reply is None:
+        return None
+    if isinstance(critic_reply, dict):
+        critic_content = json.dumps(critic_reply)
+    else:
+        critic_content = str(critic_reply)
+    if not critic_content.strip():
+        return None
+
+    prepared_chat.groupchat.messages.append(
+        {
+            "content": critic_content,
+            "name": config["critic_name"],
+            "role": "user",
+        }
+    )
+    return config["critic_name"]
 
 
 def _collect_usage_summary(agents: dict[str, Any]) -> dict[str, Any]:
@@ -492,6 +1058,7 @@ def _extract_pipeline_data(messages: list[dict]) -> dict[str, Any]:
         "industry_analysis": {},
         "market_network": {},
         "quality_review": {},
+        "research_readiness": {},
         "synthesis": {},
         "validation_errors": [],
     }
@@ -560,7 +1127,10 @@ def _extract_pipeline_data(messages: list[dict]) -> dict[str, Any]:
         if not synthesis.get("total_cross_industry_buyers"):
             synthesis["total_cross_industry_buyers"] = len(market.get("cross_industry_buyers", {}).get("companies", []))
 
-    _apply_quality_guardrails(data)
+    has_core_research = all(bool(data.get(section)) for section in ("company_profile", "industry_analysis", "market_network"))
+    if data.get("quality_review") or data.get("synthesis") or has_core_research:
+        _apply_quality_guardrails(data)
+        data["research_readiness"] = _assess_research_usability(data)
     return data
 
 
@@ -576,25 +1146,47 @@ def _apply_quality_guardrails(data: dict[str, Any]) -> None:
     quality.setdefault("evidence_health", "n/v")
     quality.setdefault("open_gaps", [])
     quality.setdefault("recommendations", [])
+    quality.setdefault("gap_details", [])
     synthesis.setdefault("key_risks", [])
     synthesis.setdefault("next_steps", [])
 
+    gap_details = _normalize_gap_details(quality.get("gap_details", []))
     gaps = list(quality.get("open_gaps", []))
     recommendations = list(quality.get("recommendations", []))
     key_risks = list(synthesis.get("key_risks", []))
     next_steps = list(synthesis.get("next_steps", []))
-    severity = 0
+    derived_gap_details: list[dict[str, str]] = []
+    company_issue_detected = False
+    industry_issue_detected = False
+
+    derived_gap_details.extend(_enforce_stage_contracts(profile, industry, market))
 
     company_sources = _analyze_sources(profile.get("sources", []), COMPANY_SOURCE_MAX_AGE_DAYS)
     if profile:
         if company_sources["total"] == 0:
-            severity += 2
-            gaps.append("CompanyIntelligence: Firmenprofil ohne zitierte Quellen.")
-            recommendations.append("CompanyIntelligence: Primärquellen wie Website, Impressum, Jahresbericht oder Registerauszug ergänzen.")
+            company_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="CompanyIntelligence",
+                    field_path="sources",
+                    issue_type="missing_sources",
+                    severity="significant",
+                    summary="Firmenprofil ohne zitierte Quellen.",
+                    recommendation="CompanyIntelligence: Primärquellen wie Website, Impressum, Jahresbericht oder Registerauszug ergänzen.",
+                )
+            )
         elif company_sources["fresh"] == 0:
-            severity += 2
-            gaps.append("CompanyIntelligence: Firmenprofil stützt sich auf veraltete Quellen für volatile Fakten.")
-            recommendations.append("CompanyIntelligence: Umsatz, Profitabilität und aktuelle Ereignisse mit frischen Primärquellen aktualisieren.")
+            company_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="CompanyIntelligence",
+                    field_path="sources",
+                    issue_type="stale_sources",
+                    severity="significant",
+                    summary="Firmenprofil stützt sich auf veraltete Quellen für volatile Fakten.",
+                    recommendation="CompanyIntelligence: Umsatz, Profitabilität und aktuelle Ereignisse mit frischen Primärquellen aktualisieren.",
+                )
+            )
             if profile.get("revenue") not in ("", "n/v", None):
                 profile["revenue"] = "n/v"
             economic = profile.get("economic_situation", {})
@@ -602,33 +1194,89 @@ def _apply_quality_guardrails(data: dict[str, Any]) -> None:
                 for key in ("revenue_trend", "profitability", "financial_pressure"):
                     if economic.get(key) not in ("", "n/v", None):
                         economic[key] = "n/v"
+        if company_sources["unusable"] > 0:
+            company_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="CompanyIntelligence",
+                    field_path="sources",
+                    issue_type="unsupported_source_wrapper",
+                    severity="significant",
+                    summary="Firmenprofil enthält Such- oder Aggregator-Wrapper statt belastbarer Quellseiten.",
+                    recommendation="CompanyIntelligence: Auf direkte Publisher- oder Primärquellen umstellen.",
+                )
+            )
 
     industry_sources = _analyze_sources(industry.get("sources", []), INDUSTRY_SOURCE_MAX_AGE_DAYS)
     if industry:
         if industry_sources["total"] == 0:
-            severity += 2
-            gaps.append("StrategicSignals: Branchenanalyse ohne belastbare Marktquellen.")
-            recommendations.append("StrategicSignals: Aktuelle Branchenquellen aus den letzten 12-18 Monaten ergänzen.")
+            industry_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="StrategicSignals",
+                    field_path="sources",
+                    issue_type="missing_sources",
+                    severity="significant",
+                    summary="Branchenanalyse ohne belastbare Marktquellen.",
+                    recommendation="StrategicSignals: Aktuelle Branchenquellen aus den letzten 12-18 Monaten ergänzen.",
+                )
+            )
             for key in ("market_size", "growth_rate"):
                 if industry.get(key) not in ("", "n/v", None):
                     industry[key] = "n/v"
+        elif industry_sources["unusable"] == industry_sources["total"]:
+            industry_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="StrategicSignals",
+                    field_path="sources",
+                    issue_type="unsupported_source_wrapper",
+                    severity="significant",
+                    summary="Branchenanalyse stützt sich auf News-Aggregator-Wrapper statt direkte Publisher-Seiten.",
+                    recommendation="StrategicSignals: Direkte Publisher- oder Trade-Publication-URLs nutzen und Wrapper-Links vermeiden.",
+                )
+            )
+            for key in ("market_size", "growth_rate", "demand_outlook", "excess_stock_indicators"):
+                if industry.get(key) not in ("", "n/v", None):
+                    industry[key] = "n/v"
+        elif _sources_lack_external_market_evidence(industry.get("sources", []), profile):
+            industry_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="StrategicSignals",
+                    field_path="sources",
+                    issue_type="missing_external_market_sources",
+                    severity="significant",
+                    summary="Branchenanalyse stützt sich nur auf Company- oder Enzyklopädiequellen statt auf externe Marktquellen.",
+                    recommendation="StrategicSignals: Mindestens eine direkte Trade-Publication-, Analysten- oder Marktreport-Quelle ergänzen.",
+                )
+            )
+            for key in ("market_size", "growth_rate", "demand_outlook", "excess_stock_indicators"):
+                if industry.get(key) not in ("", "n/v", None):
+                    industry[key] = "n/v"
         elif industry_sources["fresh"] == 0:
-            severity += 2
-            gaps.append("StrategicSignals: Branchenanalyse basiert auf veralteten Marktquellen.")
-            recommendations.append("StrategicSignals: Marktgröße, Wachstum und Nachfrageausblick mit frischen Branchenquellen aktualisieren.")
+            industry_issue_detected = True
+            derived_gap_details.append(
+                _make_gap_detail(
+                    agent="StrategicSignals",
+                    field_path="sources",
+                    issue_type="stale_sources",
+                    severity="significant",
+                    summary="Branchenanalyse basiert auf veralteten Marktquellen.",
+                    recommendation="StrategicSignals: Marktgröße, Wachstum und Nachfrageausblick mit frischen Branchenquellen aktualisieren.",
+                )
+            )
             for key in ("market_size", "growth_rate", "demand_outlook"):
                 if industry.get(key) not in ("", "n/v", None):
                     industry[key] = "n/v"
 
     buyer_strength = _enforce_buyer_evidence(market)
-    severity += buyer_strength["severity"]
-    gaps.extend(buyer_strength["gaps"])
-    recommendations.extend(buyer_strength["recommendations"])
+    derived_gap_details.extend(buyer_strength["gap_details"])
 
-    if company_sources["fresh"] == 0 and company_sources["total"] > 0:
+    if company_issue_detected and company_sources["fresh"] == 0 and company_sources["total"] > 0:
         key_risks.append("Kern-Firmendaten basieren auf veralteten Quellen und sind für volatile Kennzahlen nicht belastbar.")
         next_steps.append("Vor dem Termin frische Primärquellen für Umsatz, Profitabilität und aktuelle Ereignisse prüfen.")
-    if industry_sources["fresh"] == 0:
+    if industry_issue_detected and industry_sources["fresh"] == 0:
         key_risks.append("Markt- und Nachfragesignale sind nicht aktuell genug für belastbare Schlüsse.")
         next_steps.append("Aktuelle Branchenreports oder Primärdaten zur Nachfrage- und Überkapazitätslage nachrecherchieren.")
     if buyer_strength["severity"] > 0:
@@ -638,17 +1286,23 @@ def _apply_quality_guardrails(data: dict[str, Any]) -> None:
         if summary:
             synthesis["buyer_market_summary"] = f"{summary} Evidenzseitig ist das Käufernetzwerk derzeit nur eingeschränkt belastbar."
 
+    combined_gap_details = _dedupe_gap_details(gap_details + derived_gap_details)
+    gaps.extend(_gap_details_to_open_gaps(combined_gap_details))
+    recommendations.extend(_gap_details_to_recommendations(combined_gap_details))
+    quality["gap_details"] = combined_gap_details
     quality["open_gaps"] = _dedupe_strings(gaps)
     quality["recommendations"] = _dedupe_strings(recommendations)
     synthesis["key_risks"] = _dedupe_strings(key_risks)
     synthesis["next_steps"] = _dedupe_strings(next_steps)
-    quality["evidence_health"] = _merge_evidence_health(quality.get("evidence_health", "n/v"), severity)
+    quality["evidence_health"] = _merge_evidence_health(
+        quality.get("evidence_health", "n/v"),
+        _gap_detail_severity_score(combined_gap_details),
+    )
 
 
 def _enforce_buyer_evidence(market: dict[str, Any]) -> dict[str, Any]:
     severity = 0
-    gaps: list[str] = []
-    recommendations: list[str] = []
+    gap_details: list[dict[str, str]] = []
     strong_buyers = 0
     total_buyers = 0
 
@@ -669,14 +1323,30 @@ def _enforce_buyer_evidence(market: dict[str, Any]) -> dict[str, Any]:
 
         if companies and tier_source_info["total"] == 0:
             severity += 1
-            gaps.append(f"MarketNetwork: {label} enthält Käufer ohne tierweite Quellen.")
-            recommendations.append(f"MarketNetwork: {label} mit konkreten Quellen oder direkter Buyer-Evidenz belegen.")
+            gap_details.append(
+                _make_gap_detail(
+                    agent="MarketNetwork",
+                    field_path=f"{tier_name}.sources",
+                    issue_type="missing_tier_sources",
+                    severity="minor",
+                    summary=f"{label} enthält Käufer ohne tierweite Quellen.",
+                    recommendation=f"MarketNetwork: {label} mit konkreten Quellen oder direkter Buyer-Evidenz belegen.",
+                )
+            )
         elif companies and tier_source_info["fresh"] == 0:
             severity += 1
-            gaps.append(f"MarketNetwork: {label} basiert auf veralteten Quellen.")
-            recommendations.append(f"MarketNetwork: {label} mit frischer Buyer-Evidenz aktualisieren.")
+            gap_details.append(
+                _make_gap_detail(
+                    agent="MarketNetwork",
+                    field_path=f"{tier_name}.sources",
+                    issue_type="stale_tier_sources",
+                    severity="minor",
+                    summary=f"{label} basiert auf veralteten Quellen.",
+                    recommendation=f"MarketNetwork: {label} mit frischer Buyer-Evidenz aktualisieren.",
+                )
+            )
 
-        for buyer in companies:
+        for index, buyer in enumerate(companies):
             if not isinstance(buyer, dict):
                 continue
             total_buyers += 1
@@ -685,6 +1355,16 @@ def _enforce_buyer_evidence(market: dict[str, Any]) -> dict[str, Any]:
             has_usable_source = (buyer_source_info["fresh"] > 0) or (tier_source_info["fresh"] > 0)
             if buyer.get("evidence_tier") in {"qualified", "verified"} and not has_usable_source:
                 buyer["evidence_tier"] = "candidate"
+                gap_details.append(
+                    _make_gap_detail(
+                        agent="MarketNetwork",
+                        field_path=f"{tier_name}.companies[{index}]",
+                        issue_type="unsupported_buyer_evidence",
+                        severity="significant",
+                        summary=f"{label}: {buyer.get('name', 'Buyer')} hatte kein belastbares Quellenfundament für qualifizierte oder verifizierte Evidenz.",
+                        recommendation=f"MarketNetwork: {buyer.get('name', 'Buyer')} nur mit konkreter Buyer-Quelle qualifizieren oder verifizieren.",
+                    )
+                )
             if buyer.get("evidence_tier") in {"qualified", "verified"}:
                 strong_buyers += 1
 
@@ -692,26 +1372,305 @@ def _enforce_buyer_evidence(market: dict[str, Any]) -> dict[str, Any]:
     downstream_count = len(market.get("downstream_buyers", {}).get("companies", [])) if isinstance(market.get("downstream_buyers"), dict) else 0
     if peer_count == 0:
         severity += 1
-        gaps.append("MarketNetwork: Keine belastbaren Peer-Competitors identifiziert.")
-        recommendations.append("MarketNetwork: Wettbewerber mit ähnlichen Produkten und konkreten Überschneidungen ergänzen.")
+        gap_details.append(
+            _make_gap_detail(
+                agent="MarketNetwork",
+                field_path="peer_competitors.companies",
+                issue_type="missing_peer_competitors",
+                severity="significant",
+                summary="Keine belastbaren Peer-Competitors identifiziert.",
+                recommendation="MarketNetwork: Wettbewerber mit ähnlichen Produkten und konkreten Überschneidungen ergänzen.",
+            )
+        )
     if downstream_count == 0:
         severity += 1
-        gaps.append("MarketNetwork: Keine belastbaren Downstream-Buyer identifiziert.")
-        recommendations.append("MarketNetwork: Abnehmer oder Aftermarket-Käufer mit klarer Produktpassung ergänzen.")
+        gap_details.append(
+            _make_gap_detail(
+                agent="MarketNetwork",
+                field_path="downstream_buyers.companies",
+                issue_type="missing_downstream_buyers",
+                severity="significant",
+                summary="Keine belastbaren Downstream-Buyer identifiziert.",
+                recommendation="MarketNetwork: Abnehmer oder Aftermarket-Käufer mit klarer Produktpassung ergänzen.",
+            )
+        )
     if total_buyers > 0 and strong_buyers == 0:
         severity += 2
-        gaps.append("MarketNetwork: Buyer-Liste ist komplett kandidat-basiert und nicht belastbar.")
-        recommendations.append("MarketNetwork: Mindestens einige Buyer mit qualifizierter oder verifizierter Evidenz absichern.")
+        gap_details.append(
+            _make_gap_detail(
+                agent="MarketNetwork",
+                field_path="*",
+                issue_type="candidate_only_buyer_network",
+                severity="critical",
+                summary="Buyer-Liste ist komplett kandidat-basiert und nicht belastbar.",
+                recommendation="MarketNetwork: Mindestens einige Buyer mit qualifizierter oder verifizierter Evidenz absichern.",
+            )
+        )
     elif total_buyers > 0 and strong_buyers < max(2, total_buyers // 2):
         severity += 1
-        gaps.append("MarketNetwork: Buyer-Liste ist überwiegend kandidat-lastig.")
-        recommendations.append("MarketNetwork: Die wichtigsten Buyer-Tiers mit stärkerer Evidenz absichern.")
+        gap_details.append(
+            _make_gap_detail(
+                agent="MarketNetwork",
+                field_path="*",
+                issue_type="candidate_heavy_buyer_network",
+                severity="significant",
+                summary="Buyer-Liste ist überwiegend kandidat-lastig.",
+                recommendation="MarketNetwork: Die wichtigsten Buyer-Tiers mit stärkerer Evidenz absichern.",
+            )
+        )
 
     return {
         "severity": severity,
-        "gaps": gaps,
-        "recommendations": recommendations,
+        "gap_details": gap_details,
     }
+
+
+def _enforce_stage_contracts(
+    profile: dict[str, Any],
+    industry: dict[str, Any],
+    market: dict[str, Any],
+) -> list[dict[str, str]]:
+    gap_details: list[dict[str, str]] = []
+
+    if profile:
+        key_people = profile.get("key_people", [])
+        if isinstance(key_people, list):
+            sanitized_people = []
+            removed_placeholder = False
+            for person in key_people:
+                if not isinstance(person, dict):
+                    continue
+                name = str(person.get("name", "") or "").strip().lower()
+                role = str(person.get("role", "") or "").strip().lower()
+                if name in {"", "n/v"} and role in {"", "n/v"}:
+                    removed_placeholder = True
+                    continue
+                sanitized_people.append(person)
+            if removed_placeholder:
+                profile["key_people"] = sanitized_people
+                gap_details.append(
+                    _make_gap_detail(
+                        agent="CompanyIntelligence",
+                        field_path="key_people",
+                        issue_type="placeholder_key_people",
+                        severity="minor",
+                        summary="Nicht verifizierbare Platzhalter in key_people wurden entfernt; ohne Evidenz bleibt das Feld leer.",
+                        recommendation="CompanyIntelligence: key_people nur mit echten Namen und Rollen befüllen, sonst leere Liste zurückgeben.",
+                    )
+                )
+
+        gap_details.extend(
+            _validate_source_records(
+                agent="CompanyIntelligence",
+                field_path="sources",
+                sources=profile.get("sources", []),
+            )
+        )
+
+    if industry:
+        min_sources = STAGE_CONTRACTS["industry_analysis"]["min_sources"]
+        industry_sources = _as_list(industry.get("sources", []))
+        if len([source for source in industry_sources if isinstance(source, dict) and str(source.get("url", "") or "").strip()]) < min_sources:
+            assessment = str(industry.get("assessment", "") or "")
+            if not _assessment_explicitly_states_absence(assessment):
+                gap_details.append(
+                    _make_gap_detail(
+                        agent="StrategicSignals",
+                        field_path="assessment",
+                        issue_type="missing_no_evidence_statement",
+                        severity="significant",
+                        summary="Branchenanalyse ohne Quellen muss im assessment explizit sagen, dass keine belastbaren Marktquellen gefunden wurden.",
+                        recommendation="StrategicSignals: Bei leeren sources im assessment die fehlende Marktevidenz ausdrücklich benennen.",
+                    )
+                )
+        gap_details.extend(
+            _validate_source_records(
+                agent="StrategicSignals",
+                field_path="sources",
+                sources=industry.get("sources", []),
+            )
+        )
+
+    if market:
+        for tier_name, label in (
+            ("peer_competitors", "Peer Competitors"),
+            ("downstream_buyers", "Downstream Buyers"),
+            ("service_providers", "Service Providers"),
+            ("cross_industry_buyers", "Cross-Industry Buyers"),
+        ):
+            tier = market.get(tier_name, {})
+            if not isinstance(tier, dict):
+                continue
+            companies = tier.get("companies", [])
+            if isinstance(companies, list) and not companies:
+                assessment = str(tier.get("assessment", "") or "")
+                if not _assessment_explicitly_states_absence(assessment):
+                    gap_details.append(
+                        _make_gap_detail(
+                            agent="MarketNetwork",
+                            field_path=f"{tier_name}.assessment",
+                            issue_type="missing_empty_tier_explanation",
+                            severity="minor",
+                            summary=f"{label} ist leer, aber die Assessment-Begründung benennt die fehlende Evidenz nicht klar.",
+                            recommendation=f"MarketNetwork: Bei leerem Tier in {label} explizit 'no credible evidence found' oder gleichwertig formulieren.",
+                        )
+                    )
+            gap_details.extend(
+                _validate_source_records(
+                    agent="MarketNetwork",
+                    field_path=f"{tier_name}.sources",
+                    sources=tier.get("sources", []),
+                )
+            )
+            for index, buyer in enumerate(_as_list(companies)):
+                if not isinstance(buyer, dict):
+                    continue
+                buyer_source = buyer.get("source")
+                if buyer_source:
+                    gap_details.extend(
+                        _validate_source_records(
+                            agent="MarketNetwork",
+                            field_path=f"{tier_name}.companies[{index}].source",
+                            sources=[buyer_source],
+                        )
+                    )
+    return gap_details
+
+
+def _validate_source_records(
+    *,
+    agent: str,
+    field_path: str,
+    sources: Any,
+) -> list[dict[str, str]]:
+    gap_details: list[dict[str, str]] = []
+    for index, source in enumerate(_as_list(sources)):
+        if not isinstance(source, dict):
+            continue
+        url = str(source.get("url", "") or "").strip()
+        publisher = str(source.get("publisher", "") or "").strip()
+        title = str(source.get("title", "") or "").strip()
+        accessed = str(source.get("accessed", "") or "").strip()
+        missing_parts = [
+            label
+            for label, value in (
+                ("url", url),
+                ("publisher", publisher),
+                ("title", title),
+                ("accessed", accessed),
+            )
+            if not value
+        ]
+        if not missing_parts:
+            continue
+        gap_details.append(
+            _make_gap_detail(
+                agent=agent,
+                field_path=f"{field_path}[{index}]",
+                issue_type="incomplete_source_metadata",
+                severity="minor",
+                summary=f"Quelle in {field_path} ist unvollständig: es fehlen {', '.join(missing_parts)}.",
+                recommendation=f"{agent}: Quellenmetadaten vollständig mit publisher, url, title und accessed ausgeben.",
+            )
+        )
+    return gap_details
+
+
+def _assessment_explicitly_states_absence(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    markers = (
+        "no ",
+        "not found",
+        "no credible",
+        "no specific",
+        "no verified",
+        "keine ",
+        "nicht gefunden",
+        "nicht verifiziert",
+        "ohne ",
+        "absence of",
+        "insufficient evidence",
+        "lack of",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _is_nv(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized in {"", "n/v", "na", "n.a.", "none", "null", "unknown", "unklar"}
+
+
+def _count_market_buyers(market: dict[str, Any]) -> int:
+    total = 0
+    for tier_name in (
+        "peer_competitors",
+        "downstream_buyers",
+        "service_providers",
+        "cross_industry_buyers",
+    ):
+        tier = market.get(tier_name, {})
+        if not isinstance(tier, dict):
+            continue
+        companies = tier.get("companies", [])
+        if isinstance(companies, list):
+            total += len(companies)
+    return total
+
+
+def _sources_are_company_only(sources: list[Any], profile: dict[str, Any]) -> bool:
+    if not sources:
+        return False
+    website = str(profile.get("website", "") or "").strip()
+    company_host = _host_for_url(website)
+    if not company_host:
+        return False
+    company_host = company_host.removeprefix("www.")
+    for source in sources:
+        if not isinstance(source, dict):
+            return False
+        source_host = _host_for_url(str(source.get("url", "") or "").strip()).removeprefix("www.")
+        if not source_host:
+            return False
+        if source_host == company_host or source_host.endswith(f".{company_host}"):
+            continue
+        return False
+    return True
+
+
+def _sources_lack_external_market_evidence(sources: list[Any], profile: dict[str, Any]) -> bool:
+    if not sources:
+        return False
+    website = str(profile.get("website", "") or "").strip()
+    company_host = _host_for_url(website).removeprefix("www.")
+    if not company_host:
+        return False
+    saw_source = False
+    for source in sources:
+        if not isinstance(source, dict):
+            return False
+        source_host = _host_for_url(str(source.get("url", "") or "").strip()).removeprefix("www.")
+        if not source_host:
+            return False
+        saw_source = True
+        if source_host.endswith("wikipedia.org"):
+            continue
+        if source_host == company_host or source_host.endswith(f".{company_host}"):
+            continue
+        return False
+    return saw_source
+
+
+def _host_for_url(url: str) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    candidate = text if "://" in text else f"https://{text}"
+    try:
+        return urlparse(candidate).netloc.strip().lower()
+    except ValueError:
+        return ""
 
 
 def _analyze_sources(sources: Any, max_age_days: int) -> dict[str, int]:
@@ -719,11 +1678,16 @@ def _analyze_sources(sources: Any, max_age_days: int) -> dict[str, int]:
     fresh = 0
     stale = 0
     undated = 0
+    unusable = 0
 
     for source in _as_list(sources):
         if not isinstance(source, dict):
             continue
         total += 1
+        url = str(source.get("url", "") or "").strip()
+        if _is_google_news_wrapper_source(url):
+            unusable += 1
+            continue
         parsed = _parse_accessed_date(source.get("accessed", ""))
         if parsed is None:
             undated += 1
@@ -739,6 +1703,7 @@ def _analyze_sources(sources: Any, max_age_days: int) -> dict[str, int]:
         "fresh": fresh,
         "stale": stale,
         "undated": undated,
+        "unusable": unusable,
     }
 
 
@@ -759,6 +1724,18 @@ def _parse_accessed_date(value: Any):
         except ValueError:
             continue
     return None
+
+
+def _is_google_news_wrapper_source(url: str) -> bool:
+    normalized = str(url or "").strip()
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    return host == "news.google.com" and (
+        path.startswith("/rss/articles") or path.startswith("/articles") or path.startswith("/read")
+    )
 
 
 def _merge_evidence_health(current: str, severity: int) -> str:
@@ -788,6 +1765,113 @@ def _merge_evidence_health(current: str, severity: int) -> str:
         0: "n/v",
     }
     return label_by_rank[target_rank]
+
+
+def _make_gap_detail(
+    *,
+    agent: str,
+    field_path: str,
+    issue_type: str,
+    severity: str,
+    summary: str,
+    recommendation: str = "",
+) -> dict[str, str]:
+    normalized_severity = str(severity or "significant").strip().lower()
+    if normalized_severity not in {"critical", "significant", "minor"}:
+        normalized_severity = "significant"
+    return {
+        "agent": agent,
+        "field_path": field_path,
+        "issue_type": issue_type,
+        "severity": normalized_severity,
+        "summary": summary,
+        "recommendation": recommendation,
+    }
+
+
+def _normalize_gap_details(details: Any) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for detail in _as_list(details):
+        if not isinstance(detail, dict):
+            continue
+        summary = str(detail.get("summary", "") or "").strip()
+        if not summary:
+            continue
+        normalized.append(
+            _make_gap_detail(
+                agent=str(detail.get("agent", "EvidenceQA") or "EvidenceQA"),
+                field_path=str(detail.get("field_path", "") or ""),
+                issue_type=str(detail.get("issue_type", "qa_gap") or "qa_gap"),
+                severity=str(detail.get("severity", "significant") or "significant"),
+                summary=summary,
+                recommendation=str(detail.get("recommendation", "") or ""),
+            )
+        )
+    return normalized
+
+
+def _dedupe_gap_details(details: list[dict[str, str]]) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str, str, str, str]] = set()
+    for detail in details:
+        key = (
+            str(detail.get("agent", "")),
+            str(detail.get("field_path", "")),
+            str(detail.get("issue_type", "")),
+            str(detail.get("severity", "")),
+            str(detail.get("summary", "")),
+            str(detail.get("recommendation", "")),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(detail)
+    return deduped
+
+
+def _gap_details_to_open_gaps(details: list[dict[str, str]]) -> list[str]:
+    gaps: list[str] = []
+    for detail in details:
+        severity = str(detail.get("severity", "")).lower()
+        if severity == "minor":
+            continue
+        agent = str(detail.get("agent", "")).strip()
+        field_path = str(detail.get("field_path", "")).strip()
+        summary = str(detail.get("summary", "")).strip()
+        if not summary:
+            continue
+        prefix = agent
+        if field_path and field_path != "*":
+            prefix = f"{prefix} ({field_path})"
+        gaps.append(f"{prefix}: {summary}" if prefix else summary)
+    return gaps
+
+
+def _gap_details_to_recommendations(details: list[dict[str, str]]) -> list[str]:
+    recommendations: list[str] = []
+    for detail in details:
+        severity = str(detail.get("severity", "")).lower()
+        if severity == "minor":
+            continue
+        recommendation = str(detail.get("recommendation", "")).strip()
+        if recommendation:
+            recommendations.append(recommendation)
+    return recommendations
+
+
+def _gap_detail_severity_score(details: list[dict[str, str]]) -> int:
+    critical = 0
+    significant = 0
+    minor = 0
+    for detail in details:
+        severity = str(detail.get("severity", "")).lower()
+        if severity == "critical":
+            critical += 1
+        elif severity == "significant":
+            significant += 1
+        elif severity == "minor":
+            minor += 1
+    return (critical * 5) + (significant * 2) + min(minor, 2)
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

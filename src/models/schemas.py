@@ -21,10 +21,27 @@ class ConciergeOutput(BaseModel):
     observations: list[str] = Field(default_factory=list)
 
 
+class ReviewFieldIssue(BaseModel):
+    field_path: str = ""
+    issue_type: str = "validation_error"
+    summary: str
+    recommendation: str = ""
+
+
 class ReviewFeedback(BaseModel):
     approved: bool = False
     issues: list[str] = Field(default_factory=list)
     revision_instructions: list[str] = Field(default_factory=list)
+    field_issues: list[ReviewFieldIssue] = Field(default_factory=list)
+
+
+class RepairPlan(BaseModel):
+    producer_name: str
+    stage_key: str
+    primary_task: str
+    subtask_delta: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    done_when: list[str] = Field(default_factory=list)
 
 
 class EvidenceTier(str, Enum):
@@ -130,11 +147,21 @@ class MarketNetwork(BaseModel):
 
 # --- Step 5: Evidence QA ---
 
+class QAGapDetail(BaseModel):
+    agent: str
+    field_path: str = ""
+    issue_type: str
+    severity: str = "significant"
+    summary: str
+    recommendation: str = ""
+
+
 class QualityReview(BaseModel):
     validated_agents: list[str] = Field(default_factory=list)
     evidence_health: str = "n/v"
     open_gaps: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
+    gap_details: list[QAGapDetail] = Field(default_factory=list)
 
 
 # --- Step 6: Synthesis ---
