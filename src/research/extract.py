@@ -4,12 +4,23 @@ from __future__ import annotations
 import re
 
 
+# Words that appear in website chrome, not in product descriptions
+_STOPWORDS = {
+    "home", "homepage", "about", "contact", "career", "careers", "welcome",
+    "login", "register", "search", "menu", "navigation", "cookie", "cookies",
+    "privacy", "imprint", "impressum", "datenschutz", "startseite",
+    "overview", "annual", "report", "online", "news", "press", "media",
+    "figures", "facts", "development", "company", "group", "corporate",
+    "global", "international", "worldwide", "site", "page", "website",
+    "read", "more", "learn", "discover", "explore", "download",
+}
+
+
 def extract_product_keywords(text: str) -> list[str]:
     candidates = re.findall(r"\b[A-Z][a-zA-Z0-9-]{3,}\b", text or "")
     keywords: list[str] = []
     for item in candidates:
-        lowered = item.lower()
-        if lowered in {"home", "about", "contact", "career", "careers"}:
+        if item.lower() in _STOPWORDS:
             continue
         if item not in keywords:
             keywords.append(item)

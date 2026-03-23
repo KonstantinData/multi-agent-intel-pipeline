@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Callable
 
-from autogen import ConversableAgent, GroupChat, GroupChatManager, register_function
+from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
 from src.config.settings import get_openai_api_key, get_role_model_selection
 from src.domain.intake import SupervisorBrief
@@ -98,6 +98,12 @@ class SynthesisDepartmentAgent:
             system_message=self._judge_system_prompt(),
             llm_config=self._llm_config(self.judge_name),
             human_input_mode="NEVER",
+        )
+        executor_name = "SynthesisExecutor"
+        executor_ca = UserProxyAgent(
+            name=executor_name,
+            human_input_mode="NEVER",
+            code_execution_config=False,
         )
 
         # ── Tool closures ──────────────────────────────────────────────
@@ -226,21 +232,21 @@ class SynthesisDepartmentAgent:
         register_function(
             read_report_segment,
             caller=analyst_ca,
-            executor=analyst_ca,
+            executor=executor_ca,
             name="read_report_segment",
             description="Read the domain report segment from a completed department.",
         )
         register_function(
             request_department_followup,
             caller=lead_ca,
-            executor=lead_ca,
+            executor=executor_ca,
             name="request_department_followup",
             description="Send a targeted back-request to a department for clarification or strengthening.",
         )
         register_function(
             finalize_synthesis,
             caller=lead_ca,
-            executor=lead_ca,
+            executor=executor_ca,
             name="finalize_synthesis",
             description="Assemble and submit the final synthesis output. Call only when all domains are integrated.",
         )
@@ -251,6 +257,7 @@ class SynthesisDepartmentAgent:
             self.analyst_name: analyst_ca,
             self.critic_name: critic_ca,
             self.judge_name: judge_ca,
+            executor_name: executor_ca,
         }
         speaker_selector = build_synthesis_selector(
             run_state=run_state,
@@ -259,9 +266,10 @@ class SynthesisDepartmentAgent:
             analyst_name=self.analyst_name,
             critic_name=self.critic_name,
             judge_name=self.judge_name,
+            executor_name=executor_name,
         )
         groupchat = GroupChat(
-            agents=[lead_ca, analyst_ca, critic_ca, judge_ca],
+            agents=[lead_ca, analyst_ca, critic_ca, judge_ca, executor_ca],
             messages=[],
             max_round=20,
             speaker_selection_method=speaker_selector,

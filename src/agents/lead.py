@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Callable, Literal
 
-from autogen import ConversableAgent, GroupChat, GroupChatManager, register_function
+from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
 from src.agents.coding_assistant import CodingAssistantAgent
 from src.orchestration.speaker_selector import build_department_selector
@@ -222,6 +222,7 @@ class DepartmentLeadAgent:
                 self.critic_name,
                 self.judge_name,
                 self.coding_name,
+                f"{self.prefix}Executor",
             ],
             "max_round": 8,
             "speaker_selection_method": "state_machine",
@@ -288,6 +289,15 @@ class DepartmentLeadAgent:
             system_message=self._coding_system_prompt(),
             llm_config=self._llm_config(self.coding_name),
             human_input_mode="NEVER",
+        )
+        # Tool executor: executes all tool calls in the GroupChat.
+        # In AG2 GroupChat, caller!=executor is required — the caller
+        # proposes the tool call (via LLM), the executor runs it.
+        executor_name = f"{self.prefix}Executor"
+        executor_ca = UserProxyAgent(
+            name=executor_name,
+            human_input_mode="NEVER",
+            code_execution_config=False,
         )
 
         # ── Tool closures ──────────────────────────────────────────────────
@@ -563,10 +573,12 @@ class DepartmentLeadAgent:
             return "PACKAGE_READY\nTERMINATE"
 
         # ── Register tools with AG2 ────────────────────────────────────────
+        # caller = agent whose LLM proposes the tool call
+        # executor = agent that runs the function (always executor_ca)
         register_function(
             run_research,
             caller=researcher_ca,
-            executor=researcher_ca,
+            executor=executor_ca,
             name="run_research",
             description=(
                 "Run web research for a given task_key. "
@@ -576,7 +588,7 @@ class DepartmentLeadAgent:
         register_function(
             review_research,
             caller=critic_ca,
-            executor=critic_ca,
+            executor=executor_ca,
             name="review_research",
             description=(
                 "Review the research result for a given task_key. "
@@ -586,7 +598,7 @@ class DepartmentLeadAgent:
         register_function(
             request_supervisor_revision,
             caller=lead_ca,
-            executor=lead_ca,
+            executor=executor_ca,
             name="request_supervisor_revision",
             description=(
                 "Ask the Supervisor whether to retry the task or accept conservative output. "
@@ -596,7 +608,7 @@ class DepartmentLeadAgent:
         register_function(
             suggest_refined_queries,
             caller=coding_ca,
-            executor=coding_ca,
+            executor=executor_ca,
             name="suggest_refined_queries",
             description=(
                 "Suggest refined search queries to unblock a stuck research task. "
@@ -606,7 +618,7 @@ class DepartmentLeadAgent:
         register_function(
             judge_decision,
             caller=judge_ca,
-            executor=judge_ca,
+            executor=executor_ca,
             name="judge_decision",
             description=(
                 "Make a final edge-case decision when retries are exhausted. "
@@ -616,7 +628,7 @@ class DepartmentLeadAgent:
         register_function(
             finalize_package,
             caller=lead_ca,
-            executor=lead_ca,
+            executor=executor_ca,
             name="finalize_package",
             description=(
                 "Assemble and submit the completed domain package. "
@@ -631,6 +643,7 @@ class DepartmentLeadAgent:
             self.critic_name: critic_ca,
             self.judge_name: judge_ca,
             self.coding_name: coding_ca,
+            executor_name: executor_ca,
         }
         speaker_selector = build_department_selector(
             run_state=run_state,
@@ -640,9 +653,10 @@ class DepartmentLeadAgent:
             critic_name=self.critic_name,
             judge_name=self.judge_name,
             coding_name=self.coding_name,
+            executor_name=executor_name,
         )
         groupchat = GroupChat(
-            agents=[lead_ca, researcher_ca, critic_ca, judge_ca, coding_ca],
+            agents=[lead_ca, researcher_ca, critic_ca, judge_ca, coding_ca, executor_ca],
             messages=[],
             max_round=len(assignments) * 15,
             speaker_selection_method=speaker_selector,

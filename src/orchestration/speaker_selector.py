@@ -43,6 +43,7 @@ def build_department_selector(
     critic_name: str,
     judge_name: str,
     coding_name: str,
+    executor_name: str = "",
 ):
     """Return a callable suitable for ``speaker_selection_method``."""
 
@@ -56,6 +57,8 @@ def build_department_selector(
         judge_name: "judge",
         coding_name: "coding",
     }
+    if executor_name:
+        name_to_role[executor_name] = "executor"
     role_to_agent = {v: agent_map[k] for k, v in name_to_role.items()}
 
     def _selector(
@@ -66,7 +69,33 @@ def build_department_selector(
         step = run_state.get("workflow_step", "start")
         last_content = ""
         if groupchat.messages:
-            last_content = str(groupchat.messages[-1].get("content", ""))
+            last_msg = groupchat.messages[-1]
+            last_content = str(last_msg.get("content", ""))
+            # If the last message contains tool_calls, route to executor
+            if last_msg.get("tool_calls") and "executor" in role_to_agent:
+                return role_to_agent["executor"]
+            # If executor just ran a tool, route back to the caller's
+            # next step based on the workflow state machine
+            if last_role == "executor":
+                # After tool execution, advance based on current step
+                if step in ("start", "research"):
+                    # run_research just executed → advance to review
+                    run_state["workflow_step"] = "review"
+                    return role_to_agent["critic"]
+                if step == "review":
+                    # review_research just executed → Lead decides
+                    run_state["workflow_step"] = "decide"
+                    return role_to_agent["lead"]
+                if step == "judge":
+                    run_state["workflow_step"] = "post_judge"
+                    return role_to_agent["lead"]
+                if step == "coding":
+                    run_state["workflow_step"] = "research"
+                    return role_to_agent["researcher"]
+                if step == "finalize":
+                    return role_to_agent["lead"]
+                # decide step: supervisor revision or finalize executed
+                return role_to_agent["lead"]
 
         # Determine next step based on current step + who just spoke
         if step == "start":
@@ -74,12 +103,12 @@ def build_department_selector(
             return role_to_agent["researcher"]
 
         if step == "research" and last_role == "researcher":
-            run_state["workflow_step"] = "review"
-            return role_to_agent["critic"]
+            # Researcher spoke (text, not tool_call) — prompt to use tool
+            return role_to_agent["researcher"]
 
         if step == "review" and last_role == "critic":
-            run_state["workflow_step"] = "decide"
-            return role_to_agent["lead"]
+            # Critic spoke (text, not tool_call) — prompt to use tool
+            return role_to_agent["critic"]
 
         if step in ("decide", "post_judge", "post_coding"):
             # Lead is deciding — parse intent from content
@@ -100,13 +129,12 @@ def build_department_selector(
             return role_to_agent["researcher"]
 
         if step == "judge" and last_role == "judge":
-            run_state["workflow_step"] = "post_judge"
-            return role_to_agent["lead"]
+            # Judge spoke text — prompt to use tool
+            return role_to_agent["judge"]
 
         if step == "coding" and last_role == "coding":
-            # After coding specialist → Researcher retries
-            run_state["workflow_step"] = "research"
-            return role_to_agent["researcher"]
+            # Coding spoke text — prompt to use tool
+            return role_to_agent["coding"]
 
         # Safety: return Lead for any unhandled state
         run_state["workflow_step"] = "decide"
@@ -125,6 +153,7 @@ def build_synthesis_selector(
     analyst_name: str,
     critic_name: str,
     judge_name: str,
+    executor_name: str = "",
 ):
     """Return a callable suitable for ``speaker_selection_method``."""
 
@@ -136,6 +165,8 @@ def build_synthesis_selector(
         critic_name: "critic",
         judge_name: "judge",
     }
+    if executor_name:
+        name_to_role[executor_name] = "executor"
     role_to_agent = {v: agent_map[k] for k, v in name_to_role.items()}
 
     def _selector(
@@ -146,7 +177,24 @@ def build_synthesis_selector(
         step = run_state.get("synthesis_step", "start")
         last_content = ""
         if groupchat.messages:
-            last_content = str(groupchat.messages[-1].get("content", ""))
+            last_msg = groupchat.messages[-1]
+            last_content = str(last_msg.get("content", ""))
+            # If the last message contains tool_calls, route to executor
+            if last_msg.get("tool_calls") and "executor" in role_to_agent:
+                return role_to_agent["executor"]
+            # After executor runs a tool, route based on workflow state
+            if last_role == "executor":
+                if step == "read":
+                    # read_report_segment executed → analyst continues or critic reviews
+                    return role_to_agent["analyst"]
+                if step == "back_request":
+                    run_state["synthesis_step"] = "read"
+                    return role_to_agent["analyst"]
+                if step == "finalize":
+                    return role_to_agent["lead"]
+                if step == "decide":
+                    return role_to_agent["lead"]
+                return role_to_agent["lead"]
 
         if step == "start":
             run_state["synthesis_step"] = "read"
