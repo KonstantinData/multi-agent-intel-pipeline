@@ -15,7 +15,7 @@ Status legend: `[ ]` open · `[~]` in progress · `[x]` done
 - [ ] Extend `SynthesisDepartmentAgent` to receive the context payload and produce a complete `Synthesis`-schema-compliant output
 - [ ] Update `finalize_synthesis()` tool contract to require all fields of the `Synthesis` Pydantic model
 - [ ] Remove the manual merge in `pipeline_runner.py` (lines 96–103) that patches AG2 output into rule-based output
-- [ ] Add degraded fallback: if AG2 synthesis hits `max_round`, use `build_synthesis_context()` output directly with `confidence: "degraded"` marker
+- [ ] Add fallback path: if AG2 synthesis hits `max_round`, use `build_synthesis_context()` output directly with `generation_mode: "fallback"` — confidence is derived from input package strength, not hardcoded
 - [ ] Ensure a single, traceable synthesis path from department packages → final synthesis payload
 
 ### Non-Deterministic GroupChat Control
@@ -58,7 +58,7 @@ Final task-contract shape:
 - [ ] Add `depends_on` per task (e.g., `contact_discovery` depends on `peer_companies` + `monetization_redeployment`)
 - [ ] Add `run_condition` for conditional tasks: `contact_discovery` → `"buyer_department_has_prioritized_firms"`, `contact_qualification` → `"contact_discovery_completed"`
 - [ ] Add `input_artifacts` per task to make data-flow explicit (e.g., `contact_discovery` consumes `["MarketNetwork"]`)
-- [ ] Add `output_schema_key` per task pointing to a task-specific Pydantic sub-schema (requires schema refactor — see P2)
+- [ ] Add `output_schema_key` per task pointing to a task-specific Pydantic sub-schema (**blocked by P2 sub-schema extraction** — must be done first or in parallel)
 - [ ] Add `validation_rules` per task with `class: "core" | "supporting"` per rule
 - [ ] Make `industry_hint` an explicit input-contract field per Assignment, not an implicitly inferred value passed loosely through `run_state`
 - [ ] Update `task_router.py` to evaluate `depends_on` and `run_condition` before building assignments
@@ -72,6 +72,40 @@ Final task-contract shape:
 ---
 
 ## P1 — Quality & Correctness (directly affects output quality)
+
+### Canonical Status & Confidence Vocabulary
+Before implementing Critic/Judge changes, establish the shared vocabulary:
+
+Task status (mutually exclusive):
+- `accepted` — all `core` rules passed, evidence sufficient
+- `degraded` — partial `core` evidence, usable with caveats
+- `skipped` — `run_condition` not met, task was never executed
+- `rejected` — task ran but produced no usable `core` evidence
+
+Note: `conservative` (current codebase) is replaced by `degraded` or
+`rejected` depending on whether any core evidence exists.
+All references in `lead.py`, `pipeline_runner.py`, `DepartmentTaskResult`,
+and UI must be migrated.
+
+`skipped` vs `rejected` distinction:
+- `skipped`: task did not run (e.g., Contact tasks when Buyer has no firms) — not a quality failure, just not applicable
+- `rejected`: task ran, Judge found zero core evidence — a real quality failure that should be visible in reporting
+
+Confidence scale (applies to packages and synthesis):
+- `high` / `medium` / `low`
+
+Generation mode (applies to synthesis only):
+- `normal` — produced by AG2 SynthesisDepartment
+- `fallback` — produced by `build_synthesis_context()` on AG2 timeout
+
+Confidence and generation mode are orthogonal. A `fallback` synthesis
+can still be `medium` confidence if the input packages were strong.
+
+- [ ] Define status (`accepted | degraded | skipped | rejected`), confidence (`high | medium | low`), and generation_mode (`normal | fallback`) as Literal types or enums in `schemas.py`
+- [ ] Migrate all `"conservative"` references to `"degraded"` or `"rejected"` across codebase
+- [ ] Add `generation_mode` field to `Synthesis` schema
+- [ ] Ensure `skipped` tasks produce no output artifact (clean absence, not empty placeholder)
+- [ ] Ensure `rejected` tasks produce a minimal artifact with `open_questions` explaining the failure
 
 ### Critic → Generic Rule Evaluator
 > **Decision E resolved**: Critic stays deterministic. No LLM. Rules come
@@ -87,20 +121,21 @@ Final task-contract shape:
 > **Decision E resolved**: Judge stays deterministic. No LLM until contracts
 > are stable. Three outcomes based on rule-class pass rates.
 
-Judge heuristic:
-- **Accept**: all `core` rules passed + at least one `supporting` rule passed
-- **Accept degraded**: at least one `core` rule passed, but not all → `confidence: "low"`, must generate `open_questions` from failed rules
-- **Reject**: no `core` rule passed → task marked `skipped`, not `conservative`
+Judge decision → task status mapping:
+- **accept** → status `accepted`: all `core` rules passed + at least one `supporting` passed
+- **accept_degraded** → status `degraded`: at least one `core` rule passed, but not all → `confidence: "low"`, must generate `open_questions` from failed rules
+- **reject** → status `rejected`: no `core` rule passed
 
-`accept_degraded` downstream semantics:
+`degraded` downstream semantics:
 - Output flows into synthesis with `confidence: "low"`
 - Failed rules become `open_questions` in the department package
 - Downstream tasks may consume the artifact but synthesis must flag the weakness
 
 - [ ] Implement three-outcome `JudgeAgent.decide()` reading `validation_rules` with `class` from the task contract
 - [ ] Replace current no-op logic (`accept_conservative_output: True` always) with class-aware heuristic
-- [ ] Add `skipped` as valid task status alongside `accepted` and `conservative`
-- [ ] Ensure `accept_degraded` packages carry `open_questions` derived from failed rules
+- [ ] Map judge decisions to canonical task statuses: `accept→accepted`, `accept_degraded→degraded`, `reject→rejected`
+- [ ] `skipped` is set by the task router when `run_condition` is not met — the Judge never produces `skipped`
+- [ ] Ensure `degraded` packages carry `open_questions` derived from failed rules
 
 ### Industry Inference Is Too Narrow
 - [ ] `infer_industry()` covers only 4 keyword groups — most companies will return `"n/v"`
@@ -123,6 +158,11 @@ Judge heuristic:
 > (1) create task-specific sub-schemas so `output_schema_key` is a real type
 > contract, and (2) decide whether existing unused domain models become those
 > sub-schemas or get removed.
+>
+> **Execution dependency**: P0 Task Contract Hardening sets `output_schema_key`
+> per task, but the referenced sub-schemas must exist first. Sub-schema
+> extraction (below) must run before or in parallel with the P0 contract
+> migration — not after it.
 
 ### Task-Specific Sub-Schemas
 Current schemas are monolithic per section (e.g., `CompanyProfile` serves 3
@@ -137,6 +177,14 @@ tasks). `output_schema_key` needs a dedicated model per task.
 - [ ] Create `ContactDiscoveryResult` sub-schema from `ContactIntelligenceSection`
 - [ ] Create `ContactQualificationResult` sub-schema from `ContactIntelligenceSection`
 - [ ] Define assembly convention: how sub-schemas merge into section-level models for `PipelineData`
+
+### Schema Registry
+`output_schema_key` is a string in the task contract. To avoid drift between
+string names and actual Pydantic classes, a central registry must resolve them.
+
+- [ ] Create `src/models/registry.py` with a `SCHEMA_REGISTRY: dict[str, type[BaseModel]]` mapping `output_schema_key` strings to Pydantic classes
+- [ ] All runtime code that needs to validate or instantiate a task output resolves through the registry, not through ad-hoc imports or string matching
+- [ ] Add a startup check (in `preflight.py` or test) that verifies every `output_schema_key` in `STANDARD_TASK_BACKLOG` exists in the registry
 
 ### Unused Domain Models — Keep, Promote, or Remove?
 > Evaluate each against the new sub-schema needs. Some may map directly to
@@ -181,14 +229,23 @@ tasks). `output_schema_key` needs a dedicated model per task.
 
 ## P4 — Test Coverage Gaps
 
-- [ ] Add unit test for `CriticAgent.review()` — verify approval/rejection logic for each `TASK_POINT_RULES` entry
-- [ ] Add unit test for `JudgeAgent.decide()` — currently trivial, but should be tested before adding real logic
+### Critic & Judge (post-refactor)
+- [ ] Add unit test for `CriticAgent.review()` with `validation_rules` from contract — verify per-check-type evaluation (`non_placeholder`, `min_items`, `min_length`)
+- [ ] Add unit test verifying `core` vs `supporting` classification in Critic output
+- [ ] Add unit test for `JudgeAgent.decide()` — verify three-outcome heuristic: `accept`, `accept_degraded`, `reject` based on `core`/`supporting` pass rates
+- [ ] Add unit test verifying judge decision → task status mapping (`accepted`, `degraded`, `rejected`)
+- [ ] Add unit test verifying `skipped` is set by task router (not Judge) when `run_condition` is unmet
+
+### Routing & Follow-up
 - [ ] Add unit test for `SupervisorAgent.route_question()` — verify routing for each department keyword set
 - [ ] Add unit test for `follow_up.py::answer_follow_up()` — verify routing and answer assembly per department
+
+### Integration
 - [ ] Add integration test for a single department AG2 GroupChat run (monkeypatched LLM, real AG2 flow)
 - [ ] Add test for Contact Department end-to-end (currently zero test coverage)
 - [ ] Add test for `SynthesisDepartmentAgent.run()` with mocked department packages
 - [ ] Add test for fallback package assembly when `max_round` is hit
+- [ ] Add test verifying `run_condition` evaluation skips Contact tasks when Buyer has no prioritized firms
 
 ---
 
@@ -240,7 +297,8 @@ and `validation_rules` (with `class: core|supporting`).
 **B. AG2 SynthesisDepartment is the single authoritative synthesis path.** ✅
 `build_synthesis_from_memory()` becomes `build_synthesis_context()` —
 pre-processing input for the AG2 chat, not a parallel author.
-No merge in `pipeline_runner.py`. Degraded fallback on AG2 timeout.
+No merge in `pipeline_runner.py`. Fallback on AG2 timeout uses
+`generation_mode: "fallback"` with confidence derived from input packages.
 
 **C. Custom Speaker Selector as deterministic workflow controller.** ✅
 State-machine per GroupChat type. Department: `RESEARCH → REVIEW →
@@ -256,4 +314,5 @@ Modelled via `run_condition` in the task contract.
 Critic becomes generic rule evaluator reading `validation_rules` from
 the task contract. Judge uses three-level heuristic (accept / accept
 degraded / reject) based on `core` vs `supporting` rule-class pass rates.
+`skipped` is set by the task router, not the Judge.
 `TASK_POINT_RULES` in `critic.py` will be removed after migration.
