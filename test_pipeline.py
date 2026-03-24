@@ -1,3 +1,9 @@
+"""DEPRECATED — heavy end-to-end pipeline tests.
+
+Not yet migrated to tests/. Requires AG2 + OpenAI + reportlab.
+Run directly with: python -m pytest test_pipeline.py
+See TESTING.md for the new test structure.
+"""
 from __future__ import annotations
 
 import json

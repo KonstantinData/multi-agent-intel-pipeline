@@ -7,21 +7,30 @@ from typing import Any
 
 from openai import OpenAI
 
+from src.agents._helpers import (
+    SECTION_MODELS,
+    build_memory_context as _build_memory_context_impl,
+    coerce_contact_records as _coerce_contact_records_impl,
+    coerce_to_string as _coerce_to_string_impl,
+    coerce_string_list as _coerce_string_list_impl,
+    coerce_people as _coerce_people_impl,
+    coerce_company_records as _coerce_company_records_impl,
+    coerce_sources as _coerce_sources_impl,
+    deep_merge as _deep_merge_impl,
+    dedup_list as _dedup_list_impl,
+    normalize_contact_fields as _normalize_contact_fields_impl,
+    normalize_payload_updates as _normalize_payload_updates_impl,
+    parse_contact_from_title as _parse_contact_from_title_static,
+    pick_field as _pick_field_static,
+    salvage_valid_fields as _salvage_valid_fields_impl,
+    sanitize_for_section as _sanitize_for_section_impl,
+)
 from src.config.settings import get_llm_config, get_openai_api_key
 from src.domain.intake import SupervisorBrief
-from src.models.schemas import CompanyProfile, ContactIntelligenceSection, IndustryAnalysis, MarketNetwork
 from src.orchestration.tool_policy import tool_is_allowed
 from src.research.extract import extract_product_keywords, infer_industry, summarize_visible_text
 from src.research.fetch import fetch_website_snapshot
 from src.research.search import build_buyer_queries, build_company_queries, build_market_queries, perform_search
-
-
-SECTION_MODELS = {
-    "company_profile": CompanyProfile,
-    "industry_analysis": IndustryAnalysis,
-    "market_network": MarketNetwork,
-    "contact_intelligence": ContactIntelligenceSection,
-}
 
 
 class ResearchWorker:
@@ -283,56 +292,13 @@ class ResearchWorker:
         current_sections: dict[str, Any],
         role_memory: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
-        """Build cross-task memory context for the LLM.
-
-        Schicht 3: surfaces facts already collected by earlier tasks so the
-        LLM can reference them (e.g. peer names from company_fundamentals
-        available to peer_companies, contact roles from discovery available
-        to qualification).
-        """
-        ctx: dict[str, Any] = {}
-
-        # For peer_companies / monetization: inject company_profile facts
-        if task_key in {"peer_companies", "monetization_redeployment"}:
-            company = current_sections.get("company_profile", {})
-            if company:
-                ctx["known_products"] = company.get("products_and_services", [])
-                ctx["known_industry"] = company.get("industry", "n/v")
-                ctx["known_description"] = (company.get("description") or "")[:300]
-
-        # For contact_qualification: inject contact_discovery results
-        if task_key == "contact_qualification":
-            contacts_section = current_sections.get("contact_intelligence", {})
-            if contacts_section:
-                ctx["discovered_contacts"] = [
-                    {k: v for k, v in c.items() if v != "n/v"}
-                    for c in contacts_section.get("contacts", [])[:10]
-                ]
-
-        # For market_situation: inject any already-collected market facts
-        if task_key == "market_situation":
-            industry = current_sections.get("industry_analysis", {})
-            if industry:
-                ctx["existing_trends"] = industry.get("key_trends", [])
-                ctx["existing_assessment"] = industry.get("assessment", "")
-                ctx["existing_growth_rate"] = industry.get("growth_rate", "")
-            # Also inject company context so the LLM can anchor market
-            # analysis to the specific company's products and industry.
-            company = current_sections.get("company_profile", {})
-            if company:
-                ctx["company_industry"] = company.get("industry", "n/v")
-                ctx["company_products"] = company.get("products_and_services", [])[:5]
-                ctx["company_description"] = (company.get("description") or "")[:300]
-
-        # Inject successful queries from role memory
-        if role_memory:
-            successful_queries = []
-            for mem in role_memory[:3]:
-                successful_queries.extend(mem.get("successful_queries", [])[:5])
-            if successful_queries:
-                ctx["prior_successful_queries"] = self._dedup_list(successful_queries)[:10]
-
-        return ctx
+        """Build cross-task memory context for the LLM.  Delegates to _helpers."""
+        return _build_memory_context_impl(
+            task_key=task_key,
+            target_section=target_section,
+            current_sections=current_sections,
+            role_memory=role_memory,
+        )
 
     def _derive_research_hints(self, brief: SupervisorBrief) -> dict[str, Any]:
         industry_hint = infer_industry(
@@ -934,12 +900,7 @@ class ResearchWorker:
         return model.model_dump(mode="json")
 
     def _normalize_payload_updates(self, section: str, payload_updates: Any) -> dict[str, Any]:
-        if not isinstance(payload_updates, dict):
-            return {}
-        nested = payload_updates.get(section)
-        if isinstance(nested, dict):
-            return nested
-        return payload_updates
+        return _normalize_payload_updates_impl(section, payload_updates)
 
     def _strip_default_only_payload(self, section: str, payload: dict[str, Any]) -> dict[str, Any]:
         """P1 fix: remove fields that only contain schema defaults so the LLM
@@ -962,237 +923,37 @@ class ResearchWorker:
         return stripped
 
     def _sanitize_for_section(self, section: str, payload: dict[str, Any]) -> dict[str, Any]:
-        cleaned = self._deep_merge({}, payload)
-        if section == "company_profile":
-            # Schicht 1: coerce scalar string fields BEFORE Pydantic sees them.
-            # Prevents a single type mismatch (e.g. headquarters as dict)
-            # from blowing up the entire payload validation.
-            for str_field in ("headquarters", "founded", "employees", "revenue",
-                              "legal_form", "goods_classification", "company_name",
-                              "website", "industry", "description"):
-                if str_field in cleaned:
-                    cleaned[str_field] = self._coerce_to_string(cleaned[str_field])
-            for key in ("products_and_services", "product_asset_scope"):
-                cleaned[key] = self._coerce_string_list(cleaned.get(key, []))
-            cleaned["key_people"] = self._coerce_people(cleaned.get("key_people", []))
-            cleaned["sources"] = self._coerce_sources(cleaned.get("sources", []))
-            economic = cleaned.get("economic_situation", {})
-            if isinstance(economic, dict):
-                for econ_str in ("revenue_trend", "profitability", "financial_pressure", "assessment"):
-                    if econ_str in economic:
-                        economic[econ_str] = self._coerce_to_string(economic[econ_str])
-                economic["recent_events"] = self._coerce_string_list(economic.get("recent_events", []))
-                economic["inventory_signals"] = self._coerce_string_list(economic.get("inventory_signals", []))
-                cleaned["economic_situation"] = economic
-        elif section == "industry_analysis":
-            for key in ("key_trends", "overcapacity_signals", "repurposing_signals", "analytics_signals"):
-                cleaned[key] = self._coerce_string_list(cleaned.get(key, []))
-            cleaned["sources"] = self._coerce_sources(cleaned.get("sources", []))
-        elif section == "market_network":
-            for tier_key in ("peer_competitors", "downstream_buyers", "service_providers", "cross_industry_buyers"):
-                tier = cleaned.get(tier_key, {})
-                # P3 fix: LLM returns list[dict] instead of MarketTier dict —
-                # wrap it into the expected {companies, assessment, sources} shape.
-                if isinstance(tier, list):
-                    tier = {"companies": tier, "assessment": "n/v", "sources": []}
-                if isinstance(tier, dict):
-                    tier["companies"] = self._coerce_company_records(tier.get("companies", []))
-                    tier["sources"] = self._coerce_sources(tier.get("sources", []))
-                    cleaned[tier_key] = tier
-            cleaned["monetization_paths"] = self._coerce_string_list(cleaned.get("monetization_paths", []))
-            cleaned["redeployment_paths"] = self._coerce_string_list(cleaned.get("redeployment_paths", []))
-        elif section == "contact_intelligence":
-            cleaned["contacts"] = self._coerce_contact_records(cleaned.get("contacts", []))
-            cleaned["prioritized_contacts"] = self._coerce_contact_records(cleaned.get("prioritized_contacts", []))
-            cleaned["open_questions"] = self._coerce_string_list(cleaned.get("open_questions", []))
-            cleaned["sources"] = self._coerce_sources(cleaned.get("sources", []))
-        return cleaned
+        return _sanitize_for_section_impl(section, payload)
 
     def _coerce_to_string(self, value: Any) -> str:
-        """Coerce any scalar-ish value to a plain string for Pydantic.
-
-        Handles the common LLM patterns:
-        - dict  → join values  (e.g. {"city": "X", "country": "Y"} → "X, Y")
-        - int   → str
-        - list  → join elements
-        - None  → "n/v"
-        """
-        if value is None:
-            return "n/v"
-        if isinstance(value, str):
-            return value.strip() or "n/v"
-        if isinstance(value, dict):
-            parts = [str(v).strip() for v in value.values() if v and str(v).strip()]
-            return ", ".join(parts) if parts else "n/v"
-        if isinstance(value, list):
-            parts = [str(v).strip() for v in value if v and str(v).strip()]
-            return ", ".join(parts) if parts else "n/v"
-        return str(value).strip() or "n/v"
+        return _coerce_to_string_impl(value)
 
     def _salvage_valid_fields(
         self, section: str, payload_updates: dict[str, Any],
     ) -> dict[str, Any]:
-        """Extract individually valid fields from a payload that failed bulk validation.
-
-        Tries to coerce each top-level field independently.  Fields that still
-        fail after coercion are silently dropped — the fallback synthesis will
-        provide safe defaults for them.
-        """
-        model_cls = SECTION_MODELS.get(section)
-        if not model_cls or not isinstance(payload_updates, dict):
-            return {}
-
-        salvaged: dict[str, Any] = {}
-        for key, value in payload_updates.items():
-            if value is None or value == "n/v":
-                continue
-            # Try coercion for known string fields
-            field_info = model_cls.model_fields.get(key)
-            if field_info is not None:
-                annotation = field_info.annotation
-                # Simple heuristic: if the annotation is str, coerce
-                if annotation is str or (hasattr(annotation, "__origin__") is False and annotation is str):
-                    value = self._coerce_to_string(value)
-            try:
-                # Validate just this one field against the model
-                model_cls.model_validate({key: value})
-                salvaged[key] = value
-            except Exception:
-                # Try once more with coercion
-                coerced = self._coerce_to_string(value) if isinstance(value, (dict, list, int, float)) else value
-                try:
-                    model_cls.model_validate({key: coerced})
-                    salvaged[key] = coerced
-                except Exception:
-                    pass  # genuinely unsalvageable — fallback will handle it
-        return salvaged
+        return _salvage_valid_fields_impl(section, payload_updates)
 
     def _coerce_string_list(self, items: Any) -> list[str]:
-        if not isinstance(items, list):
-            return []
-        values: list[str] = []
-        for item in items:
-            if isinstance(item, str):
-                text = item.strip()
-            elif isinstance(item, dict):
-                text = " | ".join(str(value).strip() for value in item.values() if str(value).strip())
-            else:
-                text = str(item).strip()
-            if text:
-                values.append(text)
-        return values
+        return _coerce_string_list_impl(items)
 
     def _coerce_people(self, items: Any) -> list[dict[str, str]]:
-        if not isinstance(items, list):
-            return []
-        people: list[dict[str, str]] = []
-        for item in items:
-            if isinstance(item, dict):
-                people.append(
-                    {
-                        "name": str(item.get("name", "n/v")).strip() or "n/v",
-                        "role": str(item.get("role", "n/v")).strip() or "n/v",
-                    }
-                )
-            elif isinstance(item, str) and item.strip():
-                people.append({"name": item.strip(), "role": "n/v"})
-        return people
+        return _coerce_people_impl(items)
 
     def _coerce_company_records(self, items: Any) -> list[dict[str, str]]:
-        """P2 fix: resolve multiple field-name variants for 'name'."""
-        if not isinstance(items, list):
-            return []
-        companies: list[dict[str, str]] = []
-        for item in items:
-            if isinstance(item, dict):
-                name = self._pick_field(item, ("name", "company_name", "company", "firm", "organisation", "organization"))
-                companies.append(
-                    {
-                        "name": name,
-                        "city": self._pick_field(item, ("city", "location", "headquarters")),
-                        "country": self._pick_field(item, ("country",)),
-                        "relevance": self._pick_field(item, ("relevance", "relevance_reason", "reason")),
-                    }
-                )
-            elif isinstance(item, str) and item.strip():
-                companies.append({"name": item.strip(), "city": "n/v", "country": "n/v", "relevance": "n/v"})
-        return companies
+        return _coerce_company_records_impl(items)
 
     @staticmethod
     def _pick_field(item: dict[str, Any], keys: tuple[str, ...], default: str = "n/v") -> str:
-        """Return the first non-empty, non-placeholder value from candidate keys."""
-        for k in keys:
-            v = item.get(k)
-            if v and str(v).strip() and str(v).strip() != "n/v":
-                return str(v).strip()
-        return default
+        return _pick_field_static(item, keys, default)
 
     def _coerce_contact_records(self, items: Any) -> list[dict[str, str]]:
-        if not isinstance(items, list):
-            return []
-        contacts: list[dict[str, str]] = []
-        for item in items:
-            if isinstance(item, dict):
-                contacts.append(self._normalize_contact_fields(item))
-            elif isinstance(item, str) and item.strip():
-                contacts.append({
-                    "name": item.strip(), "firma": "n/v", "rolle_titel": "n/v",
-                    "funktion": "n/v", "senioritaet": "n/v", "standort": "n/v",
-                    "quelle": "n/v", "confidence": "inferred",
-                    "relevance_reason": "n/v", "suggested_outreach_angle": "n/v",
-                })
-        return contacts
+        return _coerce_contact_records_impl(items)
 
     def _normalize_contact_fields(self, item: dict[str, Any]) -> dict[str, str]:
-        """Map common LLM field-name variants to the ContactPerson schema."""
-        def _pick(keys: tuple[str, ...], default: str = "n/v") -> str:
-            for k in keys:
-                v = item.get(k)
-                if v and str(v).strip() and str(v).strip() != "n/v":
-                    return str(v).strip()
-            return default
-
-        return {
-            "name": _pick(("name", "full_name", "person_name", "contact_name")),
-            "firma": _pick(("firma", "company", "company_name", "organization", "firm")),
-            "rolle_titel": _pick(("rolle_titel", "title", "job_title", "role", "position")),
-            "funktion": _pick(("funktion", "function", "department", "area")),
-            "senioritaet": _pick(("senioritaet", "seniority", "level", "seniority_level")),
-            "standort": _pick(("standort", "location", "city", "office")),
-            "quelle": _pick(("quelle", "source_url", "source", "url", "link")),
-            "confidence": _pick(("confidence",), "inferred"),
-            "relevance_reason": _pick(("relevance_reason", "relevance", "reason")),
-            "suggested_outreach_angle": _pick(("suggested_outreach_angle", "outreach_angle", "outreach")),
-        }
+        return _normalize_contact_fields_impl(item)
 
     def _coerce_sources(self, items: Any) -> list[dict[str, str]]:
-        if not isinstance(items, list):
-            return []
-        sources: list[dict[str, str]] = []
-        for item in items:
-            if isinstance(item, dict):
-                url = str(item.get("url", "")).strip()
-                title = str(item.get("title", "")).strip() or url or "n/v"
-                if not url:
-                    continue
-                sources.append(
-                    {
-                        "title": title,
-                        "url": url,
-                        "source_type": str(item.get("source_type", "secondary")).strip() or "secondary",
-                        "summary": str(item.get("summary", "")).strip(),
-                    }
-                )
-            elif isinstance(item, str) and item.strip():
-                sources.append(
-                    {
-                        "title": item.strip(),
-                        "url": item.strip(),
-                        "source_type": "secondary",
-                        "summary": "",
-                    }
-                )
-        return sources
+        return _coerce_sources_impl(items)
 
     def _merge_sources(self, *source_lists: list[dict[str, Any]]) -> list[dict[str, str]]:
         merged: list[dict[str, str]] = []
@@ -1221,90 +982,10 @@ class ResearchWorker:
         url: str,
         buyer_candidates: list[str] | None = None,
     ) -> dict[str, str] | None:
-        """P4 fix: extract a contact from a search result title like
-        'Tom Juedes – Managing Director | Peakstone Group'.
-        Returns None if no real person name is detected.
-
-        Bug-5 fix: when *buyer_candidates* is provided the extracted company
-        must fuzzy-match at least one candidate — otherwise the contact is
-        discarded as irrelevant.
-        """
-        # Patterns: "Name – Role | Company", "Name - Role | Company",
-        # "Name – Role, Company", "Name, Role at Company"
-        for sep in (" \u2013 ", " - ", " | "):
-            if sep in title:
-                parts = title.split(sep, 1)
-                candidate_name = parts[0].strip()
-                rest = parts[1].strip() if len(parts) > 1 else ""
-                # A real person name has at least 2 words, no common non-name patterns
-                words = candidate_name.split()
-                if (
-                    len(words) >= 2
-                    and not any(kw in candidate_name.lower() for kw in (
-                        "update", "outlook", "report", "description", "job",
-                        "homepage", "press", "news", "credit", "opinion",
-                        "automotive", "industry", "market", "forecast",
-                    ))
-                    and len(candidate_name) < 50
-                ):
-                    # Try to split rest into role and company
-                    rolle = rest
-                    firma = "n/v"
-                    for role_sep in (" | ", " at ", ", "):
-                        if role_sep in rest:
-                            role_parts = rest.split(role_sep, 1)
-                            rolle = role_parts[0].strip()
-                            firma = role_parts[1].strip()
-                            break
-
-                    # Bug-5: filter out contacts whose firm does not match
-                    # any known buyer candidate.
-                    if buyer_candidates and firma and firma != "n/v":
-                        firma_lower = firma.lower()
-                        if not any(
-                            bc.lower() in firma_lower or firma_lower in bc.lower()
-                            for bc in buyer_candidates
-                        ):
-                            return None  # irrelevant firm
-
-                    return {
-                        "name": candidate_name,
-                        "firma": firma if firma else "n/v",
-                        "rolle_titel": rolle if rolle else "n/v",
-                        "funktion": "n/v",
-                        "senioritaet": "n/v",
-                        "standort": "n/v",
-                        "quelle": url,
-                        "confidence": "inferred",
-                        "relevance_reason": "Extracted from public search result.",
-                        "suggested_outreach_angle": "n/v",
-                    }
-        return None
+        return _parse_contact_from_title_static(title, url, buyer_candidates)
 
     def _dedup_list(self, items: list) -> list:
-        """Deduplicate a list whose items may be dicts (unhashable).
-
-        Uses JSON serialization as a stable key so that both string and dict
-        items can be deduplicated without triggering 'unhashable type: dict'.
-        """
-        seen: set[str] = set()
-        result = []
-        for item in items:
-            key = (
-                json.dumps(item, sort_keys=True, ensure_ascii=False)
-                if isinstance(item, (dict, list))
-                else str(item)
-            )
-            if key not in seen:
-                seen.add(key)
-                result.append(item)
-        return result
+        return _dedup_list_impl(items)
 
     def _deep_merge(self, base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
-        merged = dict(base)
-        for key, value in updates.items():
-            if isinstance(value, dict) and isinstance(merged.get(key), dict):
-                merged[key] = self._deep_merge(merged[key], value)
-            else:
-                merged[key] = value
-        return merged
+        return _deep_merge_impl(base, updates)

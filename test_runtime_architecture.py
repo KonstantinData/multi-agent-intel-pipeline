@@ -1,4 +1,16 @@
-"""Tests for the CHG-00..CHG-10 runtime architecture refactor.
+"""DEPRECATED — migrated to tests/architecture/ and tests/integration/.
+
+This file is kept for reference only. Run `pytest tests/` instead.
+See TESTING.md for the new test structure.
+"""
+from __future__ import annotations
+
+import pytest
+pytest.skip("Migrated to tests/. Run pytest tests/ instead.", allow_module_level=True)
+
+# Original content below (unreachable due to skip above)
+"""
+Tests for the CHG-00..CHG-10 runtime architecture refactor.
 
 Covers:
 1. CHG-01: Runtime contract objects (TaskArtifact, DepartmentRunState, ...)
@@ -10,7 +22,6 @@ Covers:
 7. CHG-08: Follow-up rehydration uses run brain artifacts
 8. CHG-09: Consolidation emits only process-safe patterns (no company facts)
 """
-from __future__ import annotations
 
 import sys
 from pathlib import Path

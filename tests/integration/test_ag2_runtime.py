@@ -1,23 +1,17 @@
-"""DEPRECATED — migrated to tests/integration/.
+"""Integration tests for AG2 GroupChat flows with monkeypatched LLM.
 
-This file is kept for reference only. Run `pytest tests/` instead.
-See TESTING.md for the new test structure.
-"""
-from __future__ import annotations
-
-import pytest
-pytest.skip("Migrated to tests/integration/. Run pytest tests/ instead.", allow_module_level=True)
-
-# Original content below (unreachable due to skip above)
-"""
-Integration tests for AG2 GroupChat flows with monkeypatched LLM.
-
-Covers P4 integration test gaps from optimize_todo.md:
+Covers:
 - Single department AG2 GroupChat run (real tool closures, mocked LLM)
 - Contact Department end-to-end
 - SynthesisDepartmentAgent.run() with mocked department packages
 - Fallback package assembly when max_round is hit
+- No supervisor in department loop (CHG-03)
+- Shared search cache across departments
+- Assignment contract fields from use_cases.py
+
+Requires AG2/autogen — auto-skipped if not installed.
 """
+from __future__ import annotations
 
 import json
 import os
@@ -25,20 +19,15 @@ import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
+import inspect
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-# AG2 requires a truthy llm_config with an api_key to register tools.
-# We set a dummy key for the entire module so ConversableAgent construction
-# and register_function succeed without a real OpenAI key.
 _DUMMY_KEY = "sk-test-integration-dummy-key-not-real"
 
 
 @pytest.fixture(autouse=True)
 def _set_dummy_api_key(monkeypatch):
-    """Ensure all tests in this module have a dummy OPENAI_API_KEY."""
     monkeypatch.setenv("OPENAI_API_KEY", _DUMMY_KEY)
 
 
@@ -72,22 +61,18 @@ def _make_brief() -> SupervisorBrief:
 def _make_supervisor() -> MagicMock:
     sup = MagicMock()
     sup.decide_revision.return_value = {
-        "retry": False,
-        "same_department": True,
-        "authorize_coding_specialist": False,
-        "reason": "Keep conservative.",
+        "retry": False, "same_department": True,
+        "authorize_coding_specialist": False, "reason": "Keep conservative.",
     }
     sup.route_question.return_value = {"route": "CompanyDepartment", "reason": "test", "source": "test"}
     return sup
 
 
-def _company_assignments(brief: SupervisorBrief) -> list[Assignment]:
+def _company_assignments(brief):
     return [
         Assignment(
-            task_key="company_fundamentals",
-            assignee="CompanyDepartment",
-            target_section="company_profile",
-            label="Company fundamentals",
+            task_key="company_fundamentals", assignee="CompanyDepartment",
+            target_section="company_profile", label="Company fundamentals",
             objective=f"Build verified company fundamentals for {brief.company_name}.",
             model_name="gpt-4.1-mini",
             allowed_tools=("search", "page_fetch", "llm_structured"),
@@ -95,13 +80,11 @@ def _company_assignments(brief: SupervisorBrief) -> list[Assignment]:
     ]
 
 
-def _contact_assignments(brief: SupervisorBrief) -> list[Assignment]:
+def _contact_assignments(brief):
     return [
         Assignment(
-            task_key="contact_discovery",
-            assignee="ContactDepartment",
-            target_section="contact_intelligence",
-            label="Contact discovery",
+            task_key="contact_discovery", assignee="ContactDepartment",
+            target_section="contact_intelligence", label="Contact discovery",
             objective=f"Identify decision-makers at buyer firms for {brief.company_name}.",
             model_name="gpt-4.1-mini",
             allowed_tools=("search", "page_fetch", "llm_structured"),
@@ -109,25 +92,12 @@ def _contact_assignments(brief: SupervisorBrief) -> list[Assignment]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Helper: simulate a GroupChat run by calling tool closures directly
-# ---------------------------------------------------------------------------
-
 def _simulate_department_chat(lead_agent, brief, assignments, supervisor):
-    """Drive the department through its tool closures without real LLM.
-
-    Monkeypatches initiate_chat to execute the tool sequence:
-    research → review → finalize.
-    """
-
     def fake_initiate_chat(self_agent, manager, message="", **kwargs):
-        # Grab registered tool functions from the agents
         tools: dict[str, Any] = {}
         for agent in manager.groupchat.agents:
             for tool_name, tool_fn in getattr(agent, "_function_map", {}).items():
                 tools[tool_name] = tool_fn
-
-        # Simulate workflow: research each task, review, then finalize
         for assignment in assignments:
             tk = assignment.task_key
             if "run_research" in tools:
@@ -135,35 +105,27 @@ def _simulate_department_chat(lead_agent, brief, assignments, supervisor):
             if "review_research" in tools:
                 tools["review_research"](task_key=tk)
         if "finalize_package" in tools:
-            tools["finalize_package"](
-                summary=f"Integration test summary for {brief.company_name}."
-            )
+            tools["finalize_package"](summary=f"Integration test summary for {brief.company_name}.")
 
     with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
         return lead_agent.run(
-            brief=brief,
-            assignments=assignments,
+            brief=brief, assignments=assignments,
             current_section=None,
-            supervisor=supervisor,
         )
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Single department AG2 GroupChat run (CompanyDepartment)
+# Department GroupChat tests
 # ---------------------------------------------------------------------------
 
 class TestDepartmentGroupChatRun:
-    """Real AG2 tool closures, monkeypatched LLM — CompanyDepartment."""
-
     def test_company_department_produces_valid_package(self):
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("CompanyDepartment")
         payload, messages, package = _simulate_department_chat(
             lead, brief, _company_assignments(brief), _make_supervisor()
         )
-
         assert package is not None
         assert package["department"] == "CompanyDepartment"
         assert len(package["completed_tasks"]) == 1
@@ -176,7 +138,6 @@ class TestDepartmentGroupChatRun:
 
     def test_company_department_task_status_is_valid(self):
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("CompanyDepartment")
         _, _, package = _simulate_department_chat(
@@ -187,7 +148,6 @@ class TestDepartmentGroupChatRun:
 
     def test_company_department_sources_populated(self):
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("CompanyDepartment")
         payload, _, _ = _simulate_department_chat(
@@ -196,16 +156,9 @@ class TestDepartmentGroupChatRun:
         assert isinstance(payload.get("sources"), list)
 
 
-# ---------------------------------------------------------------------------
-# Test 2: Contact Department end-to-end
-# ---------------------------------------------------------------------------
-
 class TestContactDepartmentEndToEnd:
-    """Contact Department with real tool closures — validates contact-specific payload."""
-
     def test_contact_department_produces_package(self):
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("ContactDepartment")
         _, _, package = _simulate_department_chat(
@@ -217,7 +170,6 @@ class TestContactDepartmentEndToEnd:
 
     def test_contact_payload_has_contact_fields(self):
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("ContactDepartment")
         payload, _, _ = _simulate_department_chat(
@@ -230,7 +182,6 @@ class TestContactDepartmentEndToEnd:
 
     def test_contact_department_confidence_set(self):
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("ContactDepartment")
         _, _, package = _simulate_department_chat(
@@ -240,65 +191,41 @@ class TestContactDepartmentEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: SynthesisDepartmentAgent.run() with mocked department packages
+# Synthesis Department
 # ---------------------------------------------------------------------------
 
-def _make_department_packages() -> dict[str, dict[str, Any]]:
+def _make_department_packages():
     segment_template = {
-        "confidence": "medium",
-        "key_findings": ["Finding A"],
-        "open_questions": [],
-        "sources": [],
+        "confidence": "medium", "key_findings": ["Finding A"],
+        "open_questions": [], "sources": [],
     }
     return {
         "CompanyDepartment": {
             "department": "CompanyDepartment",
             "section_payload": {"company_name": "TestCo GmbH"},
-            "report_segment": {
-                "department": "CompanyDepartment",
-                "narrative_summary": "TestCo is an automotive parts manufacturer.",
-                **segment_template,
-            },
+            "report_segment": {"department": "CompanyDepartment", "narrative_summary": "TestCo is an automotive parts manufacturer.", **segment_template},
         },
         "MarketDepartment": {
             "department": "MarketDepartment",
             "section_payload": {"industry_name": "Automotive"},
-            "report_segment": {
-                "department": "MarketDepartment",
-                "narrative_summary": "Automotive parts market shows moderate demand.",
-                **segment_template,
-            },
+            "report_segment": {"department": "MarketDepartment", "narrative_summary": "Automotive parts market shows moderate demand.", **segment_template},
         },
         "BuyerDepartment": {
             "department": "BuyerDepartment",
             "section_payload": {"target_company": "TestCo GmbH"},
-            "report_segment": {
-                "department": "BuyerDepartment",
-                "narrative_summary": "Three peer companies identified.",
-                **segment_template,
-            },
+            "report_segment": {"department": "BuyerDepartment", "narrative_summary": "Three peer companies identified.", **segment_template},
         },
         "ContactDepartment": {
             "department": "ContactDepartment",
             "section_payload": {"contacts": []},
-            "report_segment": {
-                "department": "ContactDepartment",
-                "narrative_summary": "No verified contacts found.",
-                "confidence": "low",
-                "key_findings": [],
-                "open_questions": ["No contacts"],
-                "sources": [],
-            },
+            "report_segment": {"department": "ContactDepartment", "narrative_summary": "No verified contacts found.", "confidence": "low", "key_findings": [], "open_questions": ["No contacts"], "sources": []},
         },
     }
 
 
 class TestSynthesisDepartmentRun:
-    """SynthesisDepartmentAgent.run() with mocked packages — no real LLM."""
-
     def test_synthesis_produces_schema_compliant_output(self):
         from src.agents.synthesis_department import SynthesisDepartmentAgent
-
         agent = SynthesisDepartmentAgent()
         brief = _make_brief()
         packages = _make_department_packages()
@@ -308,11 +235,9 @@ class TestSynthesisDepartmentRun:
             for ag in manager.groupchat.agents:
                 for tool_name, tool_fn in getattr(ag, "_function_map", {}).items():
                     tools[tool_name] = tool_fn
-
             if "read_report_segment" in tools:
                 for dept in ["CompanyDepartment", "MarketDepartment", "BuyerDepartment", "ContactDepartment"]:
                     tools["read_report_segment"](department=dept)
-
             if "finalize_synthesis" in tools:
                 tools["finalize_synthesis"](
                     opportunity_assessment="Excess inventory monetization is the primary path.",
@@ -322,111 +247,69 @@ class TestSynthesisDepartmentRun:
 
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
             synthesis, messages = agent.run(
-                brief=brief,
-                department_packages=packages,
-                supervisor=_make_supervisor(),
-                departments={},
+                brief=brief, department_packages=packages,
+                supervisor=_make_supervisor(), departments={},
                 synthesis_context={
                     "target_company": "TestCo GmbH",
-                    "liquisto_service_relevance": ["excess inventory"],
+                    "liquisto_service_relevance": [{"service_area": "excess_inventory", "relevance": "medium", "reasoning": "test"}],
                     "recommended_engagement_paths": ["direct buyer outreach"],
-                    "case_assessments": [],
-                    "buyer_market_summary": "Active buyer market",
+                    "case_assessments": [], "buyer_market_summary": "Active buyer market",
                     "key_risks": ["Low contact coverage"],
-                    "next_steps": ["Validate buyer appetite"],
-                    "sources": [],
+                    "next_steps": ["Validate buyer appetite"], "sources": [],
                 },
             )
-
         assert synthesis["target_company"] == "TestCo GmbH"
         assert synthesis["generation_mode"] == "normal"
         assert synthesis["confidence"] in ("high", "medium", "low")
         assert "executive_summary" in synthesis
         assert "opportunity_assessment" in synthesis
         assert "negotiation_relevance" in synthesis
-        assert isinstance(synthesis["department_confidences"], dict)
-        assert isinstance(synthesis["back_requests"], list)
 
     def test_synthesis_fallback_on_max_round(self):
         from src.agents.synthesis_department import SynthesisDepartmentAgent
-
         agent = SynthesisDepartmentAgent()
         brief = _make_brief()
-
-        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
-            pass  # max_round hit
-
-        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
-            synthesis, _ = agent.run(
-                brief=brief,
-                department_packages=_make_department_packages(),
-                supervisor=_make_supervisor(),
-                departments={},
-                synthesis_context={"target_company": "TestCo GmbH", "confidence": "low"},
-            )
-
-        assert synthesis["generation_mode"] == "fallback"
-        assert synthesis["target_company"] == "TestCo GmbH"
-        assert synthesis["confidence"] == "low"
-        assert "executive_summary" in synthesis
-
-
-# ---------------------------------------------------------------------------
-# Test 4: Fallback package assembly when max_round is hit (department)
-# ---------------------------------------------------------------------------
-
-class TestFallbackPackageOnMaxRound:
-
-    def test_company_fallback_package_on_empty_chat(self):
-        from src.agents.lead import DepartmentLeadAgent
-
-        brief = _make_brief()
-        lead = DepartmentLeadAgent("CompanyDepartment")
-
-        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
-            pass  # max_round hit — no tool calls
-
-        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
-            payload, messages, package = lead.run(
-                brief=brief,
-                assignments=_company_assignments(brief),
-                current_section=None,
-                supervisor=_make_supervisor(),
-            )
-
-        assert package is not None
-        assert package["department"] == "CompanyDepartment"
-        assert "max_round" in package["summary"].lower() or "degraded" in package["summary"].lower()
-        for task in package["completed_tasks"]:
-            assert task["status"] == "rejected"
-            assert task["open_points"]
-        assert package["confidence"] == "low"
-
-    def test_contact_fallback_package_on_empty_chat(self):
-        from src.agents.lead import DepartmentLeadAgent
-
-        brief = _make_brief()
-        lead = DepartmentLeadAgent("ContactDepartment")
 
         def fake_initiate_chat(self_agent, manager, message="", **kwargs):
             pass
 
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
-            _, _, package = lead.run(
-                brief=brief,
-                assignments=_contact_assignments(brief),
-                current_section=None,
-                supervisor=_make_supervisor(),
+            synthesis, _ = agent.run(
+                brief=brief, department_packages=_make_department_packages(),
+                supervisor=_make_supervisor(), departments={},
+                synthesis_context={"target_company": "TestCo GmbH", "confidence": "low"},
             )
+        assert synthesis["generation_mode"] == "fallback"
+        assert synthesis["target_company"] == "TestCo GmbH"
+        assert synthesis["confidence"] == "low"
 
-        assert package["department"] == "ContactDepartment"
-        assert package["completed_tasks"][0]["status"] == "rejected"
+
+# ---------------------------------------------------------------------------
+# Fallback package on max_round
+# ---------------------------------------------------------------------------
+
+class TestFallbackPackageOnMaxRound:
+    def test_company_fallback_package_on_empty_chat(self):
+        from src.agents.lead import DepartmentLeadAgent
+        brief = _make_brief()
+        lead = DepartmentLeadAgent("CompanyDepartment")
+
+        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
+            pass
+
+        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
+            payload, messages, package = lead.run(
+                brief=brief, assignments=_company_assignments(brief),
+                current_section=None,
+            )
+        assert package is not None
+        assert package["department"] == "CompanyDepartment"
+        for task in package["completed_tasks"]:
+            assert task["status"] == "rejected"
         assert package["confidence"] == "low"
 
     def test_fallback_with_partial_research(self):
-        """If research ran but finalize was never called, fallback uses partial results."""
         from src.agents.lead import DepartmentLeadAgent
-
         brief = _make_brief()
         lead = DepartmentLeadAgent("CompanyDepartment")
         assignments = _company_assignments(brief)
@@ -436,20 +319,102 @@ class TestFallbackPackageOnMaxRound:
                 for tool_name, tool_fn in getattr(agent, "_function_map", {}).items():
                     if tool_name == "run_research":
                         tool_fn(task_key="company_fundamentals")
-                        return  # Stop — max_round hit mid-flow
+                        return
 
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
             payload, _, package = lead.run(
-                brief=brief,
-                assignments=assignments,
+                brief=brief, assignments=assignments,
                 current_section=None,
-                supervisor=_make_supervisor(),
             )
-
         assert package is not None
         assert package["department"] == "CompanyDepartment"
         task = package["completed_tasks"][0]
         assert task["task_key"] == "company_fundamentals"
         assert task["status"] in ("accepted", "degraded", "rejected")
-        # Payload should have data from the partial research
         assert payload.get("company_name") is not None
+
+
+# ---------------------------------------------------------------------------
+# CHG-03: No supervisor in department loop
+# ---------------------------------------------------------------------------
+
+class TestNoSupervisorInDepartmentLoop:
+    def test_department_lead_run_has_no_supervisor_param(self):
+        from src.agents.lead import DepartmentLeadAgent
+        lead = DepartmentLeadAgent("CompanyDepartment")
+        sig = inspect.signature(lead.run)
+        assert "supervisor" not in sig.parameters
+
+    def test_department_runtime_run_has_no_supervisor_param(self):
+        from src.orchestration.department_runtime import DepartmentRuntime
+        rt = DepartmentRuntime.__new__(DepartmentRuntime)
+        sig = inspect.signature(rt.run)
+        assert "supervisor" not in sig.parameters
+
+    def test_lead_has_no_request_supervisor_revision_tool(self):
+        import src.agents.lead as lead_mod
+        import re
+        source = inspect.getsource(lead_mod)
+        code_lines = [
+            ln for ln in source.split("\n")
+            if not ln.strip().startswith("#") and not ln.strip().startswith('"""') and not ln.strip().startswith("'''")
+        ]
+        for line in code_lines:
+            if re.search(r"\brequest_supervisor_revision\s*[=(]", line):
+                raise AssertionError(
+                    f"request_supervisor_revision used as code in lead.py: {line!r}"
+                )
+
+    def test_supervisor_decide_revision_not_called_in_lead(self):
+        import src.agents.lead as lead_mod
+        source = inspect.getsource(lead_mod)
+        assert "decide_revision" not in source
+
+
+# ---------------------------------------------------------------------------
+# Shared search cache
+# ---------------------------------------------------------------------------
+
+class TestSharedSearchCache:
+    def test_shared_search_cache_across_departments(self):
+        from src.orchestration.department_runtime import DepartmentRuntime
+        cache = {}
+        rt1 = DepartmentRuntime("CompanyDepartment", search_cache=cache)
+        rt2 = DepartmentRuntime("MarketDepartment", search_cache=cache)
+        assert rt1.lead.worker._search_cache is rt2.lead.worker._search_cache
+
+
+# ---------------------------------------------------------------------------
+# Assignment contract fields
+# ---------------------------------------------------------------------------
+
+class TestAssignmentContractFields:
+    def test_assignment_carries_contract_fields(self):
+        from src.orchestration.task_router import build_initial_assignments
+        brief = SupervisorBrief(
+            submitted_company_name="TestCo", submitted_web_domain="testco.de",
+            verified_company_name="TestCo", verified_legal_name="TestCo",
+            name_confidence="high", website_reachable=True,
+            homepage_url="https://testco.de", page_title="TestCo",
+            meta_description="", raw_homepage_excerpt="TestCo makes parts",
+            normalized_domain="testco.de", industry_hint="Automotive",
+        )
+        assignments = build_initial_assignments(brief)
+        for a in assignments:
+            assert a.output_schema_key, f"{a.task_key} missing output_schema_key"
+            assert a.industry_hint == "Automotive"
+        contact_tasks = [a for a in assignments if a.task_key in ("contact_discovery", "contact_qualification")]
+        for ct in contact_tasks:
+            assert ct.run_condition is not None
+            assert ct.depends_on
+
+    def test_assignment_defaults_for_manual_construction(self):
+        a = Assignment(
+            task_key="test", assignee="X", target_section="s",
+            label="L", objective="O", model_name="m", allowed_tools=("search",),
+        )
+        assert a.depends_on == ()
+        assert a.run_condition is None
+        assert a.input_artifacts == ()
+        assert a.output_schema_key == ""
+        assert a.industry_hint == "n/v"

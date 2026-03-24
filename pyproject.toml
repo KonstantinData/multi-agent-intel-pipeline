@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "architecture: Pure architecture/contract tests — no AG2/autogen dependency",
+    "contract: Contract validation tests — no AG2/autogen dependency",
+    "integration: Integration tests — require AG2/autogen and may start agent runtimes",
+    "runtime: Runtime tests — require AG2/autogen or OpenAI SDK",
+    "smoke: Lightweight sanity checks",
+]

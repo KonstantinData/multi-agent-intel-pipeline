@@ -1,4 +1,8 @@
-"""End-to-end startup check: preflight -> start Streamlit -> HTTP check -> cleanup."""
+"""DEPRECATED — heavy end-to-end startup test (subprocess-based).
+
+Not yet migrated to tests/. Run directly with: python test_startup.py
+See TESTING.md for the new test structure.
+"""
 from __future__ import annotations
 
 import os

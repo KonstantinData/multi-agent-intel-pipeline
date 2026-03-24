@@ -1,4 +1,16 @@
-"""Tests for routing, follow-up, integration, and new optimization features.
+"""DEPRECATED — migrated to tests/architecture/ and tests/integration/.
+
+This file is kept for reference only. Run `pytest tests/` instead.
+See TESTING.md for the new test structure.
+"""
+from __future__ import annotations
+
+import pytest
+pytest.skip("Migrated to tests/. Run pytest tests/ instead.", allow_module_level=True)
+
+# Original content below (unreachable due to skip above)
+"""
+Tests for routing, follow-up, integration, and new optimization features.
 
 Covers P4 test gaps from optimize_todo.md:
 - SupervisorAgent.route_question() weighted scoring
@@ -9,7 +21,6 @@ Covers P4 test gaps from optimize_todo.md:
 - Max-retry cap configurability
 - File locking in long_term_store
 """
-from __future__ import annotations
 
 import json
 import sys

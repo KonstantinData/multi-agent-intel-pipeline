@@ -1,4 +1,16 @@
-"""Contract, Critic, Judge, and router semantic tests.
+"""DEPRECATED — migrated to tests/architecture/.
+
+This file is kept for reference only. Run `pytest tests/` instead.
+See TESTING.md for the new test structure.
+"""
+from __future__ import annotations
+
+import pytest
+pytest.skip("Migrated to tests/architecture/. Run pytest tests/ instead.", allow_module_level=True)
+
+# Original content below (unreachable due to skip above)
+"""
+Contract, Critic, Judge, and router semantic tests.
 
 These tests validate the new deterministic semantics introduced in the
 optimize_todo.md refactor:
@@ -10,7 +22,6 @@ optimize_todo.md refactor:
 - skipped is set by routing, never by the Judge
 - Contact tasks are conditional on buyer output
 """
-from __future__ import annotations
 
 import sys
 from pathlib import Path
