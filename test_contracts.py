@@ -679,3 +679,136 @@ def test_critic_no_field_issues_when_report_clean():
         validation_rules=rules,
     )
     assert not any("Worker field issue" in issue for issue in result["issues"])
+
+
+# ---------------------------------------------------------------------------
+# 9. Schicht 6 — market_situation dedicated queries + contact field aliasing
+# ---------------------------------------------------------------------------
+
+# -- market_situation gets its own queries, not shared build_market_queries --
+
+def test_market_situation_queries_are_dedicated():
+    """market_situation must NOT reuse the generic build_market_queries cache."""
+    from src.agents.worker import ResearchWorker
+    from src.domain.intake import SupervisorBrief
+    w = ResearchWorker("MarketResearcher")
+    brief = SupervisorBrief(
+        submitted_company_name="ACME GmbH",
+        submitted_web_domain="acme.example",
+        verified_company_name="ACME GmbH",
+        verified_legal_name="ACME GmbH",
+        name_confidence="high",
+        website_reachable=True,
+        homepage_url="https://acme.example",
+        page_title="ACME - Industrial Solutions",
+        meta_description="Industrial solutions provider",
+        raw_homepage_excerpt="ACME provides industrial solutions and manufacturing equipment",
+        normalized_domain="acme.example",
+    )
+    market_qs = w._build_queries(brief=brief, task_key="market_situation")
+    repurposing_qs = w._build_queries(brief=brief, task_key="repurposing_circularity")
+    # market_situation queries must differ from repurposing queries
+    assert market_qs != repurposing_qs
+    # market_situation queries must contain demand/supply/market keywords
+    joined = " ".join(market_qs).lower()
+    assert "demand" in joined or "market" in joined or "outlook" in joined
+
+
+def test_market_situation_queries_contain_company_name():
+    from src.agents.worker import ResearchWorker
+    from src.domain.intake import SupervisorBrief
+    w = ResearchWorker("MarketResearcher")
+    brief = SupervisorBrief(
+        submitted_company_name="ZF Friedrichshafen AG",
+        submitted_web_domain="zf.com",
+        verified_company_name="ZF Friedrichshafen AG",
+        verified_legal_name="ZF Friedrichshafen AG",
+        name_confidence="high",
+        website_reachable=True,
+        homepage_url="https://zf.com",
+        page_title="ZF",
+        meta_description="Global technology company",
+        raw_homepage_excerpt="ZF is a global technology company",
+        normalized_domain="zf.com",
+    )
+    qs = w._build_queries(brief=brief, task_key="market_situation")
+    joined = " ".join(qs)
+    assert "ZF Friedrichshafen AG" in joined
+
+
+# -- contact field aliasing: LLM returns English keys, schema expects German --
+
+def test_contact_coerce_maps_english_keys_to_schema():
+    """LLM returns 'company'/'title'/'source_url' — must map to firma/rolle_titel/quelle."""
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("ContactResearcher")
+    items = [{
+        "name": "Dr. Arne Flemming",
+        "company": "Robert Bosch GmbH",
+        "title": "SVP Corporate Supply Chain",
+        "function": "Supply Chain",
+        "seniority": "C-level",
+        "location": "Stuttgart",
+        "source_url": "https://example.com/flemming",
+        "relevance": "Key procurement decision-maker",
+    }]
+    result = w._coerce_contact_records(items)
+    assert len(result) == 1
+    c = result[0]
+    assert c["name"] == "Dr. Arne Flemming"
+    assert c["firma"] == "Robert Bosch GmbH"
+    assert c["rolle_titel"] == "SVP Corporate Supply Chain"
+    assert c["funktion"] == "Supply Chain"
+    assert c["senioritaet"] == "C-level"
+    assert c["standort"] == "Stuttgart"
+    assert c["quelle"] == "https://example.com/flemming"
+    assert c["relevance_reason"] == "Key procurement decision-maker"
+
+
+def test_contact_coerce_handles_german_keys_unchanged():
+    """When LLM already uses German keys, they pass through correctly."""
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("ContactResearcher")
+    items = [{
+        "name": "Dirk Große-Loheide",
+        "firma": "Volkswagen AG",
+        "rolle_titel": "Head of Procurement",
+        "funktion": "Procurement",
+        "senioritaet": "Board",
+        "standort": "Wolfsburg",
+        "quelle": "https://vw.com",
+    }]
+    result = w._coerce_contact_records(items)
+    assert result[0]["firma"] == "Volkswagen AG"
+    assert result[0]["rolle_titel"] == "Head of Procurement"
+
+
+def test_contact_coerce_handles_empty_and_nv():
+    """Fields with n/v or empty should default properly."""
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("ContactResearcher")
+    items = [{"name": "Jane Doe", "company": "", "title": "n/v"}]
+    result = w._coerce_contact_records(items)
+    assert result[0]["firma"] == "n/v"
+    assert result[0]["rolle_titel"] == "n/v"
+
+
+# -- memory context for market_situation includes company profile ----------
+
+def test_memory_context_market_situation_includes_company_profile():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("MarketResearcher")
+    ctx = w._build_memory_context(
+        task_key="market_situation",
+        target_section="industry_analysis",
+        current_sections={
+            "company_profile": {
+                "industry": "Automotive",
+                "products_and_services": ["driveline", "chassis", "safety systems"],
+                "description": "Global technology company for mobility",
+            }
+        },
+        role_memory=None,
+    )
+    assert ctx.get("company_industry") == "Automotive"
+    assert "driveline" in ctx.get("company_products", [])

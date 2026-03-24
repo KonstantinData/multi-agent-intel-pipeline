@@ -231,6 +231,13 @@ class ResearchWorker:
                 ctx["existing_trends"] = industry.get("key_trends", [])
                 ctx["existing_assessment"] = industry.get("assessment", "")
                 ctx["existing_growth_rate"] = industry.get("growth_rate", "")
+            # Also inject company context so the LLM can anchor market
+            # analysis to the specific company's products and industry.
+            company = current_sections.get("company_profile", {})
+            if company:
+                ctx["company_industry"] = company.get("industry", "n/v")
+                ctx["company_products"] = company.get("products_and_services", [])[:5]
+                ctx["company_description"] = (company.get("description") or "")[:300]
 
         # Inject successful queries from role memory
         if role_memory:
@@ -284,6 +291,16 @@ class ResearchWorker:
             return queries
 
         if task_key in {"market_situation", "repurposing_circularity", "analytics_operational_improvement"}:
+            if task_key == "market_situation":
+                # Dedicated queries for market_situation — must NOT share the
+                # generic build_market_queries() cache so the LLM receives
+                # evidence specifically about demand, supply, and capacity.
+                return [
+                    f"\"{company_name}\" market demand supply trend",
+                    f"{industry_hint} market outlook growth decline overcapacity",
+                    f"\"{company_name}\" market share competitive position",
+                    f"{industry_hint} demand forecast supply pressure {company_name}",
+                ]
             queries = build_market_queries(company_name, industry_hint, product_keywords)
             if task_key == "repurposing_circularity":
                 queries.extend(
@@ -920,18 +937,7 @@ class ResearchWorker:
         contacts: list[dict[str, str]] = []
         for item in items:
             if isinstance(item, dict):
-                contacts.append({
-                    "name": str(item.get("name", "n/v")).strip() or "n/v",
-                    "firma": str(item.get("firma", "n/v")).strip() or "n/v",
-                    "rolle_titel": str(item.get("rolle_titel", "n/v")).strip() or "n/v",
-                    "funktion": str(item.get("funktion", "n/v")).strip() or "n/v",
-                    "senioritaet": str(item.get("senioritaet", "n/v")).strip() or "n/v",
-                    "standort": str(item.get("standort", "n/v")).strip() or "n/v",
-                    "quelle": str(item.get("quelle", "n/v")).strip() or "n/v",
-                    "confidence": str(item.get("confidence", "inferred")).strip() or "inferred",
-                    "relevance_reason": str(item.get("relevance_reason", "n/v")).strip() or "n/v",
-                    "suggested_outreach_angle": str(item.get("suggested_outreach_angle", "n/v")).strip() or "n/v",
-                })
+                contacts.append(self._normalize_contact_fields(item))
             elif isinstance(item, str) and item.strip():
                 contacts.append({
                     "name": item.strip(), "firma": "n/v", "rolle_titel": "n/v",
@@ -940,6 +946,28 @@ class ResearchWorker:
                     "relevance_reason": "n/v", "suggested_outreach_angle": "n/v",
                 })
         return contacts
+
+    def _normalize_contact_fields(self, item: dict[str, Any]) -> dict[str, str]:
+        """Map common LLM field-name variants to the ContactPerson schema."""
+        def _pick(keys: tuple[str, ...], default: str = "n/v") -> str:
+            for k in keys:
+                v = item.get(k)
+                if v and str(v).strip() and str(v).strip() != "n/v":
+                    return str(v).strip()
+            return default
+
+        return {
+            "name": _pick(("name", "full_name", "person_name", "contact_name")),
+            "firma": _pick(("firma", "company", "company_name", "organization", "firm")),
+            "rolle_titel": _pick(("rolle_titel", "title", "job_title", "role", "position")),
+            "funktion": _pick(("funktion", "function", "department", "area")),
+            "senioritaet": _pick(("senioritaet", "seniority", "level", "seniority_level")),
+            "standort": _pick(("standort", "location", "city", "office")),
+            "quelle": _pick(("quelle", "source_url", "source", "url", "link")),
+            "confidence": _pick(("confidence",), "inferred"),
+            "relevance_reason": _pick(("relevance_reason", "relevance", "reason")),
+            "suggested_outreach_angle": _pick(("suggested_outreach_angle", "outreach_angle", "outreach")),
+        }
 
     def _coerce_sources(self, items: Any) -> list[dict[str, str]]:
         if not isinstance(items, list):
