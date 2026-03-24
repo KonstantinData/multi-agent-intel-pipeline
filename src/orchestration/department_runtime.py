@@ -1,8 +1,10 @@
 """Department-level runtime.
 
+CHG-03: ``supervisor`` parameter is now optional and ignored by the Lead.
+The department works autonomously inside its contract.  The Supervisor
+sees only the contract handoff and the final package.
+
 Thin entry point that delegates all orchestration to the DepartmentLeadAgent.
-The Lead receives the supervisor brief, builds a domain investigation plan,
-directs the internal AG2 group, and returns the completed domain package.
 """
 from __future__ import annotations
 
@@ -38,7 +40,7 @@ class DepartmentRuntime:
         brief: SupervisorBrief,
         assignments: list[Assignment],
         current_section: dict[str, Any] | None,
-        supervisor,
+        supervisor=None,   # CHG-03: optional — department works autonomously
         memory_store=None,
         role_memory: dict[str, list[dict[str, Any]]] | None = None,
         on_message: MessageHook = None,
@@ -47,7 +49,7 @@ class DepartmentRuntime:
             brief=brief,
             assignments=assignments,
             current_section=current_section,
-            supervisor=supervisor,
+            supervisor=supervisor,  # passed through; Lead ignores it (CHG-03)
             memory_store=memory_store,
             role_memory=role_memory,
             on_message=on_message,

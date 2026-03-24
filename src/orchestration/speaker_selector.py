@@ -1,42 +1,46 @@
-"""Deterministic state-machine speaker selectors for AG2 GroupChats.
+"""Runtime guardrail selectors for AG2 GroupChats.
 
-Decision C: Custom callable replaces ``speaker_selection_method="auto"``.
-Each GroupChat type has its own state-machine that returns the next speaker
-based on ``run_state["workflow_step"]``.
+CHG-04 — The selectors here are guardrail logic, NOT workflow choreographers.
 
-Department state-machine (per task):
-    RESEARCH → REVIEW → DECIDE → (RETRY | NEXT | FINALIZE)
+Previous architecture: the selector used ``workflow_step`` as a hidden state
+machine that forced the group through a rigid micro-sequence regardless of what
+the agents actually said.
 
-Synthesis state-machine:
-    READ → CRITIQUE → DECIDE → (BACK_REQUEST | FINALIZE)
+New architecture:
+- The Department Lead drives the internal workflow through its messages.
+- The selector enforces safety rails:
+    1. Route tool calls to the executor agent (mandatory).
+    2. After executor runs, return to the Lead — the Lead sees the result
+       and decides what to do next.
+    3. Prevent text-only loops: force back to Lead after too many non-tool turns.
+    4. Invalid-handoff protection: ensure Lead speaks first.
+    5. Termination recognition: honour TERMINATE signals.
 
-``"auto"`` is never reached — it exists only as an unreachable safety fallback
-inside the GroupChat constructor.
+The selector no longer reads ``workflow_step`` and no longer controls the
+task ordering.  The Lead's prompt instructions and the group conversation
+dynamics determine who speaks and in what order.
+
+Synthesis selector is kept structurally similar but also simplified.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from autogen import ConversableAgent
 
+logger = logging.getLogger(__name__)
 
-# ── Department GroupChat ──────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Department GroupChat guardrails
+# ---------------------------------------------------------------------------
 
-# Workflow steps for a single task cycle
-_DEPT_STEP_SPEAKER: dict[str, str] = {
-    "start":       "researcher",   # Lead kicks off → Researcher runs research
-    "research":    "critic",       # After research → Critic reviews
-    "review":      "lead",         # After review → Lead decides next action
-    "retry":       "researcher",   # Lead decided retry → Researcher re-runs
-    "coding":      "coding",       # Lead authorized coding specialist
-    "judge":       "lead",         # After judge → Lead moves on
-    "finalize":    "lead",         # All tasks done → Lead finalizes
-}
+_MAX_TEXT_TURNS = 3  # consecutive text-only turns before forcing back to Lead
 
 
 def build_department_selector(
     *,
-    run_state: dict[str, Any],
+    guardrail_state: dict[str, Any],
     agent_map: dict[str, ConversableAgent],
     lead_name: str,
     researcher_name: str,
@@ -45,125 +49,102 @@ def build_department_selector(
     coding_name: str,
     executor_name: str = "",
 ):
-    """Return a callable suitable for ``speaker_selection_method``."""
+    """Return a callable suitable for ``speaker_selection_method``.
 
-    # Initialize workflow tracking in run_state
-    run_state.setdefault("workflow_step", "start")
-
-    name_to_role = {
-        lead_name: "lead",
+    ``guardrail_state`` is a plain dict (typically ``DepartmentRunState.guardrail_state()``)
+    that the selector uses only for loop-prevention counters.  It does NOT
+    contain workflow_step — the Lead owns the workflow.
+    """
+    name_to_role: dict[str, str] = {
+        lead_name:       "lead",
         researcher_name: "researcher",
-        critic_name: "critic",
-        judge_name: "judge",
-        coding_name: "coding",
+        critic_name:     "critic",
+        judge_name:      "judge",
+        coding_name:     "coding",
     }
     if executor_name:
         name_to_role[executor_name] = "executor"
     role_to_agent = {v: agent_map[k] for k, v in name_to_role.items()}
 
-    # Track consecutive text-only turns per role to detect loops
-    run_state.setdefault("_consecutive_text_turns", {})
-    _MAX_TEXT_TURNS = 2  # max text-only turns before forcing back to Lead
+    # Initialise loop-prevention counters
+    guardrail_state.setdefault("_consecutive_text_turns", {})
+    text_turns: dict[str, int] = guardrail_state["_consecutive_text_turns"]
 
     def _selector(
         last_speaker: ConversableAgent,
         groupchat,
     ) -> ConversableAgent | str:
         last_role = name_to_role.get(last_speaker.name, "lead")
-        step = run_state.get("workflow_step", "start")
-        last_content = ""
-        if groupchat.messages:
-            last_msg = groupchat.messages[-1]
-            last_content = str(last_msg.get("content", ""))
-            # If the last message contains tool_calls, route to executor
-            if last_msg.get("tool_calls") and "executor" in role_to_agent:
-                # Reset text-turn counter on tool call
-                run_state["_consecutive_text_turns"][last_role] = 0
-                return role_to_agent["executor"]
-            # If executor just ran a tool, route back to the caller's
-            # next step based on the workflow state machine
-            if last_role == "executor":
-                # After tool execution, advance based on current step
-                if step in ("start", "research"):
-                    # run_research just executed → advance to review
-                    run_state["workflow_step"] = "review"
-                    return role_to_agent["critic"]
-                if step == "review":
-                    # review_research just executed → Lead decides
-                    run_state["workflow_step"] = "decide"
-                    return role_to_agent["lead"]
-                if step == "judge":
-                    run_state["workflow_step"] = "post_judge"
-                    return role_to_agent["lead"]
-                if step == "coding":
-                    run_state["workflow_step"] = "research"
-                    return role_to_agent["researcher"]
-                if step == "finalize":
-                    return role_to_agent["lead"]
-                # decide step: supervisor revision or finalize executed
+
+        if not groupchat.messages:
+            # Valid first speaker: Lead
+            return role_to_agent["lead"]
+
+        last_msg = groupchat.messages[-1]
+        last_content = str(last_msg.get("content") or "")
+
+        # ── GUARDRAIL 1: route tool calls to executor ────────────────────────
+        if last_msg.get("tool_calls") and "executor" in role_to_agent:
+            text_turns[last_role] = 0
+            logger.debug("Selector: tool_call from %s → executor", last_role)
+            return role_to_agent["executor"]
+
+        # ── GUARDRAIL 2: after executor, return to Lead ──────────────────────
+        # The Lead sees the tool result and decides next action.
+        if last_role == "executor":
+            logger.debug("Selector: executor done → lead")
+            return role_to_agent["lead"]
+
+        # ── GUARDRAIL 3: text-only loop prevention ───────────────────────────
+        if last_role in ("researcher", "critic", "judge", "coding"):
+            text_turns[last_role] = text_turns.get(last_role, 0) + 1
+            if text_turns[last_role] >= _MAX_TEXT_TURNS:
+                logger.warning(
+                    "Selector: loop guard triggered for %s (%d text turns) → lead",
+                    last_role, text_turns[last_role],
+                )
+                text_turns[last_role] = 0
                 return role_to_agent["lead"]
+        else:
+            # Lead or other spoke — reset non-lead counters
+            for r in ("researcher", "critic", "judge", "coding"):
+                text_turns[r] = 0
 
-        # Track consecutive text-only turns (no tool_call)
-        if last_role != "executor":
-            count = run_state["_consecutive_text_turns"].get(last_role, 0) + 1
-            run_state["_consecutive_text_turns"][last_role] = count
-            if count >= _MAX_TEXT_TURNS and last_role in ("researcher", "critic", "judge", "coding"):
-                # Agent is looping without calling its tool → return to Lead
-                run_state["_consecutive_text_turns"][last_role] = 0
-                run_state["workflow_step"] = "decide"
-                return role_to_agent["lead"]
-        # Reset counter for other roles when they get a turn
-        for r in name_to_role.values():
-            if r != last_role and r != "executor":
-                run_state["_consecutive_text_turns"][r] = 0
+        # ── GUARDRAIL 4: termination recognition ─────────────────────────────
+        if "TERMINATE" in last_content:
+            logger.debug("Selector: TERMINATE detected → lead (chat will end)")
+            return role_to_agent["lead"]
 
-        # Determine next step based on current step + who just spoke
-        if step == "start":
-            run_state["workflow_step"] = "research"
-            return role_to_agent["researcher"]
-
-        if step == "research" and last_role == "researcher":
-            # Researcher spoke (text, not tool_call) — prompt to use tool
-            return role_to_agent["researcher"]
-
-        if step == "review" and last_role == "critic":
-            # Critic spoke (text, not tool_call) — prompt to use tool
-            return role_to_agent["critic"]
-
-        if step in ("decide", "post_judge", "post_coding"):
-            # Lead is deciding — parse intent from content
-            if "request_supervisor_revision" in last_content or "retry" in last_content.lower():
-                if "coding" in last_content.lower() or "suggest_refined" in last_content:
-                    run_state["workflow_step"] = "coding"
-                    return role_to_agent["coding"]
-                run_state["workflow_step"] = "research"
+        # ── ROUTING: Lead spoke → parse who it addressed ─────────────────────
+        # The Lead drives the workflow by explicitly naming the next agent.
+        # We look for the agent name or tool name in the Lead's message.
+        if last_role == "lead":
+            low = last_content.lower()
+            if researcher_name.lower() in low or "run_research" in low:
+                logger.debug("Selector: lead addressed researcher")
                 return role_to_agent["researcher"]
-            if "judge_decision" in last_content or "judge" in last_content.lower():
-                run_state["workflow_step"] = "judge"
+            if critic_name.lower() in low or "review_research" in low:
+                logger.debug("Selector: lead addressed critic")
+                return role_to_agent["critic"]
+            if judge_name.lower() in low or "judge_decision" in low:
+                logger.debug("Selector: lead addressed judge")
                 return role_to_agent["judge"]
-            if "finalize_package" in last_content or "TERMINATE" in last_content:
-                run_state["workflow_step"] = "finalize"
-                return role_to_agent["lead"]
-            # Default: Lead is moving to next task → Researcher
-            run_state["workflow_step"] = "research"
+            if coding_name.lower() in low or "suggest_refined" in low:
+                logger.debug("Selector: lead addressed coding specialist")
+                return role_to_agent["coding"]
+            # Default: researcher (most common next action)
             return role_to_agent["researcher"]
 
-        if step == "judge" and last_role == "judge":
-            # Judge spoke text — prompt to use tool
-            return role_to_agent["judge"]
-
-        if step == "coding" and last_role == "coding":
-            # Coding spoke text — prompt to use tool
-            return role_to_agent["coding"]
-
-        # Safety: return Lead for any unhandled state
-        run_state["workflow_step"] = "decide"
+        # ── DEFAULT: non-lead agent spoke (text, no tool) → Lead responds ────
+        logger.debug("Selector: %s spoke text → lead", last_role)
         return role_to_agent["lead"]
 
     return _selector
 
 
-# ── Synthesis GroupChat ───────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Synthesis GroupChat guardrails
+# ---------------------------------------------------------------------------
 
 def build_synthesis_selector(
     *,
@@ -175,19 +156,27 @@ def build_synthesis_selector(
     judge_name: str,
     executor_name: str = "",
 ):
-    """Return a callable suitable for ``speaker_selection_method``."""
+    """Return a callable suitable for ``speaker_selection_method``.
 
+    The synthesis selector is kept similar to the department selector in
+    spirit: guardrail-based, with the Lead (strategic analyst) driving the
+    internal flow.  A lightweight ``synthesis_step`` is retained only to
+    preserve the read-before-critique semantics (the analyst must read all
+    segments before the critic reviews).
+    """
     run_state.setdefault("synthesis_step", "start")
+    run_state.setdefault("_consecutive_text_turns", {})
 
-    name_to_role = {
-        lead_name: "lead",
+    name_to_role: dict[str, str] = {
+        lead_name:    "lead",
         analyst_name: "analyst",
-        critic_name: "critic",
-        judge_name: "judge",
+        critic_name:  "critic",
+        judge_name:   "judge",
     }
     if executor_name:
         name_to_role[executor_name] = "executor"
     role_to_agent = {v: agent_map[k] for k, v in name_to_role.items()}
+    text_turns: dict[str, int] = run_state["_consecutive_text_turns"]
 
     def _selector(
         last_speaker: ConversableAgent,
@@ -195,35 +184,46 @@ def build_synthesis_selector(
     ) -> ConversableAgent | str:
         last_role = name_to_role.get(last_speaker.name, "lead")
         step = run_state.get("synthesis_step", "start")
-        last_content = ""
-        if groupchat.messages:
-            last_msg = groupchat.messages[-1]
-            last_content = str(last_msg.get("content", ""))
-            # If the last message contains tool_calls, route to executor
-            if last_msg.get("tool_calls") and "executor" in role_to_agent:
-                return role_to_agent["executor"]
-            # After executor runs a tool, route based on workflow state
-            if last_role == "executor":
-                if step == "read":
-                    # read_report_segment executed → analyst continues or critic reviews
-                    return role_to_agent["analyst"]
-                if step == "back_request":
-                    run_state["synthesis_step"] = "read"
-                    return role_to_agent["analyst"]
-                if step == "finalize":
-                    return role_to_agent["lead"]
-                if step == "decide":
-                    return role_to_agent["lead"]
-                return role_to_agent["lead"]
 
+        if not groupchat.messages:
+            return role_to_agent["lead"]
+
+        last_msg = groupchat.messages[-1]
+        last_content = str(last_msg.get("content") or "")
+
+        # GUARDRAIL 1: tool calls → executor
+        if last_msg.get("tool_calls") and "executor" in role_to_agent:
+            text_turns[last_role] = 0
+            return role_to_agent["executor"]
+
+        # GUARDRAIL 2: after executor → lead
+        if last_role == "executor":
+            if step == "read":
+                # Analyst may still need to read more segments — return to analyst
+                return role_to_agent["analyst"]
+            return role_to_agent["lead"]
+
+        # GUARDRAIL 3: loop prevention
+        if last_role in ("analyst", "critic", "judge"):
+            text_turns[last_role] = text_turns.get(last_role, 0) + 1
+            if text_turns[last_role] >= _MAX_TEXT_TURNS:
+                text_turns[last_role] = 0
+                return role_to_agent["lead"]
+        else:
+            for r in ("analyst", "critic", "judge"):
+                text_turns[r] = 0
+
+        # GUARDRAIL 4: termination
+        if "TERMINATE" in last_content:
+            return role_to_agent["lead"]
+
+        # State-aware routing for synthesis (reading phase must precede critique)
         if step == "start":
             run_state["synthesis_step"] = "read"
             return role_to_agent["analyst"]
 
         if step == "read" and last_role == "analyst":
-            # Analyst may need to read multiple segments — check if done
-            if "read_report_segment" in last_content and last_content.count("read_report_segment") < 2:
-                # Still reading — let analyst continue
+            if "read_report_segment" in last_content:
                 return role_to_agent["analyst"]
             run_state["synthesis_step"] = "critique"
             return role_to_agent["critic"]
@@ -242,12 +242,10 @@ def build_synthesis_selector(
             if "reject" in last_content.lower():
                 run_state["synthesis_step"] = "judge"
                 return role_to_agent["judge"]
-            # Default: Lead finalizes
             run_state["synthesis_step"] = "finalize"
             return role_to_agent["lead"]
 
         if step == "back_request" and last_role == "lead":
-            # After back-request executed → re-read updated segment
             run_state["synthesis_step"] = "read"
             return role_to_agent["analyst"]
 

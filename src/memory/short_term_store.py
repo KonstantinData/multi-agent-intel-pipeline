@@ -1,4 +1,23 @@
-"""Short-term memory for the current run."""
+"""Short-term / run-brain memory for the current run.
+
+CHG-02 — This store is the canonical run brain.  It holds everything that is
+case-specific and must be reloadable by ``run_id`` for follow-up sessions:
+
+- evidence gathered per department
+- task artifacts, review artifacts, decision artifacts (via ``department_run_states``)
+- critic reviews and approved/open points
+- strategy changes and rejected paths (via department_run_states)
+- department conversations / execution trace
+- follow-up sessions
+
+The run brain is exported to ``artifacts/runs/{run_id}/run_context.json`` at the
+end of every pipeline execution.  ``follow_up.py`` rehydrates it by loading that
+file when a follow-up question arrives.
+
+Memory policy: this store NEVER feeds directly into the long-term process brain.
+Only sanitised process patterns extracted by ``consolidation.py`` may be stored
+in long-term memory.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -26,6 +45,9 @@ class ShortTermMemoryStore:
     department_packages: dict[str, dict[str, Any]] = field(default_factory=dict)
     department_conversations: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     department_workspaces: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # CHG-02: Per-department serialised DepartmentRunState — the full artifact record.
+    # Keyed by department name. Stored by DepartmentLeadAgent after each run.
+    department_run_states: dict[str, dict[str, Any]] = field(default_factory=dict)
     follow_up_sessions: list[dict[str, Any]] = field(default_factory=list)
     usage_totals: dict[str, int] = field(
         default_factory=lambda: {
@@ -110,6 +132,15 @@ class ShortTermMemoryStore:
         existing = self.department_conversations.setdefault(department, [])
         existing.extend(conversation)
 
+    def record_department_run_state(self, department: str, run_state_dict: dict[str, Any]) -> None:
+        """Store the serialised DepartmentRunState for a completed department run.
+
+        CHG-02: This is the primary mechanism for persisting the full artifact
+        history (task_artifacts, review_artifacts, decision_artifacts,
+        strategy_changes, judge_escalations, coding_support_used) in the run brain.
+        """
+        self.department_run_states[department] = run_state_dict
+
     def record_follow_up(self, answer: dict[str, Any]) -> None:
         self.follow_up_sessions.append(answer)
 
@@ -143,6 +174,8 @@ class ShortTermMemoryStore:
             "department_packages": self.department_packages,
             "department_conversations": self.department_conversations,
             "department_workspaces": self.department_workspaces,
+            # CHG-02: full artifact history — reloadable for follow-up rehydration
+            "department_run_states": self.department_run_states,
             "follow_up_sessions": self.follow_up_sessions,
             "usage_totals": self.usage_totals,
         }

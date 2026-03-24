@@ -1,10 +1,7 @@
 # Target Runtime Architecture
 
-This document defines the target runtime architecture that must match
-`docs/updated_runtime_architecture.drawio`.
-
-It is intentionally written first so the intended architecture is explicit in
-the repository, even if implementation work is interrupted.
+This document describes the runtime architecture as implemented.
+It is kept in sync with the codebase after the CHG-00–CHG-10 refactor.
 
 ## Runtime Modes
 
@@ -28,11 +25,13 @@ Responsibilities:
 - translate the Liquisto standard scope into department assignments
 - route assignments to the correct domain department
 - track run status and formal completeness
+- accept completed department packages
 - route follow-up questions by `run_id`
 
 Non-responsibilities:
 - no domain-level fact interpretation
 - no domain-level evidence review
+- no intra-department retry decisions
 - no final commercial judgment
 
 ### Domain Departments
@@ -43,12 +42,14 @@ The research plane is split into four domain departments:
 - `Buyer Department`
 - `Contact Department`
 
-Each department is implemented as an AutoGen-style internal group with bounded
-multi-agent collaboration.
+Each department is implemented as an AG2 GroupChat with bounded
+multi-agent collaboration. Departments work **autonomously** inside
+their contract — the Supervisor never intervenes in internal retry,
+critique, or escalation decisions.
 
 Each department contains:
 - `Department Lead / Analyst`
-- `Researchers`
+- `Researcher`
 - `Critic`
 - optional `Judge`
 - optional `Coding Specialist`
@@ -57,31 +58,21 @@ Department groups are responsible for:
 - domain research
 - domain-level interpretation
 - bounded internal review loops
-- a structured department package as output
+- assembling a structured department package as output
 
-The output is not raw chat. The output is a validated `Domain Package`.
+The output is not raw chat. The output is a validated `DepartmentPackage`.
 
-### Cross-Domain Strategic Analyst
+### Strategic Synthesis Department
 
-This role receives the approved domain packages from all departments and builds
-the cross-domain interpretation.
+This AG2 GroupChat receives the approved domain packages from all departments
+and builds the cross-domain interpretation.
 
 Responsibilities:
 - compare findings across departments
 - surface tensions or contradictions
 - assess the most plausible Liquisto opportunity
 - derive negotiation relevance and next-step logic
-
-### Report Writer
-
-This role converts the approved cross-domain analysis into a professional
-operator-facing report.
-
-Responsibilities:
-- executive summary
-- structured report sections
-- action-oriented next steps
-- output shaping for PDF export in German and English
+- produce the final `synthesis` section
 
 ## Department Model
 
@@ -95,12 +86,6 @@ Questions owned:
 - which goods, materials, spare parts, or inventory positions are visible
 - which items are made by the company, distributed/resold, or held in stock
 - which public signals suggest economic or commercial pressure
-
-The `CompanyLead` owns the goods classification. The Researcher delivers raw
-evidence about visible products and assets, but the Lead applies the
-classification frame (`made_vs_distributed_vs_held_in_stock`) and writes the
-final classification into the department package. This is a domain judgment,
-not a research task.
 
 ### Market Department
 
@@ -133,7 +118,7 @@ falls back to industry-scoped contact discovery.
 
 Output section: `contact_intelligence`.
 
-## AutoGen Department Groups
+## AG2 Department Groups
 
 Each department is implemented as a real AG2 GroupChat, not as a single
 generic worker or a Python orchestration loop.
@@ -142,128 +127,161 @@ generic worker or a Python orchestration loop.
 
 Each department group consists of five `ConversableAgent` instances:
 
-| Role                      | LLM          | Registered tool                                   |
-| ------------------------- | ------------ | ------------------------------------------------- |
-| Department Lead / Analyst | gpt-4.1      | `request_supervisor_revision`, `finalize_package` |
-| Researcher                | gpt-4.1-mini | `run_research`                                    |
-| Critic                    | gpt-4.1      | `review_research`                                 |
-| Judge                     | gpt-4.1      | `judge_decision`                                  |
-| Coding Specialist         | gpt-4.1-mini | `suggest_refined_queries`                         |
+| Role                      | LLM          | Registered tool          |
+| ------------------------- | ------------ | ------------------------ |
+| Department Lead / Analyst | gpt-4.1      | `finalize_package`       |
+| Researcher                | gpt-4.1-mini | `run_research`           |
+| Critic                    | gpt-4.1      | `review_research`        |
+| Judge                     | gpt-4.1      | `judge_decision`         |
+| Coding Specialist         | gpt-4.1-mini | `suggest_refined_queries`|
+
+Note: `request_supervisor_revision` is **not** a registered tool. The Lead
+decides retry, coding support, and judge escalation autonomously from the
+task contract and the stored artifact history (CHG-03).
 
 ### Conversation mechanics
 
 - The Lead initiates the chat via `initiate_chat` with the investigation plan
-- `GroupChatManager` with a custom `speaker_selection_method` (state-machine
-  selector) routes turns based on workflow phase and tool-call state
+- `GroupChatManager` with a custom `speaker_selection_method` (guardrail-only
+  selector) routes turns based on tool-call state and loop prevention — it does
+  not enforce a fixed micro-sequence
 - The Lead explicitly addresses the next agent in every message
 - Tools are Python closures registered per agent via `register_function`
-- The chat terminates when the Lead calls `finalize_package`, which returns `TERMINATE`
+- The chat terminates when the Lead calls `finalize_package`, which returns
+  `TERMINATE` in the message content
+
+### Speaker selector — guardrails only (CHG-04)
+
+The selector (`build_department_selector` in `speaker_selector.py`) applies
+exactly four guardrails in order:
+
+1. `tool_calls` present in last message → executor
+2. Last speaker was executor → lead
+3. Text-only loop (≥ 3 consecutive text turns) for a non-lead agent → lead
+4. `"TERMINATE"` in last message content → lead
+
+When the Lead spoke, the selector parses the message content to route to the
+addressed agent (researcher / critic / judge / coding specialist). If no
+address is found, it defaults to researcher.
+
+The selector does **not** maintain workflow state. The Lead owns the workflow
+through explicit agent addressing and the task contract.
 
 ### Intra-group escalation path
 
 ```text
-Lead → Researcher: run_research(task_key)
-Researcher → [group]: reports findings
-Lead → Critic: review_research(task_key)
-Critic → [group]: approved / rejected
-  if rejected:
-    Lead calls: request_supervisor_revision(task_key)
-      → retry=true, authorize_coding_specialist=true:
-          Lead → CodingSpecialist: suggest_refined_queries(task_key)
-          Lead → Researcher: run_research(task_key) [with refined queries]
-      → retry=true, authorize_coding_specialist=false:
-          Lead → Researcher: run_research(task_key) [with revision request]
-      → retry=false:
-          Lead → Judge: judge_decision(task_key)
-          Lead proceeds to next task
+Lead → Researcher: run_research(task_key)          [attempt recorded as TaskArtifact]
+Lead → Critic: review_research(task_key)           [review recorded as TaskReviewArtifact]
+  if review approved:
+    Lead records implicit lead_accepted decision
+  if review rejected and attempts < MAX_TASK_RETRIES:
+    Lead → [optional] CodingSpecialist: suggest_refined_queries(task_key)
+    Lead → Researcher: run_research(task_key)      [new TaskArtifact, incremented attempt]
+  if review rejected and attempts >= MAX_TASK_RETRIES:
+    Lead → Judge: judge_decision(task_key)         [decision recorded as TaskDecisionArtifact]
 Lead calls: finalize_package(summary) → TERMINATE
 ```
 
-### Supervisor boundary
+`MAX_TASK_RETRIES` is configurable via env var `LIQUISTO_MAX_TASK_RETRIES`
+(default: 2).
 
-The Supervisor passes itself as a reference to `DepartmentLeadAgent.run()`.
-The Lead calls `supervisor.decide_revision()` directly as a tool side-effect.
-There is no AG2 message passing between the Supervisor layer and the
-department group — the boundary is a Python method call, not a chat turn.
+### Supervisor boundary (CHG-03)
 
-### Implementation requirements
+The Supervisor does **not** pass itself into `DepartmentLeadAgent.run()`.
+`supervisor=None` in `DepartmentRuntime.run()` and `DepartmentLeadAgent.run()`.
 
-- fixed role profiles per department (CompanyLead, MarketLead, BuyerLead, ContactLead)
-- max_round = number of assignments × 15 (hard cap)
-- termination via `finalize_package` returning `TERMINATE` in message content
-- structured `DepartmentPackage` output, not a raw chat log
-- fallback package assembled from available partial results if max_round is hit
+The department group completes the full critique → retry → coding support →
+judge escalation path without any Supervisor intervention. The Supervisor
+only sees the final `DepartmentPackage` returned after `finalize_package`.
+
+### Package finalization from stored decisions (CHG-07)
+
+`finalize_package` assembles the department package from stored artifacts,
+in this priority order per task:
+
+1. Stored `TaskDecisionArtifact` → use its outcome (no re-judging)
+2. Research + approved review → implicit `lead_accepted` decision
+3. Research + rejected review → inline judge fallback
+4. Research only → full inline critic + judge fallback
+
+The finalized `DepartmentRunState` is persisted to
+`ShortTermMemoryStore.department_run_states` after every finalization.
 
 ## Memory Model
 
-### Run-Level Short-Term Memory
+### Run Brain — per `run_id` (CHG-02)
 
-The run keeps a global short-term memory containing:
-- intake brief
-- task statuses
-- department packages
-- approved section outputs
-- review results
-- synthesis results
-- report artifacts
+Case-specific working knowledge, stored in `ShortTermMemoryStore` and
+persisted to `run_context.json`:
 
-### Department Working Memory
+- `department_run_states`: full artifact history per department
+  - `task_artifacts`: all research attempts per task (facts, sources, strategy)
+  - `review_artifacts`: all critic reviews per task (accepted/rejected points)
+  - `decision_artifacts`: all judge/lead decisions per task (outcome, rationale)
+  - `strategy_changes`: retry and query-override events
+  - `judge_escalations`: escalation events with conflict context
+  - `coding_support_used`: coding specialist interventions
+- `department_packages`: final package per department
+- `department_workspaces`: per-department evidence summaries
+- task statuses, usage totals, department timings
 
-Each department keeps a working-memory view for the active run.
+The run brain can be reloaded by `run_id` via `load_run_artifact()` in
+`src/orchestration/follow_up.py`.
 
-It contains:
-- assignment-specific evidence
-- internal review notes
-- open questions
-- accepted and rejected points
-- department package drafts
+### Long-Term Process Brain (CHG-02/CHG-09)
 
-### Department Strategy Memory
+Reusable process patterns only — no company-specific facts, no run-specific
+evidence.
 
-Long-term memory is department-specific and stores reusable working patterns,
-not company facts.
+Stored via `consolidate_role_patterns()` in `src/memory/consolidation.py`:
 
-It stores:
-- effective query patterns
-- useful review heuristics
-- reusable packaging patterns
-- follow-up answer patterns
+- **Researcher**: structural query patterns (scrubbed of company identifiers)
+- **Critic**: critique heuristics and defect-class frequencies
+- **Judge**: decision principles from escalation history
+- **Coding Specialist**: method tactics from coding support events
+- **Lead**: retry trigger patterns from strategy changes
 
-It must not store:
-- unverified company facts
-- stale company-specific claims as permanent truth
+All patterns are scrubbed before write: company domains, quoted names, and
+legal suffixes (`GmbH`, `AG`, etc.) are replaced with `{domain}` / `{company}`.
+The `domain` field is always set to `""` — the store never holds a customer
+domain name.
 
-## Follow-Up Mode
+## Follow-Up Mode (CHG-08)
 
 Follow-up mode starts from a stored `run_id`.
 
 Flow:
-1. user enters `run_id` and a question in the UI
-2. the system resolves the historical run context
-3. the `Supervisor` routes the question to the correct department or to the
-   cross-domain layer
-4. the responsible unit answers from stored run memory first
-5. the follow-up result is stored as a follow-up artifact
+1. User enters `run_id` and a question in the UI
+2. `load_run_artifact(run_id)` loads `pipeline_data.json` + `run_context.json`
+3. The question is routed to the correct department answer function
+4. Each answer function extracts evidence from the run brain:
+   - primary: `task_artifacts` (facts from latest attempt per task)
+   - secondary: `review_artifacts` (accepted points)
+   - unresolved: `decision_artifacts` (open questions)
+5. `requires_additional_research=True` when unresolved points exist
+6. The follow-up result is exported as a follow-up artifact
 
-Follow-up mode requires:
-- persisted run context
-- persisted department packages
-- separate follow-up session memory
-- explicit run-to-follow-up linkage via `run_id`
+Follow-up answering is grounded in the rehydrated run brain. If additional
+research is needed, `DepartmentRuntime.run_followup()` initiates a new
+mini-session with the stored context.
 
 ## Required Output Artifacts
 
 Each run must produce:
 - `pipeline_data.json`
-- `run_context.json`
+- `run_context.json` (includes run brain: `department_run_states`, `department_packages`)
 - `memory_snapshot.json`
-- domain package data in the run context
 - follow-up artifacts when follow-up answers are generated
 - PDF export in German and English on demand
 
 ## Replaced Architecture Elements
 
-The target architecture replaces:
-- separate intake and interpretation side roles with a supervisor-led control plane
-- a flat worker layer with explicit department groups
-- supervisor-owned domain quality judgments with department-owned review
+| Old | New |
+| --- | --- |
+| `request_supervisor_revision` tool | Removed — Lead decides autonomously (CHG-03) |
+| `supervisor.decide_revision()` call | Removed — department is autonomous (CHG-03) |
+| State-machine speaker selector (`workflow_step`) | Guardrail-only selector, Lead drives workflow (CHG-04) |
+| Mutable dict payload as working artifact | Explicit `TaskArtifact` / `TaskReviewArtifact` / `TaskDecisionArtifact` (CHG-01/CHG-05) |
+| Hidden re-judging in `finalize_package` | Assembly from stored decisions only (CHG-07) |
+| Shallow follow-up heuristics | Run brain rehydration from `department_run_states` (CHG-08) |
+| Unguarded company facts in long-term memory | Scrubbed structural patterns only (CHG-09) |
