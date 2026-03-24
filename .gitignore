@@ -209,3 +209,6 @@ artifacts/
 streamlit_log.txt
 start_debug.bat
 test_real.py
+
+# draw.io temp/lock files
+*.dtmp
