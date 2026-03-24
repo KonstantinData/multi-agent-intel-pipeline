@@ -240,6 +240,7 @@ def run_supervisor_loop(
                 current_section = {**current_section, "buyer_candidates": buyer_candidates}
 
         department_runtime = agents["departments"][department_name]
+        t0 = perf_counter()
         section_payload, department_messages, package = department_runtime.run(
             brief=brief,
             assignments=runnable,
@@ -248,6 +249,9 @@ def run_supervisor_loop(
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,
         )
+        elapsed = round(perf_counter() - t0, 3)
+        department_timings[department_name] = elapsed
+        logging.info("Department %s completed in %.3fs", department_name, elapsed)
         messages.extend(department_messages)
         department_packages[department_name] = package
         sections[department_assignment.target_section] = section_payload

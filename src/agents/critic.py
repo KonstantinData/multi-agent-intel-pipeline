@@ -158,6 +158,14 @@ class CriticAgent:
         ]
         evidence_strength = "strong" if len(external_sources) >= 2 else "moderate" if sources else "weak"
 
+        # Schicht 4: surface worker-reported field_issues (e.g. Pydantic
+        # validation failures that caused a salvage/fallback) so the Critic
+        # can flag them and request a revision.
+        worker_field_issues = (report or {}).get("field_issues", [])
+        if worker_field_issues:
+            for fi in worker_field_issues:
+                issues.append(f"Worker field issue: {fi}")
+
         method_issue = False
         if report:
             queries_used = report.get("queries_used", [])

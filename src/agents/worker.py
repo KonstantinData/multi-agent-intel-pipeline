@@ -58,6 +58,16 @@ class ResearchWorker:
         page_evidence, page_fetches = self._fetch_supporting_pages(search_results, granted_tools=granted_tools)
         existing_payload = dict(current_sections.get(target_section, {}))
 
+        # Schicht 3: inject cross-task memory context so the LLM can
+        # reference facts already collected by earlier tasks (e.g. peer
+        # names from company_fundamentals available to peer_companies).
+        memory_context = self._build_memory_context(
+            task_key=task_key,
+            target_section=target_section,
+            current_sections=current_sections,
+            role_memory=role_memory,
+        )
+
         evidence_pack = {
             "brief": {
                 "company_name": brief.company_name,
@@ -77,6 +87,7 @@ class ResearchWorker:
             "task_key": task_key,
             "target_section": target_section,
             "current_section": existing_payload,
+            "memory_context": memory_context,
             "queries": queries,
             "search_results": search_results,
             "page_evidence": page_evidence,
@@ -117,16 +128,43 @@ class ResearchWorker:
         except Exception as exc:
             if not used_llm:
                 raise
+            # Schicht 2: salvage valid fields from the LLM output instead of
+            # discarding everything and falling back to the bare-minimum
+            # fallback synthesis.  This preserves fields like founded,
+            # employees, revenue even when one sibling field (e.g.
+            # headquarters as dict) causes a Pydantic validation error.
             fallback_note = f"LLM payload normalization failed for {task_key}: {exc}"
-            synthesis = self._fallback_synthesis(evidence_pack)
-            synthesis.setdefault("open_questions", []).append(fallback_note)
+            salvaged = self._salvage_valid_fields(
+                target_section,
+                self._normalize_payload_updates(target_section, synthesis.get("payload_updates", {})),
+            )
+            fallback = self._fallback_synthesis(evidence_pack)
+            fallback.setdefault("open_questions", []).append(fallback_note)
+            merged_updates = self._deep_merge(
+                self._normalize_payload_updates(target_section, fallback.get("payload_updates", {})),
+                salvaged,
+            )
+            # Keep the richer fact/signal lists from the original LLM synthesis
+            for list_key in ("facts", "market_signals", "buyer_hypotheses", "next_actions"):
+                orig = synthesis.get(list_key, [])
+                fb = fallback.get(list_key, [])
+                fallback[list_key] = list(dict.fromkeys(orig + fb))
+            fallback["open_questions"] = list(dict.fromkeys(
+                synthesis.get("open_questions", []) + fallback.get("open_questions", [])
+            ))
+            synthesis = fallback
             payload = self._merge_payload(
                 section=target_section,
                 current_payload=existing_payload,
-                payload_updates=self._normalize_payload_updates(target_section, synthesis.get("payload_updates", {})),
+                payload_updates=merged_updates,
                 brief=brief,
                 search_results=search_results,
             )
+
+        # Schicht 4: surface validation issues so the Critic can see them
+        field_issues: list[str] = []
+        if fallback_note:
+            field_issues.append(fallback_note)
 
         return {
             "task_key": task_key,
@@ -142,6 +180,7 @@ class ResearchWorker:
             "buyer_hypotheses": synthesis.get("buyer_hypotheses", []),
             "open_questions": synthesis.get("open_questions", []),
             "next_actions": synthesis.get("next_actions", []),
+            "field_issues": field_issues,
             "sources": payload.get("sources", []),
             "queries_used": queries,
             "usage": {
@@ -150,6 +189,58 @@ class ResearchWorker:
                 "page_fetches": page_fetches,
             },
         }
+
+    def _build_memory_context(
+        self,
+        *,
+        task_key: str,
+        target_section: str,
+        current_sections: dict[str, Any],
+        role_memory: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        """Build cross-task memory context for the LLM.
+
+        Schicht 3: surfaces facts already collected by earlier tasks so the
+        LLM can reference them (e.g. peer names from company_fundamentals
+        available to peer_companies, contact roles from discovery available
+        to qualification).
+        """
+        ctx: dict[str, Any] = {}
+
+        # For peer_companies / monetization: inject company_profile facts
+        if task_key in {"peer_companies", "monetization_redeployment"}:
+            company = current_sections.get("company_profile", {})
+            if company:
+                ctx["known_products"] = company.get("products_and_services", [])
+                ctx["known_industry"] = company.get("industry", "n/v")
+                ctx["known_description"] = (company.get("description") or "")[:300]
+
+        # For contact_qualification: inject contact_discovery results
+        if task_key == "contact_qualification":
+            contacts_section = current_sections.get("contact_intelligence", {})
+            if contacts_section:
+                ctx["discovered_contacts"] = [
+                    {k: v for k, v in c.items() if v != "n/v"}
+                    for c in contacts_section.get("contacts", [])[:10]
+                ]
+
+        # For market_situation: inject any already-collected market facts
+        if task_key == "market_situation":
+            industry = current_sections.get("industry_analysis", {})
+            if industry:
+                ctx["existing_trends"] = industry.get("key_trends", [])
+                ctx["existing_assessment"] = industry.get("assessment", "")
+                ctx["existing_growth_rate"] = industry.get("growth_rate", "")
+
+        # Inject successful queries from role memory
+        if role_memory:
+            successful_queries = []
+            for mem in role_memory[:3]:
+                successful_queries.extend(mem.get("successful_queries", [])[:5])
+            if successful_queries:
+                ctx["prior_successful_queries"] = list(dict.fromkeys(successful_queries))[:10]
+
+        return ctx
 
     def _derive_research_hints(self, brief: SupervisorBrief) -> dict[str, Any]:
         industry_hint = infer_industry(
@@ -437,6 +528,17 @@ class ResearchWorker:
                 revision_note_parts.append("Instructions: " + "; ".join(str(i) for i in revision_instructions))
             system_parts.append(" ".join(revision_note_parts))
 
+        # Schicht 3: inject memory context so the LLM can reference
+        # cross-task facts already collected by earlier tasks.
+        memory_context = evidence_pack.get("memory_context", {})
+        if memory_context:
+            ctx_lines = ["Previously collected facts from other tasks (use as additional context, do not fabricate):"]
+            for ctx_key, ctx_val in memory_context.items():
+                if ctx_val and ctx_val != "n/v":
+                    ctx_lines.append(f"  {ctx_key}: {json.dumps(ctx_val, ensure_ascii=False)[:500]}")
+            if len(ctx_lines) > 1:
+                system_parts.append(" ".join(ctx_lines))
+
         response = self._client_instance().chat.completions.create(
             model=str(config["structured_model"]),
             temperature=float(config["temperature"]),
@@ -664,12 +766,23 @@ class ResearchWorker:
     def _sanitize_for_section(self, section: str, payload: dict[str, Any]) -> dict[str, Any]:
         cleaned = self._deep_merge({}, payload)
         if section == "company_profile":
+            # Schicht 1: coerce scalar string fields BEFORE Pydantic sees them.
+            # Prevents a single type mismatch (e.g. headquarters as dict)
+            # from blowing up the entire payload validation.
+            for str_field in ("headquarters", "founded", "employees", "revenue",
+                              "legal_form", "goods_classification", "company_name",
+                              "website", "industry", "description"):
+                if str_field in cleaned:
+                    cleaned[str_field] = self._coerce_to_string(cleaned[str_field])
             for key in ("products_and_services", "product_asset_scope"):
                 cleaned[key] = self._coerce_string_list(cleaned.get(key, []))
             cleaned["key_people"] = self._coerce_people(cleaned.get("key_people", []))
             cleaned["sources"] = self._coerce_sources(cleaned.get("sources", []))
             economic = cleaned.get("economic_situation", {})
             if isinstance(economic, dict):
+                for econ_str in ("revenue_trend", "profitability", "financial_pressure", "assessment"):
+                    if econ_str in economic:
+                        economic[econ_str] = self._coerce_to_string(economic[econ_str])
                 economic["recent_events"] = self._coerce_string_list(economic.get("recent_events", []))
                 economic["inventory_signals"] = self._coerce_string_list(economic.get("inventory_signals", []))
                 cleaned["economic_situation"] = economic
@@ -692,6 +805,65 @@ class ResearchWorker:
             cleaned["open_questions"] = self._coerce_string_list(cleaned.get("open_questions", []))
             cleaned["sources"] = self._coerce_sources(cleaned.get("sources", []))
         return cleaned
+
+    def _coerce_to_string(self, value: Any) -> str:
+        """Coerce any scalar-ish value to a plain string for Pydantic.
+
+        Handles the common LLM patterns:
+        - dict  → join values  (e.g. {"city": "X", "country": "Y"} → "X, Y")
+        - int   → str
+        - list  → join elements
+        - None  → "n/v"
+        """
+        if value is None:
+            return "n/v"
+        if isinstance(value, str):
+            return value.strip() or "n/v"
+        if isinstance(value, dict):
+            parts = [str(v).strip() for v in value.values() if v and str(v).strip()]
+            return ", ".join(parts) if parts else "n/v"
+        if isinstance(value, list):
+            parts = [str(v).strip() for v in value if v and str(v).strip()]
+            return ", ".join(parts) if parts else "n/v"
+        return str(value).strip() or "n/v"
+
+    def _salvage_valid_fields(
+        self, section: str, payload_updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Extract individually valid fields from a payload that failed bulk validation.
+
+        Tries to coerce each top-level field independently.  Fields that still
+        fail after coercion are silently dropped — the fallback synthesis will
+        provide safe defaults for them.
+        """
+        model_cls = SECTION_MODELS.get(section)
+        if not model_cls or not isinstance(payload_updates, dict):
+            return {}
+
+        salvaged: dict[str, Any] = {}
+        for key, value in payload_updates.items():
+            if value is None or value == "n/v":
+                continue
+            # Try coercion for known string fields
+            field_info = model_cls.model_fields.get(key)
+            if field_info is not None:
+                annotation = field_info.annotation
+                # Simple heuristic: if the annotation is str, coerce
+                if annotation is str or (hasattr(annotation, "__origin__") is False and annotation is str):
+                    value = self._coerce_to_string(value)
+            try:
+                # Validate just this one field against the model
+                model_cls.model_validate({key: value})
+                salvaged[key] = value
+            except Exception:
+                # Try once more with coercion
+                coerced = self._coerce_to_string(value) if isinstance(value, (dict, list, int, float)) else value
+                try:
+                    model_cls.model_validate({key: coerced})
+                    salvaged[key] = coerced
+                except Exception:
+                    pass  # genuinely unsalvageable — fallback will handle it
+        return salvaged
 
     def _coerce_string_list(self, items: Any) -> list[str]:
         if not isinstance(items, list):

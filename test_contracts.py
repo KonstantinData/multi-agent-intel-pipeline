@@ -475,3 +475,207 @@ def test_validation_rules_lookup_returns_empty_for_unknown_task():
 def test_get_task_contract_returns_none_for_unknown():
     contract = get_task_contract("does_not_exist")
     assert contract is None
+
+
+# ---------------------------------------------------------------------------
+# 8. Schicht 1–5 data-quality hardening tests
+# ---------------------------------------------------------------------------
+
+# -- Schicht 1: _coerce_to_string -----------------------------------------
+
+def test_coerce_to_string_dict_to_csv():
+    """Dict like {city: X, country: Y} must become 'X, Y'."""
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string({"city": "Friedrichshafen", "country": "Germany"}) == "Friedrichshafen, Germany"
+
+
+def test_coerce_to_string_plain_string_passthrough():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string("Berlin, Germany") == "Berlin, Germany"
+
+
+def test_coerce_to_string_none_becomes_nv():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string(None) == "n/v"
+
+
+def test_coerce_to_string_int_becomes_str():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string(153000) == "153000"
+
+
+def test_coerce_to_string_list_becomes_csv():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string(["Berlin", "Germany"]) == "Berlin, Germany"
+
+
+def test_coerce_to_string_empty_string_becomes_nv():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string("") == "n/v"
+
+
+def test_coerce_to_string_empty_dict_becomes_nv():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._coerce_to_string({}) == "n/v"
+
+
+# -- Schicht 1: _sanitize_for_section coerces headquarters ----------------
+
+def test_sanitize_coerces_headquarters_dict_to_string():
+    """The exact ZF bug: headquarters as dict must be coerced to string."""
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    payload = {
+        "company_name": "ZF AG",
+        "headquarters": {"city": "Friedrichshafen", "country": "Germany"},
+        "founded": 1915,
+        "employees": 153000,
+    }
+    result = w._sanitize_for_section("company_profile", payload)
+    assert isinstance(result["headquarters"], str)
+    assert "Friedrichshafen" in result["headquarters"]
+    assert isinstance(result["founded"], str)
+    assert result["founded"] == "1915"
+    assert isinstance(result["employees"], str)
+
+
+# -- Schicht 2: _salvage_valid_fields -------------------------------------
+
+def test_salvage_rescues_valid_fields_from_mixed_payload():
+    """When headquarters is a dict (invalid), other fields should be salvaged."""
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    updates = {
+        "company_name": "ZF AG",
+        "founded": "1915",
+        "headquarters": {"city": "Friedrichshafen", "country": "Germany"},
+        "employees": "153000",
+        "revenue": "38 billion EUR",
+    }
+    salvaged = w._salvage_valid_fields("company_profile", updates)
+    assert "company_name" in salvaged
+    assert "founded" in salvaged
+    assert "employees" in salvaged
+    # headquarters should also be salvaged via coercion
+    assert "headquarters" in salvaged
+    assert isinstance(salvaged["headquarters"], str)
+
+
+def test_salvage_returns_empty_for_unknown_section():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    assert w._salvage_valid_fields("unknown_section", {"x": 1}) == {}
+
+
+# -- Schicht 3: _build_memory_context -------------------------------------
+
+def test_memory_context_injects_company_profile_for_peers():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    ctx = w._build_memory_context(
+        task_key="peer_companies",
+        target_section="market_network",
+        current_sections={
+            "company_profile": {
+                "products_and_services": ["driveline", "chassis"],
+                "industry": "Automotive",
+                "description": "Global technology company",
+            }
+        },
+        role_memory=None,
+    )
+    assert ctx["known_products"] == ["driveline", "chassis"]
+    assert ctx["known_industry"] == "Automotive"
+
+
+def test_memory_context_injects_contacts_for_qualification():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    ctx = w._build_memory_context(
+        task_key="contact_qualification",
+        target_section="contact_intelligence",
+        current_sections={
+            "contact_intelligence": {
+                "contacts": [
+                    {"name": "John Doe", "rolle_titel": "CEO", "firma": "n/v"},
+                ]
+            }
+        },
+        role_memory=None,
+    )
+    assert len(ctx["discovered_contacts"]) == 1
+    assert ctx["discovered_contacts"][0]["name"] == "John Doe"
+    # n/v fields should be stripped
+    assert "firma" not in ctx["discovered_contacts"][0]
+
+
+def test_memory_context_empty_when_no_relevant_sections():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    ctx = w._build_memory_context(
+        task_key="company_fundamentals",
+        target_section="company_profile",
+        current_sections={},
+        role_memory=None,
+    )
+    assert ctx == {}
+
+
+def test_memory_context_injects_role_memory_queries():
+    from src.agents.worker import ResearchWorker
+    w = ResearchWorker("TestWorker")
+    ctx = w._build_memory_context(
+        task_key="peer_companies",
+        target_section="market_network",
+        current_sections={},
+        role_memory=[
+            {"successful_queries": ["query1", "query2", "query3"]},
+        ],
+    )
+    assert "prior_successful_queries" in ctx
+    assert "query1" in ctx["prior_successful_queries"]
+
+
+# -- Schicht 4: Critic surfaces field_issues from worker report -----------
+
+def test_critic_surfaces_worker_field_issues():
+    critic = CriticAgent("TestCritic")
+    rules = [
+        {"check": "non_placeholder", "field": "company_name", "class": "core", "message": "missing"},
+    ]
+    payload = {"company_name": "ACME"}
+    report = {"field_issues": ["LLM payload normalization failed: headquarters type error"]}
+    result = critic.review(
+        task_key="company_fundamentals",
+        section="company_profile",
+        objective="test",
+        payload=payload,
+        report=report,
+        validation_rules=rules,
+    )
+    assert any("Worker field issue" in issue for issue in result["issues"])
+
+
+def test_critic_no_field_issues_when_report_clean():
+    critic = CriticAgent("TestCritic")
+    rules = [
+        {"check": "non_placeholder", "field": "company_name", "class": "core", "message": "missing"},
+    ]
+    payload = {"company_name": "ACME"}
+    report = {"field_issues": []}
+    result = critic.review(
+        task_key="company_fundamentals",
+        section="company_profile",
+        objective="test",
+        payload=payload,
+        report=report,
+        validation_rules=rules,
+    )
+    assert not any("Worker field issue" in issue for issue in result["issues"])
