@@ -46,6 +46,26 @@ import json
 import logging
 from typing import Annotated, Any, Callable, Literal
 
+
+def _dedup(items: list) -> list:
+    """Deduplicate a list whose items may be dicts (unhashable by dict.fromkeys).
+
+    Uses JSON serialization as a stable key so both strings and dicts are handled
+    without raising 'unhashable type: dict'.
+    """
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, (dict, list))
+            else str(item)
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
 from src.agents.coding_assistant import CodingAssistantAgent
@@ -579,10 +599,10 @@ class DepartmentLeadAgent:
                     # Primary path (CHG-07): use stored decision — no re-judging
                     task_status = decision.task_status
                     task_accepted = review.accepted_points if review else []
-                    task_open = list(dict.fromkeys(
+                    task_open = _dedup(
                         decision.open_questions
                         + (artifact.open_questions if artifact else [])
-                    ))
+                    )
                     task_sources = artifact.sources if artifact else []
                     task_summary = artifact.objective or assignment.objective if artifact else assignment.objective
 
@@ -616,10 +636,10 @@ class DepartmentLeadAgent:
                         run_state.record_decision_artifact(inline_decision)
                         task_status = inline_result["task_status"]
                         task_accepted = review.accepted_points
-                        task_open = list(dict.fromkeys(
+                        task_open = _dedup(
                             inline_result.get("open_questions", [])
                             + artifact.open_questions
-                        ))
+                        )
                     task_sources = artifact.sources
                     task_summary = artifact.objective or assignment.objective
 
@@ -645,11 +665,11 @@ class DepartmentLeadAgent:
                     run_state.record_decision_artifact(inline_decision)
                     task_status = inline_result["task_status"]
                     task_accepted = fallback_review.get("accepted_points", [])
-                    task_open = list(dict.fromkeys(
+                    task_open = _dedup(
                         inline_result.get("open_questions", [])
                         + artifact.open_questions
                         + fallback_review.get("missing_points", [])
-                    ))
+                    )
                     task_sources = artifact.sources
                     task_summary = artifact.objective or assignment.objective
 
@@ -694,8 +714,8 @@ class DepartmentLeadAgent:
                 department=self.department,
                 narrative_summary=summary or f"{self.department} investigation completed by {self.name}.",
                 confidence=confidence,
-                key_findings=list(dict.fromkeys(accepted_points))[:10],
-                open_questions=list(dict.fromkeys(open_questions))[:6],
+                key_findings=_dedup(accepted_points)[:10],
+                open_questions=_dedup(open_questions)[:6],
                 sources=[],
             ).model_dump(mode="json")
 
@@ -706,8 +726,8 @@ class DepartmentLeadAgent:
                     "summary": summary or f"{self.department} domain package assembled by {self.name}.",
                     "section_payload": run_state.current_payload,
                     "completed_tasks": task_summaries,
-                    "accepted_points": list(dict.fromkeys(accepted_points)),
-                    "open_questions": list(dict.fromkeys(open_questions)),
+                    "accepted_points": _dedup(accepted_points),
+                    "open_questions": _dedup(open_questions),
                     "visual_focus": _VISUAL_FOCUS.get(self.department, []),
                     "sources": sources[:12],
                     "autogen_group": self.autogen_group_spec(),
@@ -718,10 +738,10 @@ class DepartmentLeadAgent:
 
             # Append tool error traces as open_questions for traceability
             for err in run_state.tool_errors:
-                package["open_questions"] = list(dict.fromkeys(
+                package["open_questions"] = _dedup(
                     package.get("open_questions", [])
                     + [f"Tool error ({err['tool']}): {err['error']}"]
-                ))
+                )
 
             self._completed_package = package
             if memory_store is not None:
@@ -1286,11 +1306,11 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
                 )
                 task_status = judge_result["task_status"]
                 task_accepted = fallback_review.get("accepted_points", [])
-                task_open = list(dict.fromkeys(
+                task_open = _dedup(
                     judge_result.get("open_questions", [])
                     + artifact.open_questions
                     + fallback_review.get("missing_points", [])
-                ))
+                )
                 task_sources = artifact.sources
             else:
                 task_status = "rejected"
@@ -1327,8 +1347,8 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
                 "summary": f"{self.department} package degraded — max_round reached before finalization.",
                 "section_payload": run_state.current_payload,
                 "completed_tasks": task_summaries,
-                "accepted_points": list(dict.fromkeys(accepted_points)),
-                "open_questions": list(dict.fromkeys(open_questions)),
+                "accepted_points": _dedup(accepted_points),
+                "open_questions": _dedup(open_questions),
                 "visual_focus": _VISUAL_FOCUS.get(self.department, []),
                 "sources": sources[:12],
                 "autogen_group": self.autogen_group_spec(),

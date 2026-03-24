@@ -19,11 +19,28 @@ class-aware three-outcome decision without re-reading the payload.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from src.app.use_cases import get_task_validation_rules
 from src.config import get_role_model_selection
 from src.orchestration.tool_policy import resolve_allowed_tools
+
+
+def _dedup_safe(items: list) -> list:
+    """Deduplicate a list whose items may be dicts (unhashable)."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, (dict, list))
+            else str(item)
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +208,7 @@ class CriticAgent:
             "task_key": task_key,
             "objective": objective,
             "rejected_points": rejected_points,
-            "missing_points": list(dict.fromkeys(missing_points)),
+            "missing_points": _dedup_safe(missing_points),
             "issues": issues,
             "method_issue": method_issue,
             "research_gap": (
@@ -206,7 +223,7 @@ class CriticAgent:
             "issues": issues,
             "accepted_points": accepted_points,
             "rejected_points": rejected_points,
-            "missing_points": list(dict.fromkeys(missing_points)),
+            "missing_points": _dedup_safe(missing_points),
             "evidence_strength": evidence_strength,
             "method_issue": method_issue,
             # Class-aware counts for the Judge

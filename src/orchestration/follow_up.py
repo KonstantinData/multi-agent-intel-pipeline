@@ -34,6 +34,22 @@ from src.models.schemas import FollowUpAnswer
 
 logger = logging.getLogger(__name__)
 
+
+def _dedup_safe(items: list) -> list:
+    """Deduplicate a list whose items may be dicts (unhashable)."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, (dict, list))
+            else str(item)
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "artifacts" / "runs"
 
@@ -101,7 +117,7 @@ def _extract_task_evidence(
             latest = decisions[-1]
             unresolved.extend(latest.get("open_questions", [])[:2])
 
-    return list(dict.fromkeys(filter(None, evidence))), list(dict.fromkeys(filter(None, unresolved)))
+    return _dedup_safe(list(filter(None, evidence))), _dedup_safe(list(filter(None, unresolved)))
 
 
 def _get_department_run_state(run_context: dict[str, Any], department: str) -> dict[str, Any]:
@@ -141,9 +157,9 @@ def _company_answer(
         *profile.get("product_asset_scope", [])[:3],
         profile.get("economic_situation", {}).get("assessment", ""),
     ]
-    unresolved = list(dict.fromkeys(
+    unresolved = _dedup_safe(
         package.get("open_questions", [])[:2] + artifact_unresolved[:2]
-    ))
+    )
     answer = (
         f"Company follow-up for '{question}': "
         f"{profile.get('company_name', 'The target company')} is described as {profile.get('description', 'n/v')}. "
@@ -177,9 +193,9 @@ def _market_answer(
         *analysis.get("repurposing_signals", [])[:2],
         *analysis.get("analytics_signals", [])[:2],
     ]
-    unresolved = list(dict.fromkeys(
+    unresolved = _dedup_safe(
         package.get("open_questions", [])[:2] + artifact_unresolved[:2]
-    ))
+    )
     answer = (
         f"Market follow-up for '{question}': "
         f"Industry assessment: {analysis.get('assessment', 'n/v')}. "
@@ -215,9 +231,9 @@ def _buyer_answer(
         *network.get("monetization_paths", [])[:2],
         *network.get("redeployment_paths", [])[:2],
     ]
-    unresolved = list(dict.fromkeys(
+    unresolved = _dedup_safe(
         package.get("open_questions", [])[:2] + artifact_unresolved[:2]
-    ))
+    )
     answer = (
         f"Buyer follow-up for '{question}': "
         f"Peer assessment: {network.get('peer_competitors', {}).get('assessment', 'n/v')}. "
@@ -249,9 +265,9 @@ def _contact_answer(
         section.get("narrative_summary", ""),
         *[f"{c.get('name', '')} — {c.get('rolle_titel', '')} at {c.get('firma', '')}" for c in contacts[:3]],
     ]
-    unresolved = list(dict.fromkeys(
+    unresolved = _dedup_safe(
         package.get("open_questions", [])[:2] + artifact_unresolved[:2]
-    ))
+    )
     answer = (
         f"Contact intelligence follow-up for '{question}': "
         f"{section.get('narrative_summary', 'n/v')} "

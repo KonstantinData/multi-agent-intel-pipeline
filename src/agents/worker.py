@@ -54,7 +54,7 @@ class ResearchWorker:
             task_key=task_key,
             current_section=current_sections.get(target_section, {}),
         )
-        search_results, search_calls = self._search_queries(queries, granted_tools=granted_tools)
+        search_results, search_calls = self._search_queries(queries, granted_tools=granted_tools, task_key=task_key)
         page_evidence, page_fetches = self._fetch_supporting_pages(search_results, granted_tools=granted_tools)
         existing_payload = dict(current_sections.get(target_section, {}))
 
@@ -67,6 +67,10 @@ class ResearchWorker:
             current_sections=current_sections,
             role_memory=role_memory,
         )
+
+        # P1 fix: strip default-only current_section so the LLM doesn't
+        # reproduce "n/v" / [] defaults it sees in the evidence pack.
+        stripped_payload = self._strip_default_only_payload(target_section, existing_payload)
 
         evidence_pack = {
             "brief": {
@@ -86,7 +90,7 @@ class ResearchWorker:
             "objective": objective,
             "task_key": task_key,
             "target_section": target_section,
-            "current_section": existing_payload,
+            "current_section": stripped_payload,
             "memory_context": memory_context,
             "queries": queries,
             "search_results": search_results,
@@ -117,11 +121,91 @@ class ResearchWorker:
             synthesis = self._fallback_synthesis(evidence_pack)
         if fallback_note:
             synthesis.setdefault("open_questions", []).append(fallback_note)
+        # P5 fix: if products_and_services is empty after LLM synthesis but
+        # product_keywords are available, inject them as fallback.
+        raw_updates = self._normalize_payload_updates(target_section, synthesis.get("payload_updates", {}))
+
+        # P2 bridge: if monetization_redeployment LLM synthesis left downstream_buyers /
+        # monetization_paths / redeployment_paths empty but buyer_hypotheses were collected,
+        # promote them into the MarketNetwork schema fields.
+        if target_section == "market_network" and task_key == "monetization_redeployment":
+            bh = synthesis.get("buyer_hypotheses", [])
+            if bh:
+                tier = raw_updates.setdefault("downstream_buyers", {})
+                if isinstance(tier, dict) and not tier.get("companies"):
+                    tier["companies"] = [
+                        {"name": str(h)[:80], "city": "n/v", "country": "n/v", "relevance": "buyer hypothesis"}
+                        for h in bh[:4]
+                    ]
+                    tier.setdefault("assessment", "Indicative — validate before outreach.")
+                if not raw_updates.get("monetization_paths"):
+                    raw_updates["monetization_paths"] = [str(h) for h in bh[:4]]
+                if not raw_updates.get("redeployment_paths"):
+                    facts = synthesis.get("facts", [])
+                    if facts:
+                        raw_updates["redeployment_paths"] = [str(f) for f in facts[:3]]
+
+        # P3 bridge: if repurposing_circularity LLM synthesis left repurposing_signals empty,
+        # generate indicative signals from product keywords as a last resort.
+        if target_section == "industry_analysis" and task_key == "repurposing_circularity":
+            if not raw_updates.get("repurposing_signals"):
+                kw = hints.get("product_keywords", [])
+                facts = synthesis.get("facts", [])
+                if kw:
+                    raw_updates["repurposing_signals"] = [
+                        f"Adjacent reuse or remanufacturing may be plausible for {kw[0]} — requires validation."
+                        if kw else "No validated repurposing path found yet."
+                    ] + [str(f) for f in facts[:2] if f]
+
+        # P0-2 bridge: if market_situation LLM synthesis left key_trends/demand_outlook
+        # empty, fall back to the market_signals and facts the LLM DID collect.
+        if target_section == "industry_analysis" and task_key == "market_situation":
+            if not raw_updates.get("key_trends"):
+                market_sigs = synthesis.get("market_signals", [])
+                if market_sigs:
+                    raw_updates["key_trends"] = market_sigs[:5]
+            if not raw_updates.get("demand_outlook") or raw_updates.get("demand_outlook") == "n/v":
+                facts = synthesis.get("facts", [])
+                if facts:
+                    raw_updates["demand_outlook"] = " ".join(str(f) for f in facts[:2])
+            if not raw_updates.get("assessment") or raw_updates.get("assessment") == "n/v":
+                kt = raw_updates.get("key_trends", [])
+                if kt:
+                    raw_updates["assessment"] = "Based on collected evidence: " + "; ".join(str(t) for t in kt[:3])
+
+        # P0-3 bridge: if contact_discovery LLM synthesis left contacts empty,
+        # extract real person names from search result titles as a fallback.
+        if target_section == "contact_intelligence" and not raw_updates.get("contacts"):
+            # Bug-5: pass buyer_candidates so irrelevant firms are filtered out
+            _buyer_cands = (current_sections.get(target_section) or {}).get("buyer_candidates")
+            bridged: list[dict[str, str]] = []
+            for result in search_results[:6]:
+                parsed = self._parse_contact_from_title(
+                    str(result.get("title", "")), str(result.get("url", "")),
+                    buyer_candidates=_buyer_cands,
+                )
+                if parsed:
+                    bridged.append(parsed)
+            if bridged:
+                raw_updates["contacts"] = bridged
+                raw_updates["contacts_found"] = len(bridged)
+                raw_updates["firms_searched"] = len(
+                    {c["firma"] for c in bridged if c.get("firma") not in {"n/v", ""}}
+                )
+                raw_updates.setdefault("coverage_quality", "low")
+
+        if target_section == "company_profile" and task_key == "company_fundamentals":
+            ps = raw_updates.get("products_and_services", [])
+            if not ps or ps == []:
+                kw = hints.get("product_keywords", [])
+                if kw:
+                    raw_updates["products_and_services"] = kw[:6]
+
         try:
             payload = self._merge_payload(
                 section=target_section,
                 current_payload=existing_payload,
-                payload_updates=self._normalize_payload_updates(target_section, synthesis.get("payload_updates", {})),
+                payload_updates=raw_updates,
                 brief=brief,
                 search_results=search_results,
             )
@@ -144,14 +228,15 @@ class ResearchWorker:
                 self._normalize_payload_updates(target_section, fallback.get("payload_updates", {})),
                 salvaged,
             )
-            # Keep the richer fact/signal lists from the original LLM synthesis
+            # Keep the richer fact/signal lists from the original LLM synthesis.
+            # Use _dedup_list instead of dict.fromkeys — items may be dicts (unhashable).
             for list_key in ("facts", "market_signals", "buyer_hypotheses", "next_actions"):
                 orig = synthesis.get(list_key, [])
                 fb = fallback.get(list_key, [])
-                fallback[list_key] = list(dict.fromkeys(orig + fb))
-            fallback["open_questions"] = list(dict.fromkeys(
+                fallback[list_key] = self._dedup_list(orig + fb)
+            fallback["open_questions"] = self._dedup_list(
                 synthesis.get("open_questions", []) + fallback.get("open_questions", [])
-            ))
+            )
             synthesis = fallback
             payload = self._merge_payload(
                 section=target_section,
@@ -245,7 +330,7 @@ class ResearchWorker:
             for mem in role_memory[:3]:
                 successful_queries.extend(mem.get("successful_queries", [])[:5])
             if successful_queries:
-                ctx["prior_successful_queries"] = list(dict.fromkeys(successful_queries))[:10]
+                ctx["prior_successful_queries"] = self._dedup_list(successful_queries)[:10]
 
         return ctx
 
@@ -333,7 +418,9 @@ class ResearchWorker:
                 if firm and firm not in {"n/v", "n/a", "target_company"} and "." not in firm:
                     buyer_candidates.append(firm)
             queries = []
-            for firm in buyer_candidates[:3]:
+            # Search up to 5 buyer firms (was 3) — the raised search limits
+            # in _QUERY_LIMITS allow more queries to actually execute.
+            for firm in buyer_candidates[:5]:
                 queries.extend([
                     f'"{firm}" procurement head supply chain director',
                     f'"{firm}" COO VP operations asset management',
@@ -346,16 +433,19 @@ class ResearchWorker:
                     f'"{company_name}" {industry_hint} key accounts customer contacts',
                     f'{industry_hint} procurement director head of purchasing decision maker',
                 ]
-            return queries[:4]
+            return queries[:10]
 
         if task_key == "peer_companies":
-            # Put targeted competitor queries FIRST so they survive the [:4] search cap
+            # Put targeted competitor queries FIRST so they survive the [:4] search cap.
+            # P2 fix: add generic Tier-1/sector queries so obvious peers are not missed.
             peer_queries = [
                 f"\"{company_name}\" competitors manufacturers",
+                f"top {industry_hint} Tier 1 suppliers global ranking",
                 f"{industry_hint} manufacturers europe competitors",
+                f"{industry_hint} component manufacturers global competitors ranking",
             ]
             base_queries = build_buyer_queries(company_name, product_keywords, industry_hint)
-            return list(dict.fromkeys([*peer_queries, *base_queries]))
+            return self._dedup_list([*peer_queries, *base_queries])
         queries = build_buyer_queries(company_name, product_keywords, industry_hint)
         if task_key == "monetization_redeployment":
             queries.extend(
@@ -366,18 +456,32 @@ class ResearchWorker:
             )
         return queries
 
+    # Task-specific search limits: contact and peer tasks need broader coverage
+    _QUERY_LIMITS: dict[str, tuple[int, int]] = {
+        # task_key_prefix → (max_queries, max_results)
+        "contact_discovery": (8, 12),
+        "contact_qualification": (8, 12),
+        "peer_companies": (6, 8),
+        "monetization_redeployment": (6, 8),
+    }
+    _DEFAULT_QUERY_LIMIT = (4, 5)
+
     def _search_queries(
         self,
         queries: list[str],
         *,
         granted_tools: tuple[str, ...],
+        task_key: str = "",
     ) -> tuple[list[dict[str, str]], int]:
         if not tool_is_allowed(granted_tools, "search"):
             return [], 0
+        max_queries, max_results = self._QUERY_LIMITS.get(
+            task_key, self._DEFAULT_QUERY_LIMIT
+        )
         results: list[dict[str, str]] = []
         seen_urls: set[str] = set()
         search_calls = 0
-        for query in queries[:4]:
+        for query in queries[:max_queries]:
             if not query.strip():
                 continue
             if query not in self._search_cache:
@@ -395,7 +499,7 @@ class ResearchWorker:
                     "summary": str(item.get("summary", "")),
                 }
                 results.append(record)
-                if len(results) >= 5:
+                if len(results) >= max_results:
                     return results, search_calls
         return results, search_calls
 
@@ -482,6 +586,21 @@ class ResearchWorker:
                 "Only use 'n/v' if the field is genuinely absent from ALL evidence."
             )
 
+        if task_key == "economic_commercial_situation":
+            system_parts.append(
+                "For economic_commercial_situation: you MUST populate the 'economic_situation' nested object "
+                "inside payload_updates with ALL of these fields: "
+                "revenue_trend (string: 'growing', 'declining', 'stable', or specific % change like '-11%'), "
+                "profitability (string: EBIT margin or profit figure if found, otherwise 'n/v'), "
+                "recent_events (list of concrete events: restructuring announcements, layoffs, M&A, credit rating changes), "
+                "inventory_signals (list of concrete inventory or stock signals found in the evidence), "
+                "financial_pressure (string: 'high', 'moderate', 'low', or 'n/v'), "
+                "assessment (one paragraph summarizing the economic situation and commercial pressure). "
+                "Extract ALL financial figures, restructuring news, layoff numbers, and pressure signals "
+                "directly from search result titles, summaries, and page excerpts. "
+                "Only use 'n/v' or [] if the field is genuinely absent from ALL evidence."
+            )
+
         if task_key in {"contact_discovery", "contact_qualification"}:
             system_parts.append(
                 "For contact tasks: extract REAL person names, job titles, and companies directly from "
@@ -511,8 +630,14 @@ class ResearchWorker:
             system_parts.append(
                 "For repurposing_circularity: you MUST populate repurposing_signals "
                 "(list of at least 2 concrete circularity or reuse statements from the evidence). "
+                "Look specifically in: CDP climate questionnaires, sustainability reports, "
+                "annual reports, press releases about recycling or remanufacturing. "
+                "If no explicit circularity program is documented, infer plausible signals from "
+                "the company's product types and restructuring news "
+                "(e.g. deconsolidated product lines may become redeployable assets). "
                 "Also update assessment and key_trends if the evidence contains relevant market context. "
-                "Extract concrete data points. Only use 'n/v' if genuinely absent from ALL evidence."
+                "Only return an empty list if the evidence contains absolutely no environmental, "
+                "sustainability, or product-lifecycle signals."
             )
 
         if task_key == "analytics_operational_improvement":
@@ -523,15 +648,49 @@ class ResearchWorker:
                 "Extract concrete data points. Only use 'n/v' if genuinely absent from ALL evidence."
             )
 
+        if task_key == "monetization_redeployment":
+            system_parts.append(
+                "For monetization_redeployment: you MUST populate these fields inside payload_updates: "
+                "downstream_buyers.companies (list of real buyer or distributor firms found in the evidence, "
+                "each with name/city/country/relevance), "
+                "downstream_buyers.assessment (paragraph on buyer landscape), "
+                "monetization_paths (list of concrete paths: aftermarket, licensing, refurbishment, etc.), "
+                "redeployment_paths (list of concrete redeployment or adjacent-use paths). "
+                "Use buyer_hypotheses you generate as the basis — turn them into concrete schema fields. "
+                "Extract firm names from search result titles and summaries. "
+                "Only use empty lists if no relevant companies or paths appear anywhere in the evidence."
+            )
+
         if task_key == "peer_companies":
             system_parts.append(
                 "For peer_companies: extract CONCRETE company names, cities, and countries "
                 "directly from the search result titles and summaries. Do NOT use generic descriptions. "
                 "Each entry in peer_competitors.companies must have a real company name found in the evidence. "
-                "If no real company names are found, return an empty list — do not fabricate names."
+                "If no real company names are found, return an empty list — do not fabricate names. "
+                "You MUST also populate peer_competitors.assessment with a paragraph that explains "
+                "the competitive landscape: how many direct peers exist, what product overlap looks like, "
+                "which geographies they compete in, and how the target company is positioned relative to them. "
+                "Do NOT leave peer_competitors.assessment as 'n/v' — this is a required field. "
+                "Also populate peer_competitors.sources with the URLs you used as evidence."
             )
 
-        # Revision-request injection: make the LLM address specific gaps
+        if task_key == "product_asset_scope":
+            system_parts.append(
+                "For product_asset_scope: you MUST populate the 'product_asset_scope' list "
+                "with concrete product families, material groups, or asset types found in the evidence. "
+                "Each entry should be a plain string describing a specific product category "
+                "(e.g. 'automatic transmissions — manufactured', 'chassis components — manufactured', "
+                "'aftermarket spare parts — distributed'). "
+                "Include the commercialization type: made/manufactured, distributed, or held-in-stock. "
+                "Also set 'goods_classification' to 'manufacturer', 'distributor', 'held_in_stock', "
+                "'mixed', or 'unclear'. "
+                "Extract from product catalog pages, press releases, annual report excerpts, and Wikipedia summaries. "
+                "Only return an empty list if no specific product families appear anywhere in the evidence."
+            )
+
+        # Revision-request injection: make the LLM address specific gaps.
+        # P1 fix: also inject the already-collected payload so the LLM has the
+        # concrete evidence context and does not re-produce the same empty output.
         if revision_request.get("rejected_points") or revision_request.get("feedback_to_worker"):
             rejected = revision_request.get("rejected_points", [])
             feedback = revision_request.get("feedback_to_worker", [])
@@ -543,6 +702,14 @@ class ResearchWorker:
                 revision_note_parts.append("Feedback: " + "; ".join(str(f) for f in feedback))
             if revision_instructions:
                 revision_note_parts.append("Instructions: " + "; ".join(str(i) for i in revision_instructions))
+            # Inject existing payload data so the LLM knows what is already filled
+            # and can focus effort on the genuinely missing fields.
+            current_section = evidence_pack.get("current_section", {})
+            if current_section:
+                revision_note_parts.append(
+                    "Current payload (already collected — fill the MISSING fields, keep the existing ones): "
+                    + json.dumps(current_section, ensure_ascii=False)[:800]
+                )
             system_parts.append(" ".join(revision_note_parts))
 
         # Schicht 3: inject memory context so the LLM can reference
@@ -556,8 +723,9 @@ class ResearchWorker:
             if len(ctx_lines) > 1:
                 system_parts.append(" ".join(ctx_lines))
 
+        effective_model = model_name or str(config["structured_model"])
         response = self._client_instance().chat.completions.create(
-            model=str(config["structured_model"]),
+            model=effective_model,
             temperature=float(config["temperature"]),
             response_format={"type": "json_object"},
             messages=[
@@ -693,22 +861,15 @@ class ResearchWorker:
                 next_actions.append("Check CRM coverage and likely buyer appetite before the meeting.")
 
         elif evidence_pack["target_section"] == "contact_intelligence":
+            # P4 fix: extract real person names from search result titles
+            # Pattern: "Name – Title | Company" or "Name - Title | Company"
             contacts = []
-            for result in results[:4]:
+            for result in results[:6]:
                 title = str(result.get("title", "n/v"))
                 url = str(result.get("url", ""))
-                contacts.append({
-                    "name": "n/v",
-                    "firma": title.split(" - ")[0][:80] if " - " in title else title[:80],
-                    "rolle_titel": "n/v",
-                    "funktion": "n/v",
-                    "senioritaet": "n/v",
-                    "standort": "n/v",
-                    "quelle": url,
-                    "confidence": "inferred",
-                    "relevance_reason": "n/v",
-                    "suggested_outreach_angle": "n/v",
-                })
+                parsed = self._parse_contact_from_title(title, url)
+                if parsed:
+                    contacts.append(parsed)
             payload_updates = {
                 "contacts": contacts,
                 "prioritized_contacts": [],
@@ -780,6 +941,26 @@ class ResearchWorker:
             return nested
         return payload_updates
 
+    def _strip_default_only_payload(self, section: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """P1 fix: remove fields that only contain schema defaults so the LLM
+        doesn't reproduce them.  Returns a copy with only non-default fields."""
+        if not payload:
+            return {}
+        _DEFAULTS = {"n/v", "", None}
+        stripped: dict[str, Any] = {}
+        for k, v in payload.items():
+            if isinstance(v, str) and (v.strip() in _DEFAULTS or v.strip() == "n/v"):
+                continue
+            if isinstance(v, list) and len(v) == 0:
+                continue
+            if isinstance(v, dict):
+                inner = self._strip_default_only_payload(section, v)
+                if inner:
+                    stripped[k] = inner
+                continue
+            stripped[k] = v
+        return stripped
+
     def _sanitize_for_section(self, section: str, payload: dict[str, Any]) -> dict[str, Any]:
         cleaned = self._deep_merge({}, payload)
         if section == "company_profile":
@@ -810,6 +991,10 @@ class ResearchWorker:
         elif section == "market_network":
             for tier_key in ("peer_competitors", "downstream_buyers", "service_providers", "cross_industry_buyers"):
                 tier = cleaned.get(tier_key, {})
+                # P3 fix: LLM returns list[dict] instead of MarketTier dict —
+                # wrap it into the expected {companies, assessment, sources} shape.
+                if isinstance(tier, list):
+                    tier = {"companies": tier, "assessment": "n/v", "sources": []}
                 if isinstance(tier, dict):
                     tier["companies"] = self._coerce_company_records(tier.get("companies", []))
                     tier["sources"] = self._coerce_sources(tier.get("sources", []))
@@ -914,22 +1099,33 @@ class ResearchWorker:
         return people
 
     def _coerce_company_records(self, items: Any) -> list[dict[str, str]]:
+        """P2 fix: resolve multiple field-name variants for 'name'."""
         if not isinstance(items, list):
             return []
         companies: list[dict[str, str]] = []
         for item in items:
             if isinstance(item, dict):
+                name = self._pick_field(item, ("name", "company_name", "company", "firm", "organisation", "organization"))
                 companies.append(
                     {
-                        "name": str(item.get("name", "n/v")).strip() or "n/v",
-                        "city": str(item.get("city", "n/v")).strip() or "n/v",
-                        "country": str(item.get("country", "n/v")).strip() or "n/v",
-                        "relevance": str(item.get("relevance", "n/v")).strip() or "n/v",
+                        "name": name,
+                        "city": self._pick_field(item, ("city", "location", "headquarters")),
+                        "country": self._pick_field(item, ("country",)),
+                        "relevance": self._pick_field(item, ("relevance", "relevance_reason", "reason")),
                     }
                 )
             elif isinstance(item, str) and item.strip():
                 companies.append({"name": item.strip(), "city": "n/v", "country": "n/v", "relevance": "n/v"})
         return companies
+
+    @staticmethod
+    def _pick_field(item: dict[str, Any], keys: tuple[str, ...], default: str = "n/v") -> str:
+        """Return the first non-empty, non-placeholder value from candidate keys."""
+        for k in keys:
+            v = item.get(k)
+            if v and str(v).strip() and str(v).strip() != "n/v":
+                return str(v).strip()
+        return default
 
     def _coerce_contact_records(self, items: Any) -> list[dict[str, str]]:
         if not isinstance(items, list):
@@ -1018,6 +1214,91 @@ class ResearchWorker:
                     }
                 )
         return merged[:10]
+
+    @staticmethod
+    def _parse_contact_from_title(
+        title: str,
+        url: str,
+        buyer_candidates: list[str] | None = None,
+    ) -> dict[str, str] | None:
+        """P4 fix: extract a contact from a search result title like
+        'Tom Juedes – Managing Director | Peakstone Group'.
+        Returns None if no real person name is detected.
+
+        Bug-5 fix: when *buyer_candidates* is provided the extracted company
+        must fuzzy-match at least one candidate — otherwise the contact is
+        discarded as irrelevant.
+        """
+        # Patterns: "Name – Role | Company", "Name - Role | Company",
+        # "Name – Role, Company", "Name, Role at Company"
+        for sep in (" \u2013 ", " - ", " | "):
+            if sep in title:
+                parts = title.split(sep, 1)
+                candidate_name = parts[0].strip()
+                rest = parts[1].strip() if len(parts) > 1 else ""
+                # A real person name has at least 2 words, no common non-name patterns
+                words = candidate_name.split()
+                if (
+                    len(words) >= 2
+                    and not any(kw in candidate_name.lower() for kw in (
+                        "update", "outlook", "report", "description", "job",
+                        "homepage", "press", "news", "credit", "opinion",
+                        "automotive", "industry", "market", "forecast",
+                    ))
+                    and len(candidate_name) < 50
+                ):
+                    # Try to split rest into role and company
+                    rolle = rest
+                    firma = "n/v"
+                    for role_sep in (" | ", " at ", ", "):
+                        if role_sep in rest:
+                            role_parts = rest.split(role_sep, 1)
+                            rolle = role_parts[0].strip()
+                            firma = role_parts[1].strip()
+                            break
+
+                    # Bug-5: filter out contacts whose firm does not match
+                    # any known buyer candidate.
+                    if buyer_candidates and firma and firma != "n/v":
+                        firma_lower = firma.lower()
+                        if not any(
+                            bc.lower() in firma_lower or firma_lower in bc.lower()
+                            for bc in buyer_candidates
+                        ):
+                            return None  # irrelevant firm
+
+                    return {
+                        "name": candidate_name,
+                        "firma": firma if firma else "n/v",
+                        "rolle_titel": rolle if rolle else "n/v",
+                        "funktion": "n/v",
+                        "senioritaet": "n/v",
+                        "standort": "n/v",
+                        "quelle": url,
+                        "confidence": "inferred",
+                        "relevance_reason": "Extracted from public search result.",
+                        "suggested_outreach_angle": "n/v",
+                    }
+        return None
+
+    def _dedup_list(self, items: list) -> list:
+        """Deduplicate a list whose items may be dicts (unhashable).
+
+        Uses JSON serialization as a stable key so that both string and dict
+        items can be deduplicated without triggering 'unhashable type: dict'.
+        """
+        seen: set[str] = set()
+        result = []
+        for item in items:
+            key = (
+                json.dumps(item, sort_keys=True, ensure_ascii=False)
+                if isinstance(item, (dict, list))
+                else str(item)
+            )
+            if key not in seen:
+                seen.add(key)
+                result.append(item)
+        return result
 
     def _deep_merge(self, base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
         merged = dict(base)

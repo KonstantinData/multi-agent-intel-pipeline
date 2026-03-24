@@ -20,8 +20,25 @@ in long-term memory.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def _dedup_safe(items: list) -> list:
+    """Deduplicate a list whose items may be dicts (unhashable)."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, (dict, list))
+            else str(item)
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
 
 
 @dataclass
@@ -155,13 +172,13 @@ class ShortTermMemoryStore:
             elif not _url:
                 _unique_sources.append(_s)
         return {
-            "facts": list(dict.fromkeys(self.facts)),
+            "facts": _dedup_safe(self.facts),
             "sources": _unique_sources,
-            "market_signals": list(dict.fromkeys(self.market_signals)),
-            "buyer_hypotheses": list(dict.fromkeys(self.buyer_hypotheses)),
-            "open_questions": list(dict.fromkeys(self.open_questions)),
-            "next_actions": list(dict.fromkeys(self.next_actions)),
-            "rejected_claims": list(dict.fromkeys(self.rejected_claims)),
+            "market_signals": _dedup_safe(self.market_signals),
+            "buyer_hypotheses": _dedup_safe(self.buyer_hypotheses),
+            "open_questions": _dedup_safe(self.open_questions),
+            "next_actions": _dedup_safe(self.next_actions),
+            "rejected_claims": _dedup_safe(self.rejected_claims),
             "task_outputs": self.task_outputs,
             "task_statuses": self.task_statuses,
             "section_outputs": self.section_outputs,

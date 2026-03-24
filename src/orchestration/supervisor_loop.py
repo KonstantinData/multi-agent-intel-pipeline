@@ -70,6 +70,10 @@ def run_supervisor_loop(
     )
 
     for assignment in assignments:
+        # Skip synthesis tasks here — they are registered later in the
+        # dedicated synthesis block to avoid duplicate task entries.
+        if assignment.assignee == "SynthesisDepartment":
+            continue
         run_context.record_task(
             assignee=assignment.assignee,
             objective=assignment.objective,

@@ -1,7 +1,24 @@
 """Cross-domain synthesis and report shaping."""
 from __future__ import annotations
 
+import json
 from typing import Any
+
+
+def _dedup_safe(items: list) -> list:
+    """Deduplicate a list whose items may be dicts (unhashable)."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, (dict, list))
+            else str(item)
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
 
 
 NEGATIVE_PREFIXES = ("no ", "not ", "none", "kein", "keine", "keinen")
@@ -40,7 +57,7 @@ def build_quality_review(memory_snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
         "validated_agents": ["Supervisor", "CompanyDepartment", "MarketDepartment", "BuyerDepartment", "ContactDepartment", *sorted(approved_tasks)],
         "evidence_health": evidence_health,
-        "open_gaps": list(dict.fromkeys([*open_questions, *unresolved_points])),
+        "open_gaps": _dedup_safe([*open_questions, *unresolved_points]),
         "recommendations": [
             "Validate likely buyers against CRM before the meeting.",
             "Confirm economic pressure signals with fresher external evidence where possible.",
@@ -54,7 +71,7 @@ def build_quality_review(memory_snapshot: dict[str, Any]) -> dict[str, Any]:
                 "summary": question,
                 "recommendation": "Use follow-up mode or customer discovery to close this gap.",
             }
-            for question in list(dict.fromkeys(open_questions))[:5]
+            for question in _dedup_safe(open_questions)[:5]
         ],
     }
 
@@ -200,7 +217,7 @@ def build_synthesis_context(
             return False
         return True
 
-    _filtered_risks = [r for r in dict.fromkeys(quality_review.get("open_gaps", [])) if _is_genuine_risk(r)]
+    _filtered_risks = [r for r in _dedup_safe(quality_review.get("open_gaps", [])) if _is_genuine_risk(r)]
     if _filtered_risks:
         key_risks = _filtered_risks
     elif quality_review.get("evidence_health") in {"high", "medium"}:
@@ -217,7 +234,7 @@ def build_synthesis_context(
         key_risks = _fallback_risks or ["Evidence base is solid; validate contacts and financials directly in the meeting."]
     else:
         key_risks = ["Public web evidence remains incomplete and should be validated in the meeting."]
-    next_steps = list(dict.fromkeys(memory_snapshot.get("next_actions", []))) or [
+    next_steps = _dedup_safe(memory_snapshot.get("next_actions", [])) or [
         "Validate buyer paths and inventory pressure directly with the prospect."
     ]
 

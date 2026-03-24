@@ -20,8 +20,25 @@ Sanitisation is enforced here before any write to ``FileLongTermMemoryStore``.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
+
+
+def _dedup_safe(items: list) -> list:
+    """Deduplicate a list whose items may be dicts (unhashable)."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, (dict, list))
+            else str(item)
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
 
 # ---------------------------------------------------------------------------
 # Company-name scrubbing helpers
@@ -197,7 +214,7 @@ def consolidate_role_patterns(
                 "domain": "",
                 "industry_hint": safe_industry,
                 "avg_core_pass_rate": avg_pass_rate,
-                "common_defect_classes": list(dict.fromkeys(defect_classes))[:8],
+                "common_defect_classes": _dedup_safe(defect_classes)[:8],
                 "useful_source_types": useful_source_types,
                 "rationale": (
                     f"{critic_role} reviewed {len(dept_reviews)} tasks. "
@@ -258,7 +275,7 @@ def consolidate_role_patterns(
                     "pattern_scope": "lead_delegation",
                     "domain": "",
                     "industry_hint": safe_industry,
-                    "retry_trigger_patterns": list(dict.fromkeys(retry_reasons))[:6],
+                    "retry_trigger_patterns": _dedup_safe(retry_reasons)[:6],
                     "rationale": (
                         f"Retry triggers from {dept_name}: {len(strategy_changes)} retries observed."
                     ),

@@ -10,7 +10,7 @@ from dotenv import dotenv_values
 
 DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_STRUCTURED_MODEL = "gpt-4.1-mini"
-MAX_TASK_RETRIES = int(os.getenv("LIQUISTO_MAX_TASK_RETRIES", "2"))
+MAX_TASK_RETRIES = int(os.getenv("LIQUISTO_MAX_TASK_RETRIES", "3"))
 SOFT_TOKEN_BUDGET = int(os.getenv("LIQUISTO_SOFT_TOKEN_BUDGET", "200000"))
 HARD_TOKEN_CAP = int(os.getenv("LIQUISTO_HARD_TOKEN_CAP", "500000"))
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +34,12 @@ ROLE_MODEL_DEFAULTS = {
     "CompanyCodingSpecialist": "gpt-4.1-mini",
     "MarketCodingSpecialist": "gpt-4.1-mini",
     "BuyerCodingSpecialist": "gpt-4.1-mini",
+    "ContactDepartment": "gpt-4.1",
+    "ContactLead": "gpt-4.1",
+    "ContactResearcher": "gpt-4.1-mini",
+    "ContactCritic": "gpt-4.1",
+    "ContactJudge": "gpt-4.1",
+    "ContactCodingSpecialist": "gpt-4.1-mini",
     "CrossDomainStrategicAnalyst": "gpt-4.1",
     "ReportWriter": "gpt-4.1-mini",
 }
@@ -57,6 +63,12 @@ ROLE_STRUCTURED_MODEL_DEFAULTS = {
     "CompanyCodingSpecialist": "gpt-4.1-mini",
     "MarketCodingSpecialist": "gpt-4.1-mini",
     "BuyerCodingSpecialist": "gpt-4.1-mini",
+    "ContactDepartment": "gpt-4.1-mini",
+    "ContactLead": "gpt-4.1-mini",
+    "ContactResearcher": "gpt-4.1-mini",
+    "ContactCritic": "gpt-4.1-mini",
+    "ContactJudge": "gpt-4.1-mini",
+    "ContactCodingSpecialist": "gpt-4.1-mini",
     "CrossDomainStrategicAnalyst": "gpt-4.1-mini",
     "ReportWriter": "gpt-4.1-mini",
 }
