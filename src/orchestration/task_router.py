@@ -90,13 +90,26 @@ def build_initial_assignments(brief: SupervisorBrief) -> list[Assignment]:
 # Maps run_condition strings to callables that receive the pipeline state
 # and return True when the condition is met.
 _CONDITION_EVALUATORS: dict[str, Any] = {
-    "buyer_department_has_prioritized_firms": lambda state: bool(
-        state.get("department_packages", {}).get("BuyerDepartment", {}).get("accepted_points")
+    "buyer_department_has_prioritized_firms": lambda state: _is_admitted_with_points(
+        state.get("department_packages", {}), "BuyerDepartment",
     ),
     "contact_discovery_completed": lambda state: (
         state.get("task_statuses", {}).get("contact_discovery") in ("accepted", "degraded")
     ),
 }
+
+
+def _is_admitted_with_points(packages: dict[str, Any], dept: str) -> bool:
+    """Check if a department package is admitted and has accepted_points."""
+    pkg = packages.get(dept, {})
+    # Envelope format (F2): check admission + raw_package
+    if "admission" in pkg:
+        if not pkg["admission"].get("downstream_visible", False):
+            return False
+        raw = pkg.get("raw_package", {})
+        return bool(raw.get("accepted_points"))
+    # Legacy format (pre-F2): direct package dict
+    return bool(pkg.get("accepted_points"))
 
 
 def evaluate_run_conditions(

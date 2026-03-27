@@ -77,6 +77,7 @@ from src.config.settings import get_openai_api_key, get_role_model_selection, MA
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import DepartmentPackage, DomainReportSegment
 from src.orchestration.contracts import (
+    ContractViolation,
     DepartmentRunState,
     TaskArtifact,
     TaskDecisionArtifact,
@@ -84,9 +85,58 @@ from src.orchestration.contracts import (
 )
 from src.orchestration.task_router import Assignment, DEPARTMENT_RESEARCHERS
 from src.orchestration.tool_policy import resolve_allowed_tools
+from src.models.registry import resolve_output_schema
 from src.research.extract import extract_product_keywords, infer_industry
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_payload_against_task_schema(
+    schema_key: str,
+    payload_updates: dict[str, Any],
+) -> list[ContractViolation]:
+    """F4: Validate payload_updates (delta) against the task-level schema.
+
+    Returns a list of ContractViolation records.  Uses Pydantic validation
+    errors to produce structured violations.
+    """
+    if not schema_key:
+        return []
+    try:
+        schema_cls = resolve_output_schema(schema_key)
+    except KeyError:
+        return []
+    try:
+        schema_cls.model_validate(payload_updates)
+        return []
+    except Exception as exc:
+        violations: list[ContractViolation] = []
+        errors = getattr(exc, "errors", lambda: [])() if hasattr(exc, "errors") else []
+        if errors:
+            for err in errors:
+                field_path = ".".join(str(p) for p in err.get("loc", ["unknown"]))
+                err_type = str(err.get("type", "unknown"))
+                violation_type = "type_mismatch" if "type" in err_type else "missing_required_field"
+                violations.append(ContractViolation(
+                    field_path=field_path,
+                    violation_type=violation_type,
+                    severity="medium",
+                    message=str(err.get("msg", str(exc)))[:200],
+                ))
+        else:
+            violations.append(ContractViolation(
+                field_path="*",
+                violation_type="type_mismatch",
+                severity="high",
+                message=str(exc)[:200],
+            ))
+        # Severity escalation: if no expected field has a non-default value
+        schema_fields = set(schema_cls.model_fields.keys()) - {"sources"}
+        filled = {k for k, v in payload_updates.items() if k in schema_fields and v and v != "n/v"}
+        if not filled:
+            for v in violations:
+                v.severity = "high"
+        return violations
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -358,27 +408,98 @@ class DepartmentLeadAgent:
             if not assignment:
                 return json.dumps({"error": f"Unknown task_key: {task_key}"})
 
+            # F4/Patch 1: Dependency guard — check before worker invocation.
+            # Only check INTRA-department dependencies. Cross-department deps
+            # are guaranteed by the phase architecture (parallel/sequential)
+            # and cannot be resolved from the local DepartmentRunState.
+            local_task_keys = {a.task_key for a in assignments}
+            for dep_key in assignment.depends_on:
+                if dep_key not in local_task_keys:
+                    # Cross-department dependency — skip, handled by phase architecture
+                    continue
+                if not run_state.is_dependency_satisfied(dep_key):
+                    attempt = run_state.attempts.get(task_key, 0) + 1
+                    run_state.attempts[task_key] = attempt
+                    blocked_artifact = TaskArtifact(
+                        task_key=task_key,
+                        attempt=attempt,
+                        worker=self.researcher_name,
+                        facts=[],
+                        open_questions=[f"Blocked: dependency {dep_key} not satisfied"],
+                    )
+                    run_state.record_task_artifact(blocked_artifact)
+                    blocked_decision = TaskDecisionArtifact(
+                        task_key=task_key,
+                        attempt=attempt,
+                        outcome="blocked_by_dependency",
+                        task_status="blocked",
+                        decided_by="runtime",
+                        reason=f"Dependency {dep_key} not satisfied",
+                    )
+                    run_state.record_decision_artifact(blocked_decision)
+                    logger.info(
+                        "run_research: task=%s blocked by dependency %s",
+                        task_key, dep_key,
+                    )
+                    return json.dumps({
+                        "task_key": task_key,
+                        "status": "blocked_by_dependency",
+                        "blocked_by": dep_key,
+                    }, ensure_ascii=False)
+
             # Track attempts
             attempt = run_state.attempts.get(task_key, 0)
             run_state.attempts[task_key] = attempt + 1
 
-            # Skip duplicate execution when no revision was requested
+            # Skip duplicate execution when no revision was requested.
+            # Exception: blocked_by_dependency artifacts are NOT real completions —
+            # if the dependency is now satisfied, the task must re-run.
             if (
                 task_key in run_state.task_artifacts
                 and task_key not in run_state.revision_requests
             ):
-                existing = run_state.latest_artifact(task_key)
-                logger.debug("run_research: task=%s already complete — skipping duplicate", task_key)
-                return json.dumps(
-                    {
-                        "task_key": task_key,
-                        "status": "already_completed",
-                        "facts": existing.facts[:5] if existing else [],
-                        "open_questions": existing.open_questions[:3] if existing else [],
-                        "payload_keys": list(existing.payload.keys()) if existing else [],
-                    },
-                    ensure_ascii=False,
+                latest_decision = run_state.latest_decision(task_key)
+                was_blocked = (
+                    latest_decision is not None
+                    and latest_decision.outcome == "blocked_by_dependency"
                 )
+                if was_blocked:
+                    # Re-check: if dependency is now satisfied, clear the block and re-run
+                    all_deps_ok = all(
+                        run_state.is_dependency_satisfied(dep_key)
+                        for dep_key in assignment.depends_on
+                    )
+                    if all_deps_ok:
+                        logger.info(
+                            "run_research: task=%s was blocked but dependencies now satisfied — re-running",
+                            task_key,
+                        )
+                        # Fall through to actual execution below
+                    else:
+                        # Still blocked
+                        existing = run_state.latest_artifact(task_key)
+                        return json.dumps(
+                            {
+                                "task_key": task_key,
+                                "status": "still_blocked",
+                                "facts": [],
+                                "open_questions": existing.open_questions[:3] if existing else [],
+                            },
+                            ensure_ascii=False,
+                        )
+                else:
+                    existing = run_state.latest_artifact(task_key)
+                    logger.debug("run_research: task=%s already complete — skipping duplicate", task_key)
+                    return json.dumps(
+                        {
+                            "task_key": task_key,
+                            "status": "already_completed",
+                            "facts": existing.facts[:5] if existing else [],
+                            "open_questions": existing.open_questions[:3] if existing else [],
+                            "payload_keys": list(existing.payload.keys()) if existing else [],
+                        },
+                        ensure_ascii=False,
+                    )
 
             logger.info(
                 "run_research: task=%s attempt=%d department=%s",
@@ -407,6 +528,21 @@ class DepartmentLeadAgent:
             artifact = TaskArtifact.from_worker_report(
                 report, attempt=run_state.attempts[task_key]
             )
+
+            # F4/Patch 2: Validate payload_updates against task-specific schema
+            raw_updates = report.get("payload", {})
+            violations = _validate_payload_against_task_schema(
+                assignment.output_schema_key, raw_updates,
+            )
+            if violations:
+                artifact.contract_violations = violations
+                if all(v.severity == "high" for v in violations):
+                    artifact.needs_contract_review = True
+                logger.info(
+                    "Contract violations for task=%s: %d (needs_review=%s)",
+                    task_key, len(violations), artifact.needs_contract_review,
+                )
+
             run_state.record_task_artifact(artifact)
 
             # Keep current_payload updated (for backward compat with finalize_payload assembly)
@@ -595,6 +731,15 @@ class DepartmentLeadAgent:
                 review = run_state.latest_review(task_key)
                 artifact = run_state.latest_artifact(task_key)
 
+                # F4/Patch 4: surface contract violations in package open_questions
+                if artifact and artifact.contract_violations:
+                    high_count = sum(1 for v in artifact.contract_violations if v.severity == "high")
+                    if high_count:
+                        open_questions.append(
+                            f"Contract violation in {task_key}: "
+                            f"{high_count} high-severity schema mismatches"
+                        )
+
                 if decision:
                     # Primary path (CHG-07): use stored decision — no re-judging
                     task_status = decision.task_status
@@ -674,8 +819,8 @@ class DepartmentLeadAgent:
                     task_summary = artifact.objective or assignment.objective
 
                 else:
-                    # No research at all
-                    task_status = "rejected"
+                    # No research at all — F7: closed_unresolved, not rejected
+                    task_status = "degraded"
                     task_accepted = []
                     task_open = [f"No research result produced for {task_key}."]
                     task_sources = []
@@ -1313,7 +1458,7 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
                 )
                 task_sources = artifact.sources
             else:
-                task_status = "rejected"
+                task_status = "degraded"  # F7: no research → closed_unresolved/degraded
                 task_accepted = []
                 task_open = ["Research did not complete within max_round."]
                 task_sources = []

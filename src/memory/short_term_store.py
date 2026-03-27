@@ -21,6 +21,7 @@ in long-term memory.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -99,7 +100,7 @@ class ShortTermMemoryStore:
         payload = report.get("payload", {})
         if task_key:
             self.task_outputs[task_key] = payload
-            self.task_statuses.setdefault(task_key, "submitted")
+            self.task_statuses.setdefault(task_key, "pending")  # F7: was "submitted"
         if section:
             self.section_outputs[section] = payload
         self.worker_reports.append(report)
@@ -116,7 +117,7 @@ class ShortTermMemoryStore:
             ws = self.department_workspaces[department]
             if task_key:
                 ws["task_outputs"][task_key] = payload
-                ws["task_statuses"].setdefault(task_key, "submitted")
+                ws["task_statuses"].setdefault(task_key, "pending")  # F7: was "submitted"
             ws["worker_reports"].append(report)
             ws["facts"].extend(report.get("facts", []))
             ws["sources"].extend(report.get("sources", []))
@@ -124,7 +125,7 @@ class ShortTermMemoryStore:
 
     def mark_critic_review(self, task_key: str, approved: bool, issues: list[str] | None = None, review: dict[str, Any] | None = None, *, department: str | None = None) -> None:
         self.critic_approvals[task_key] = approved
-        self.task_statuses[task_key] = "accepted" if approved else "needs_revision"
+        self.task_statuses[task_key] = "accepted" if approved else "pending"  # F7: was "needs_revision"
         if review:
             self.critic_reviews[task_key] = review
             self.accepted_points[task_key] = list(review.get("accepted_points", []))
@@ -135,7 +136,7 @@ class ShortTermMemoryStore:
         if department and department in self.department_workspaces:
             ws = self.department_workspaces[department]
             ws["critic_approvals"][task_key] = approved
-            ws["task_statuses"][task_key] = "accepted" if approved else "needs_revision"
+            ws["task_statuses"][task_key] = "accepted" if approved else "pending"  # F7: was "needs_revision"
             if review:
                 ws["critic_reviews"][task_key] = review
                 ws["accepted_points"][task_key] = list(review.get("accepted_points", []))
@@ -160,6 +161,133 @@ class ShortTermMemoryStore:
 
     def record_follow_up(self, answer: dict[str, Any]) -> None:
         self.follow_up_sessions.append(answer)
+
+    def create_working_set(self) -> "ShortTermMemoryStore":
+        """F5: Create an isolated working-set store seeded with a read-only snapshot.
+
+        The working set starts with a frozen copy of the current state so
+        parallel departments can read existing context without mutating the
+        main store.  Only new writes go into the working set and are later
+        merged back via ``merge_from()``.
+        """
+        ws = ShortTermMemoryStore()
+        # Seed with read-only copies of current state
+        ws.facts = list(self.facts)
+        ws.sources = list(self.sources)
+        ws.market_signals = list(self.market_signals)
+        ws.buyer_hypotheses = list(self.buyer_hypotheses)
+        ws.open_questions = list(self.open_questions)
+        ws.next_actions = list(self.next_actions)
+        ws.task_statuses = dict(self.task_statuses)
+        ws.section_outputs = {k: dict(v) for k, v in self.section_outputs.items()}
+        return ws
+
+    def delta_from(self, baseline: "ShortTermMemoryStore") -> "ShortTermMemoryStore":
+        """F5: Extract only the new writes relative to a baseline snapshot.
+
+        Returns a new store containing only the data that was added after
+        the baseline was taken.  Used to merge only the delta back into
+        the main store, avoiding double-counting of seeded data.
+        """
+        delta = ShortTermMemoryStore()
+        # Lists: only items not in baseline
+        baseline_facts = set(baseline.facts)
+        delta.facts = [f for f in self.facts if f not in baseline_facts]
+        baseline_source_urls = {s.get("url", "") for s in baseline.sources if isinstance(s, dict)}
+        delta.sources = [s for s in self.sources if isinstance(s, dict) and s.get("url", "") not in baseline_source_urls]
+        baseline_signals = set(baseline.market_signals)
+        delta.market_signals = [s for s in self.market_signals if s not in baseline_signals]
+        baseline_hypotheses = set(baseline.buyer_hypotheses)
+        delta.buyer_hypotheses = [h for h in self.buyer_hypotheses if h not in baseline_hypotheses]
+        baseline_questions = set(baseline.open_questions)
+        delta.open_questions = [q for q in self.open_questions if q not in baseline_questions]
+        baseline_actions = set(baseline.next_actions)
+        delta.next_actions = [a for a in self.next_actions if a not in baseline_actions]
+        delta.rejected_claims = list(self.rejected_claims)  # typically empty at parallel start
+        delta.worker_reports = list(self.worker_reports)[len(baseline.worker_reports):]
+        # Dicts: only new keys
+        for k, v in self.task_outputs.items():
+            if k not in baseline.task_outputs:
+                delta.task_outputs[k] = v
+        for k, v in self.task_statuses.items():
+            if k not in baseline.task_statuses or v != baseline.task_statuses.get(k):
+                delta.task_statuses[k] = v
+        for k, v in self.section_outputs.items():
+            if k not in baseline.section_outputs:
+                delta.section_outputs[k] = v
+        for k, v in self.critic_approvals.items():
+            if k not in baseline.critic_approvals:
+                delta.critic_approvals[k] = v
+        for k, v in self.critic_reviews.items():
+            if k not in baseline.critic_reviews:
+                delta.critic_reviews[k] = v
+        for k, v in self.accepted_points.items():
+            if k not in baseline.accepted_points:
+                delta.accepted_points[k] = v
+        for k, v in self.open_points.items():
+            if k not in baseline.open_points:
+                delta.open_points[k] = v
+        delta.revision_history = {k: v for k, v in self.revision_history.items() if k not in baseline.revision_history}
+        delta.department_packages = dict(self.department_packages)
+        delta.department_conversations = dict(self.department_conversations)
+        delta.department_workspaces = dict(self.department_workspaces)
+        delta.department_run_states = dict(self.department_run_states)
+        # Usage: delta = current - baseline
+        for k in self.usage_totals:
+            delta.usage_totals[k] = self.usage_totals.get(k, 0) - baseline.usage_totals.get(k, 0)
+        return delta
+
+    def merge_from(self, other: "ShortTermMemoryStore") -> None:
+        """F5: Merge an isolated working-set store into this store.
+
+        Used after parallel department runs to consolidate results
+        deterministically without concurrent mutation.
+
+        Raises ValueError on unexpected key conflicts in dict fields
+        that are expected to be disjoint across departments.
+        """
+        # Lists: extend
+        self.facts.extend(other.facts)
+        self.sources.extend(other.sources)
+        self.market_signals.extend(other.market_signals)
+        self.buyer_hypotheses.extend(other.buyer_hypotheses)
+        self.open_questions.extend(other.open_questions)
+        self.next_actions.extend(other.next_actions)
+        self.rejected_claims.extend(other.rejected_claims)
+        self.worker_reports.extend(other.worker_reports)
+        self.follow_up_sessions.extend(other.follow_up_sessions)
+        # Dicts: update with disjointness assertion for task-keyed fields
+        _DISJOINT_DICTS = [
+            ("task_outputs", self.task_outputs, other.task_outputs),
+            ("task_statuses", self.task_statuses, other.task_statuses),
+            ("critic_approvals", self.critic_approvals, other.critic_approvals),
+            ("critic_reviews", self.critic_reviews, other.critic_reviews),
+            ("accepted_points", self.accepted_points, other.accepted_points),
+            ("open_points", self.open_points, other.open_points),
+            ("department_packages", self.department_packages, other.department_packages),
+            ("department_run_states", self.department_run_states, other.department_run_states),
+            ("department_conversations", self.department_conversations, other.department_conversations),
+            ("department_workspaces", self.department_workspaces, other.department_workspaces),
+        ]
+        for name, target, source in _DISJOINT_DICTS:
+            conflicts = set(target.keys()) & set(source.keys())
+            if conflicts:
+                logging.warning(
+                    "merge_from: unexpected key conflict in %s: %s (last-writer-wins)",
+                    name, conflicts,
+                )
+            target.update(source)
+        # section_outputs: may overlap (same section from different tasks) — last-writer-wins is acceptable
+        self.section_outputs.update(other.section_outputs)
+        # revision_history: merge per task_key
+        for k, v in other.revision_history.items():
+            self.revision_history.setdefault(k, []).extend(v)
+        # Usage totals: additive
+        for k, v in other.usage_totals.items():
+            if k in self.usage_totals:
+                self.usage_totals[k] += int(v or 0)
+            else:
+                self.usage_totals[k] = int(v or 0)
 
     def snapshot(self) -> dict[str, Any]:
         _seen_urls: set[str] = set()

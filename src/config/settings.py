@@ -41,7 +41,6 @@ ROLE_MODEL_DEFAULTS = {
     "ContactJudge": "gpt-4.1",
     "ContactCodingSpecialist": "gpt-4.1-mini",
     "CrossDomainStrategicAnalyst": "gpt-4.1",
-    "ReportWriter": "gpt-4.1-mini",
 }
 ROLE_STRUCTURED_MODEL_DEFAULTS = {
     "Supervisor": "gpt-4.1",
@@ -70,7 +69,6 @@ ROLE_STRUCTURED_MODEL_DEFAULTS = {
     "ContactJudge": "gpt-4.1-mini",
     "ContactCodingSpecialist": "gpt-4.1-mini",
     "CrossDomainStrategicAnalyst": "gpt-4.1-mini",
-    "ReportWriter": "gpt-4.1-mini",
 }
 
 
@@ -119,7 +117,6 @@ def summarize_runtime_models() -> str:
         f"Supervisor {get_role_model_selection('Supervisor')[0]}",
         f"Departments {get_role_model_selection('CompanyResearcher')[1]}",
         f"Cross-domain {get_role_model_selection('CrossDomainStrategicAnalyst')[0]}",
-        f"Report {get_role_model_selection('ReportWriter')[0]}",
     ]
     return " · ".join(parts)
 

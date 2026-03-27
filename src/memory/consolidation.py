@@ -121,6 +121,36 @@ ROLE_MEMORY_CATEGORIES: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
+# F6: Canonical role registry for memory retrieval
+# ---------------------------------------------------------------------------
+
+# Role memory status: active roles are persisted AND retrieved.
+# Pending roles exist in AGENT_SPECS but are not yet in the memory system.
+# Excluded roles are deliberately outside the memory system.
+MEMORY_ROLE_STATUS: dict[str, str] = {
+    # active — persisted and retrieved
+    **{role: "active" for role in ROLE_MEMORY_CATEGORIES},
+    # pending — exist in AGENT_SPECS, not yet producing/consuming patterns
+    "SynthesisLead": "pending",
+    "SynthesisCritic": "pending",
+    "SynthesisJudge": "pending",
+    # excluded — deliberately outside memory system (pending F9)
+    "ReportWriter": "excluded",
+    "CrossDomainStrategicAnalyst": "excluded",
+}
+
+# Retrieval policy: only active roles are loaded at run start.
+# This is an explicit policy layer, not just a mirror of ROLE_MEMORY_CATEGORIES.
+# A newly persisted role does NOT automatically enter retrieval.
+RETRIEVABLE_ROLES: frozenset[str] = frozenset(
+    role for role, status in MEMORY_ROLE_STATUS.items() if status == "active"
+)
+
+# Deterministic iteration order for reproducible run initialisation.
+RETRIEVABLE_ROLE_ORDER: tuple[str, ...] = tuple(sorted(RETRIEVABLE_ROLES))
+
+
+# ---------------------------------------------------------------------------
 # Main consolidation entry point
 # ---------------------------------------------------------------------------
 

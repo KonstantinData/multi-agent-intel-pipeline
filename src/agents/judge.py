@@ -76,14 +76,14 @@ class JudgeAgent:
             issues = critic_issues or []
             if not issues:
                 return {
-                    "decision": "accept",
+                    "decision": "accepted",
                     "task_status": "accepted",
                     "reason": "No unresolved issues.",
                     "open_questions": [],
                     "confidence": "medium",
                 }
             return {
-                "decision": "accept_degraded",
+                "decision": "accepted_with_gaps",
                 "task_status": "degraded",
                 "reason": f"{section}: issues exist but output is retained as degraded.",
                 "open_questions": issues[:5],
@@ -98,14 +98,14 @@ class JudgeAgent:
             issues = critic_review.get("issues", []) if critic_review else []
             if not issues:
                 return {
-                    "decision": "accept",
+                    "decision": "accepted",
                     "task_status": "accepted",
                     "reason": "No core rules defined and no issues found.",
                     "open_questions": [],
                     "confidence": "medium",
                 }
             return {
-                "decision": "accept_degraded",
+                "decision": "accepted_with_gaps",
                 "task_status": "degraded",
                 "reason": f"{section}: no core rules but issues exist.",
                 "open_questions": failed_messages[:5],
@@ -115,8 +115,8 @@ class JudgeAgent:
         if core_passed == 0:
             # Reject — no core evidence at all
             return {
-                "decision": "reject",
-                "task_status": "rejected",
+                "decision": "closed_unresolved",
+                "task_status": "degraded",
                 "reason": f"{section}: no core rules passed — task produced no usable evidence.",
                 "open_questions": failed_messages[:5],
                 "confidence": "low",
@@ -125,7 +125,7 @@ class JudgeAgent:
         if core_passed < core_total:
             # Partial core pass — degraded
             return {
-                "decision": "accept_degraded",
+                "decision": "accepted_with_gaps",
                 "task_status": "degraded",
                 "reason": (
                     f"{section}: {core_passed}/{core_total} core rules passed. "
@@ -140,7 +140,7 @@ class JudgeAgent:
         if has_supporting and supporting_passed == 0:
             # All core passed but zero supporting — still accepted, confidence medium
             return {
-                "decision": "accept",
+                "decision": "accepted",
                 "task_status": "accepted",
                 "reason": f"{section}: all core rules passed; no supporting evidence present.",
                 "open_questions": [],
@@ -148,7 +148,7 @@ class JudgeAgent:
             }
 
         return {
-            "decision": "accept",
+            "decision": "accepted",
             "task_status": "accepted",
             "reason": f"{section}: all core rules passed.",
             "open_questions": [],

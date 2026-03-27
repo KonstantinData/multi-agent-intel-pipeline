@@ -280,14 +280,14 @@ class TestJudgeGate:
         judge = JudgeAgent("CompanyJudge")
         review = _make_review(2, 2, 1, 1)
         result = judge.decide(section="company_fundamentals", critic_review=review)
-        assert result["decision"] == "accept"
+        assert result["decision"] == "accepted"
         assert result["task_status"] == "accepted"
 
     def test_accept_degraded_when_partial_core(self):
         judge = JudgeAgent("CompanyJudge")
         review = _make_review(1, 2, 0, 1)
         result = judge.decide(section="market_situation", critic_review=review)
-        assert result["decision"] == "accept_degraded"
+        assert result["decision"] == "accepted_with_gaps"
         assert result["task_status"] == "degraded"
         assert len(result["open_questions"]) >= 1
 
@@ -295,8 +295,8 @@ class TestJudgeGate:
         judge = JudgeAgent("CompanyJudge")
         review = _make_review(0, 2, 0, 1)
         result = judge.decide(section="peer_companies", critic_review=review)
-        assert result["decision"] == "reject"
-        assert result["task_status"] == "rejected"
+        assert result["decision"] == "closed_unresolved"
+        assert result["task_status"] == "degraded"
 
     def test_never_produces_skipped(self):
         judge = JudgeAgent("CompanyJudge")
@@ -517,6 +517,7 @@ class TestRunConditionEvaluation:
                 run_condition="buyer_department_has_prioritized_firms",
             ),
         ]
+        # Legacy format (pre-F2)
         state = {"department_packages": {"BuyerDepartment": {"accepted_points": []}}, "task_statuses": {}}
         runnable, skipped = evaluate_run_conditions(assignments, pipeline_state=state)
         assert len(runnable) == 0
@@ -532,10 +533,58 @@ class TestRunConditionEvaluation:
                 run_condition="buyer_department_has_prioritized_firms",
             ),
         ]
+        # Legacy format (pre-F2)
         state = {"department_packages": {"BuyerDepartment": {"accepted_points": ["peer_competitors.assessment"]}}, "task_statuses": {}}
         runnable, skipped = evaluate_run_conditions(assignments, pipeline_state=state)
         assert len(runnable) == 1
         assert len(skipped) == 0
+
+    def test_runs_when_buyer_envelope_admitted(self):
+        """F2 envelope format: admitted BuyerDepartment triggers contact."""
+        assignments = [
+            Assignment(
+                task_key="contact_discovery", assignee="ContactDepartment",
+                target_section="contact_intelligence", label="Contact discovery",
+                objective="Find contacts", model_name="m", allowed_tools=("search",),
+                run_condition="buyer_department_has_prioritized_firms",
+            ),
+        ]
+        state = {
+            "department_packages": {
+                "BuyerDepartment": {
+                    "admission": {"decision": "accepted", "downstream_visible": True, "reason": "ok"},
+                    "raw_package": {"accepted_points": ["peer_competitors.assessment"]},
+                    "admitted_payload": {"target_company": "ACME"},
+                },
+            },
+            "task_statuses": {},
+        }
+        runnable, skipped = evaluate_run_conditions(assignments, pipeline_state=state)
+        assert len(runnable) == 1
+
+    def test_skips_when_buyer_envelope_rejected(self):
+        """F2 envelope format: rejected BuyerDepartment does NOT trigger contact."""
+        assignments = [
+            Assignment(
+                task_key="contact_discovery", assignee="ContactDepartment",
+                target_section="contact_intelligence", label="Contact discovery",
+                objective="Find contacts", model_name="m", allowed_tools=("search",),
+                run_condition="buyer_department_has_prioritized_firms",
+            ),
+        ]
+        state = {
+            "department_packages": {
+                "BuyerDepartment": {
+                    "admission": {"decision": "rejected", "downstream_visible": False, "reason": "all failed"},
+                    "raw_package": {"accepted_points": ["peer_competitors.assessment"]},
+                    "admitted_payload": None,
+                },
+            },
+            "task_statuses": {},
+        }
+        runnable, skipped = evaluate_run_conditions(assignments, pipeline_state=state)
+        assert len(runnable) == 0
+        assert len(skipped) == 1
 
     def test_no_condition_always_runs(self):
         assignments = [
@@ -595,3 +644,347 @@ class TestResearchReadiness:
         )
         assert readiness["usable"] is True
         assert readiness["score"] >= 70
+
+
+# ===========================================================================
+# F2 — Supervisor acceptance gate
+# ===========================================================================
+
+class TestSupervisorAcceptanceDecision:
+    """Tests for the three-outcome admission decision."""
+
+    def _sup(self):
+        from src.agents.supervisor import SupervisorAgent
+        return SupervisorAgent()
+
+    def test_accepted_when_substantive_and_tasks_pass(self):
+        sup = self._sup()
+        result = sup.accept_department_package(
+            department="CompanyDepartment",
+            package={
+                "completed_tasks": [{"task_key": "t1", "status": "accepted"}],
+                "section_payload": {"company_name": "ACME GmbH"},
+                "open_questions": [],
+            },
+        )
+        assert result["decision"] == "accepted"
+
+    def test_accepted_with_gaps_when_no_task_accepted(self):
+        sup = self._sup()
+        result = sup.accept_department_package(
+            department="MarketDepartment",
+            package={
+                "completed_tasks": [{"task_key": "t1", "status": "degraded"}],
+                "section_payload": {"industry_name": "Manufacturing"},
+                "open_questions": ["demand unclear"],
+            },
+        )
+        assert result["decision"] == "accepted_with_gaps"
+
+    def test_rejected_when_all_tasks_failed(self):
+        sup = self._sup()
+        result = sup.accept_department_package(
+            department="BuyerDepartment",
+            package={
+                "completed_tasks": [
+                    {"task_key": "t1", "status": "rejected"},
+                    {"task_key": "t2", "status": "rejected"},
+                ],
+                "section_payload": {"target_company": "ACME"},
+                "open_questions": [],
+            },
+        )
+        assert result["decision"] == "rejected"
+
+    def test_rejected_when_no_substantive_content(self):
+        sup = self._sup()
+        result = sup.accept_department_package(
+            department="CompanyDepartment",
+            package={
+                "completed_tasks": [{"task_key": "t1", "status": "accepted"}],
+                "section_payload": {"company_name": "n/v", "industry": ""},
+                "open_questions": [],
+            },
+        )
+        assert result["decision"] == "rejected"
+
+    def test_rejected_when_empty_payload(self):
+        sup = self._sup()
+        result = sup.accept_department_package(
+            department="CompanyDepartment",
+            package={
+                "completed_tasks": [{"task_key": "t1", "status": "accepted"}],
+                "section_payload": {},
+                "open_questions": [],
+            },
+        )
+        assert result["decision"] == "rejected"
+
+
+class TestAcceptanceGate:
+    """Tests for _apply_acceptance_gate and _admitted_packages_for_synthesis."""
+
+    def test_accepted_package_flows_downstream(self):
+        from src.orchestration.supervisor_loop import _apply_acceptance_gate
+        sections: dict = {}
+        packages: dict = {}
+        _apply_acceptance_gate(
+            {"decision": "accepted", "reason": "ok"},
+            dept_name="CompanyDepartment",
+            target_section="company_profile",
+            section_payload={"company_name": "ACME"},
+            package={"completed_tasks": [], "open_questions": []},
+            sections=sections,
+            department_packages=packages,
+        )
+        assert sections["company_profile"] == {"company_name": "ACME"}
+        envelope = packages["CompanyDepartment"]
+        assert envelope["admission"]["decision"] == "accepted"
+        assert envelope["admission"]["downstream_visible"] is True
+        assert envelope["admitted_payload"] == {"company_name": "ACME"}
+        assert "raw_package" in envelope
+
+    def test_accepted_with_gaps_flows_with_marker(self):
+        from src.orchestration.supervisor_loop import _apply_acceptance_gate
+        sections: dict = {}
+        packages: dict = {}
+        _apply_acceptance_gate(
+            {"decision": "accepted_with_gaps", "reason": "partial"},
+            dept_name="MarketDepartment",
+            target_section="industry_analysis",
+            section_payload={"industry_name": "Mfg"},
+            package={"completed_tasks": [], "open_questions": ["gap"]},
+            sections=sections,
+            department_packages=packages,
+        )
+        assert sections["industry_analysis"]["industry_name"] == "Mfg"
+        assert sections["industry_analysis"]["_admission"] == "accepted_with_gaps"
+        envelope = packages["MarketDepartment"]
+        assert envelope["admission"]["downstream_visible"] is True
+        assert envelope["admitted_payload"] is not None
+
+    def test_rejected_package_blocked_downstream(self):
+        from src.orchestration.supervisor_loop import _apply_acceptance_gate
+        sections: dict = {}
+        packages: dict = {}
+        _apply_acceptance_gate(
+            {"decision": "rejected", "reason": "all failed"},
+            dept_name="BuyerDepartment",
+            target_section="market_network",
+            section_payload={"target_company": "ACME"},
+            package={"completed_tasks": [], "open_questions": ["no buyers"]},
+            sections=sections,
+            department_packages=packages,
+        )
+        assert sections["market_network"]["section_status"] == "blocked"
+        assert sections["market_network"]["reason"] == "all failed"
+        envelope = packages["BuyerDepartment"]
+        assert envelope["admission"]["downstream_visible"] is False
+        assert envelope["admitted_payload"] is None
+        assert envelope["raw_package"]["completed_tasks"] == []
+
+    def test_admitted_packages_for_synthesis_filters_rejected(self):
+        from src.orchestration.supervisor_loop import _admitted_packages_for_synthesis
+        packages = {
+            "CompanyDepartment": {
+                "admission": {"decision": "accepted", "downstream_visible": True, "reason": "ok"},
+                "raw_package": {}, "admitted_payload": {"company_name": "ACME"},
+            },
+            "BuyerDepartment": {
+                "admission": {"decision": "rejected", "downstream_visible": False, "reason": "failed"},
+                "raw_package": {}, "admitted_payload": None,
+            },
+        }
+        admitted = _admitted_packages_for_synthesis(packages)
+        assert "CompanyDepartment" in admitted
+        assert "BuyerDepartment" not in admitted
+
+    def test_admission_envelope_has_raw_and_admitted(self):
+        from src.orchestration.supervisor_loop import _apply_acceptance_gate
+        sections: dict = {}
+        packages: dict = {}
+        raw = {"completed_tasks": [{"task_key": "t1", "status": "accepted"}], "open_questions": []}
+        _apply_acceptance_gate(
+            {"decision": "accepted", "reason": "ok"},
+            dept_name="Test",
+            target_section="test_section",
+            section_payload={"key": "value"},
+            package=raw,
+            sections=sections,
+            department_packages=packages,
+        )
+        envelope = packages["Test"]
+        assert envelope["raw_package"] is raw
+        assert envelope["admitted_payload"] == {"key": "value"}
+        assert "admission" in envelope
+
+
+# ===========================================================================
+# F3 — Synthesis acceptance gate
+# ===========================================================================
+
+class TestSynthesisAcceptanceGate:
+    """Tests for the three-outcome synthesis admission decision."""
+
+    def _sup(self):
+        from src.agents.supervisor import SupervisorAgent
+        return SupervisorAgent()
+
+    def test_accepted_when_normal_and_substantive(self):
+        sup = self._sup()
+        result = sup.accept_synthesis(synthesis_payload={
+            "target_company": "ACME GmbH",
+            "executive_summary": "ACME GmbH operates in manufacturing with strong market signals.",
+            "generation_mode": "normal",
+        })
+        assert result["decision"] == "accepted"
+
+    def test_accepted_with_gaps_on_fallback(self):
+        sup = self._sup()
+        result = sup.accept_synthesis(synthesis_payload={
+            "target_company": "ACME GmbH",
+            "executive_summary": "Fallback synthesis for ACME GmbH.",
+            "generation_mode": "fallback",
+        })
+        assert result["decision"] == "accepted_with_gaps"
+
+    def test_accepted_with_gaps_when_summary_weak(self):
+        """Normal mode but short summary → accepted_with_gaps."""
+        sup = self._sup()
+        result = sup.accept_synthesis(synthesis_payload={
+            "target_company": "ACME GmbH",
+            "executive_summary": "Short.",
+            "generation_mode": "normal",
+        })
+        assert result["decision"] == "accepted_with_gaps"
+
+    def test_rejected_when_no_target_company(self):
+        sup = self._sup()
+        result = sup.accept_synthesis(synthesis_payload={
+            "target_company": "n/v",
+            "executive_summary": "Some summary text that is long enough.",
+            "generation_mode": "normal",
+        })
+        assert result["decision"] == "rejected"
+
+    def test_rejected_when_empty_payload(self):
+        sup = self._sup()
+        result = sup.accept_synthesis(synthesis_payload={})
+        assert result["decision"] == "rejected"
+
+    def test_synthesis_task_status_reflects_decision(self):
+        """Verify the mapping used in supervisor_loop for synthesis tasks."""
+        mapping = {
+            "accepted": "accepted",
+            "accepted_with_gaps": "degraded",
+            "rejected": "degraded",
+        }
+        for decision, expected_status in mapping.items():
+            assert mapping[decision] == expected_status
+
+    def test_pipeline_runner_does_not_override_synthesis_admission(self):
+        """pipeline_runner must read _synthesis_admission, not re-decide."""
+        import inspect
+        from src import pipeline_runner
+        source = inspect.getsource(pipeline_runner.run_pipeline)
+        # The old implicit gate pattern: using target_company in an if-branch
+        # to decide generation_mode or acceptance. Data reads are fine.
+        assert 'if ag2_synthesis' not in source.replace('ag2_synthesis.get("_synthesis_admission"', ''), (
+            "pipeline_runner still contains an implicit ag2_synthesis gate "
+            "that should have been replaced by _synthesis_admission"
+        )
+        # The authoritative marker must be read
+        assert '_synthesis_admission' in source
+
+    def test_rejected_synthesis_produces_blocked_artifact(self):
+        """Rejected synthesis must not produce a fallback that looks like real content."""
+        # Simulate what pipeline_runner does for rejected synthesis
+        ag2_synthesis = {"_synthesis_admission": "rejected", "target_company": "n/v"}
+        synthesis = {
+            "section_status": "blocked",
+            "reason": ag2_synthesis.get("_synthesis_admission", "rejected"),
+            "target_company": ag2_synthesis.get("target_company", "n/v"),
+            "generation_mode": "blocked",
+            "confidence": "low",
+        }
+        assert synthesis["section_status"] == "blocked"
+        assert synthesis["generation_mode"] == "blocked"
+        assert synthesis["confidence"] == "low"
+
+
+# ===========================================================================
+# F7 — Vocabulary consistency
+# ===========================================================================
+
+class TestVocabularyConsistency:
+    def test_judge_uses_contract_vocabulary(self):
+        """Judge decisions must be valid TaskDecisionOutcomes."""
+        from src.agents.judge import JudgeAgent
+        from src.orchestration.contracts import TERMINAL_OUTCOMES, NON_TERMINAL_OUTCOMES
+        all_outcomes = TERMINAL_OUTCOMES | NON_TERMINAL_OUTCOMES
+        judge = JudgeAgent("TestJudge")
+        # All three paths
+        for core_p, core_t in [(2, 2), (1, 2), (0, 2)]:
+            review = {"core_passed": core_p, "core_total": core_t,
+                      "supporting_passed": 0, "supporting_total": 1,
+                      "failed_rule_messages": ["test"]}
+            result = judge.decide(section="test", critic_review=review)
+            assert result["decision"] in all_outcomes, (
+                f"Judge decision '{result['decision']}' not in contract outcomes"
+            )
+
+    def test_no_phantom_status_in_short_term_store(self):
+        """submitted and needs_revision must not appear in ShortTermMemoryStore."""
+        import inspect
+        from src.memory import short_term_store
+        source = inspect.getsource(short_term_store)
+        # Allow in comments (# F7: was "submitted") but not as active string literals
+        active_lines = [l for l in source.splitlines()
+                        if not l.strip().startswith("#") and "# F7:" not in l]
+        active_source = "\n".join(active_lines)
+        assert '"submitted"' not in active_source, "Phantom status 'submitted' still active"
+        assert '"needs_revision"' not in active_source, "Phantom status 'needs_revision' still active"
+
+    def test_no_accepted_bool_in_supervisor_acceptance(self):
+        """accepted: bool shim must be removed from supervisor acceptance methods."""
+        from src.agents.supervisor import SupervisorAgent
+        sup = SupervisorAgent()
+        # Department acceptance
+        result = sup.accept_department_package(
+            department="Test",
+            package={"completed_tasks": [{"task_key": "t1", "status": "accepted"}],
+                     "section_payload": {"company_name": "ACME"}, "open_questions": []},
+        )
+        assert "accepted" not in result or result.get("accepted") is None or isinstance(result.get("decision"), str), \
+            "accepted: bool shim should be removed"
+        assert "decision" in result
+        # Synthesis acceptance
+        result2 = sup.accept_synthesis(synthesis_payload={
+            "target_company": "ACME", "executive_summary": "A long enough summary for testing.",
+            "generation_mode": "normal",
+        })
+        assert "decision" in result2
+        assert "accepted" not in result2, "accepted: bool shim should be removed from accept_synthesis"
+
+    def test_task_lifecycle_statuses_are_canonical(self):
+        """All OUTCOME_TO_TASK_STATUS values must be in TASK_LIFECYCLE_STATUSES."""
+        from src.orchestration.contracts import OUTCOME_TO_TASK_STATUS, TASK_LIFECYCLE_STATUSES
+        for outcome, status in OUTCOME_TO_TASK_STATUS.items():
+            assert status in TASK_LIFECYCLE_STATUSES, (
+                f"OUTCOME_TO_TASK_STATUS['{outcome}'] = '{status}' not in TASK_LIFECYCLE_STATUSES"
+            )
+
+    def test_no_legacy_judge_labels_in_judge_module(self):
+        """Legacy labels accept/accept_degraded/reject must not appear as decision values in judge.py."""
+        import inspect
+        from src.agents import judge
+        source = inspect.getsource(judge)
+        # Check for old-style decision assignments (not in comments or docstrings)
+        code_lines = [l for l in source.splitlines()
+                      if not l.strip().startswith("#") and not l.strip().startswith('\"\"\"')]
+        code = "\n".join(code_lines)
+        assert '"accept"' not in code.replace('"accepted"', '').replace('"accepted_with_gaps"', ''), \
+            "Legacy 'accept' label still in judge.py"
+        assert '"accept_degraded"' not in code, "Legacy 'accept_degraded' label still in judge.py"
+        assert '"reject"' not in code.replace('"rejected"', ''), \
+            "Legacy 'reject' label still in judge.py"

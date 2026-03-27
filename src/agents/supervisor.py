@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Any, TypedDict
 
 from src.app.use_cases import build_standard_scope
 from src.config import get_role_model_selection
@@ -10,6 +11,22 @@ from src.domain.intake import IntakeRequest, SupervisorBrief
 from src.orchestration.tool_policy import resolve_allowed_tools
 from src.research.extract import infer_industry
 from src.research.tools import build_company_research
+
+
+# F10: Typed return dicts for acceptance methods
+class DepartmentAcceptanceResult(TypedDict):
+    decision: str
+    reason: str
+    open_questions_present: bool
+    substantive_content: bool
+    accepted_tasks: int
+    total_tasks: int
+
+
+class SynthesisAcceptanceResult(TypedDict):
+    decision: str
+    reason: str
+    generation_mode: str
 
 
 class SupervisorAgent:
@@ -81,7 +98,7 @@ class SupervisorAgent:
             "reason": f"Keep {task_key} conservative and document the remaining gap.",
         }
 
-    def accept_department_package(self, *, department: str, package: dict) -> dict[str, str | bool]:
+    def accept_department_package(self, *, department: str, package: dict) -> DepartmentAcceptanceResult:
         completed_tasks = package.get("completed_tasks", [])
         open_questions = package.get("open_questions", [])
         section_payload = package.get("section_payload", {})
@@ -115,17 +132,23 @@ class SupervisorAgent:
         rejected_tasks = sum(1 for t in completed_tasks if t.get("status") == "rejected")
         all_rejected = rejected_tasks == len(completed_tasks) and len(completed_tasks) > 0
 
-        accepted = has_payload and bool(completed_tasks) and substantive and not all_rejected
-        if not substantive and has_payload:
-            reason = f"{department} package has payload structure but lacks substantive content. Marked conservative."
-        elif all_rejected:
-            reason = f"{department} package rejected — all tasks failed."
-        elif accepted:
+        # Admission decision: explicit three-outcome gate
+        if has_payload and substantive and bool(completed_tasks) and not all_rejected and accepted_tasks > 0:
+            decision = "accepted"
             reason = f"{department} package accepted for synthesis ({accepted_tasks}/{len(completed_tasks)} tasks accepted)."
+        elif has_payload and substantive and not all_rejected:
+            decision = "accepted_with_gaps"
+            reason = f"{department} package accepted with gaps ({accepted_tasks}/{len(completed_tasks)} tasks accepted)."
         else:
-            reason = f"{department} package remains incomplete and should be marked conservative."
+            decision = "rejected"
+            if all_rejected:
+                reason = f"{department} package rejected — all tasks failed."
+            elif not substantive and has_payload:
+                reason = f"{department} package rejected — payload structure present but lacks substantive content."
+            else:
+                reason = f"{department} package rejected — incomplete."
         return {
-            "accepted": accepted,
+            "decision": decision,
             "reason": reason,
             "open_questions_present": bool(open_questions),
             "substantive_content": substantive,
@@ -133,12 +156,34 @@ class SupervisorAgent:
             "total_tasks": len(completed_tasks),
         }
 
-    def accept_synthesis(self, *, synthesis_payload: dict) -> dict[str, str | bool]:
-        target_company = synthesis_payload.get("target_company", "n/v")
-        accepted = target_company != "n/v"
+    def accept_synthesis(self, *, synthesis_payload: dict) -> SynthesisAcceptanceResult:
+        """Three-outcome gate for synthesis output (F3)."""
+        target_company = str(synthesis_payload.get("target_company", "n/v"))
+        executive_summary = str(synthesis_payload.get("executive_summary", ""))
+        generation_mode = str(synthesis_payload.get("generation_mode", "unknown"))
+        has_target = target_company not in ("n/v", "")
+        has_summary = len(executive_summary) > 20 and executive_summary != "n/v"
+
+        if has_target and has_summary and generation_mode == "normal":
+            decision = "accepted"
+            reason = "Cross-domain synthesis accepted."
+        elif has_target and generation_mode == "fallback":
+            decision = "accepted_with_gaps"
+            reason = "Synthesis accepted with gaps — fallback generation mode."
+        elif has_target:
+            decision = "accepted_with_gaps"
+            reason = "Synthesis accepted with gaps — evidence quality uncertain."
+        else:
+            decision = "rejected"
+            reason = (
+                "Cross-domain synthesis rejected — no target company identified."
+                if not has_target
+                else "Cross-domain synthesis rejected — executive summary insufficient."
+            )
         return {
-            "accepted": accepted,
-            "reason": "Cross-domain synthesis accepted." if accepted else "Cross-domain synthesis incomplete.",
+            "decision": decision,
+            "reason": reason,
+            "generation_mode": generation_mode,
         }
 
     def route_follow_up(self, *, question: str) -> dict[str, str]:

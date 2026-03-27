@@ -7,11 +7,12 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
 
-from src.agents.definitions import AGENT_SPECS, create_runtime_agents
+from src.agents.specs import AGENT_SPECS
+from src.agents.runtime_factory import create_runtime_agents
 from src.config import summarize_worker_report_costs
 from src.domain.intake import IntakeRequest
 from src.exporters.json_export import export_run
-from src.memory.consolidation import consolidate_role_patterns
+from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_patterns
 from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
 from src.memory.retrieval import retrieve_strategies
@@ -110,20 +111,7 @@ def run_pipeline(
             role=role,
             limit=3,
         )
-        for role in [
-            "Supervisor",
-            "CompanyLead",
-            "CompanyResearcher",
-            "CompanyCritic",
-            "MarketLead",
-            "MarketResearcher",
-            "MarketCritic",
-            "BuyerLead",
-            "BuyerResearcher",
-            "BuyerCritic",
-            "CrossDomainStrategicAnalyst",
-            "ReportWriter",
-        ]
+        for role in RETRIEVABLE_ROLE_ORDER
     }
 
     messages: list[dict[str, Any]] = []
@@ -159,28 +147,42 @@ def run_pipeline(
             )
         )
 
-        # Single authoritative synthesis path — AG2 SynthesisDepartment is the author.
-        # build_synthesis_context() prepares a fallback payload only; it is used when
-        # AG2 did not complete (generation_mode="fallback").  Confidence is derived
-        # from input package quality, not from the generation mode.
-        ag2_synthesis = sections.get("synthesis")
-        if ag2_synthesis and ag2_synthesis.get("target_company", "n/v") != "n/v":
-            evidence_health = quality_review.get("evidence_health", "low")
+        # Synthesis admission — gate decision was made in supervisor_loop (F3).
+        # Read the admission marker set by accept_synthesis(); build fallback
+        # only when the AG2 GroupChat did not produce usable output.
+        ag2_synthesis = sections.get("synthesis", {})
+        synthesis_admission = ag2_synthesis.get("_synthesis_admission", "rejected")
+        evidence_health = quality_review.get("evidence_health", "low")
+
+        if synthesis_admission == "accepted":
             synthesis = {
                 **ag2_synthesis,
-                "generation_mode": "normal",
+                "generation_mode": ag2_synthesis.get("generation_mode", "normal"),
+                "confidence": evidence_health,
+            }
+        elif synthesis_admission == "accepted_with_gaps":
+            # Gate already decided this is downstream-usable but degraded.
+            # Use the AG2 output as-is; generation_mode is an execution fact.
+            synthesis = {
+                **ag2_synthesis,
+                "generation_mode": ag2_synthesis.get("generation_mode", "fallback"),
                 "confidence": evidence_health,
             }
         else:
-            synthesis_ctx = build_synthesis_context(
-                company_profile=sections.get("company_profile", {}),
-                industry_analysis=sections.get("industry_analysis", {}),
-                market_network=sections.get("market_network", {}),
-                contact_intelligence=sections.get("contact_intelligence", {}),
-                quality_review=quality_review,
-                memory_snapshot=run_context.short_term_memory.snapshot(),
-            )
-            synthesis = {**synthesis_ctx, "generation_mode": "fallback"}
+            # rejected or missing — blocked artifact, not a fallback synthesis.
+            # A presentation fallback for UI/Report is built separately;
+            # the machine-facing record is a typed blocked artifact.
+            synthesis = {
+                "section_status": "blocked",
+                "reason": ag2_synthesis.get("_synthesis_admission", "rejected"),
+                "target_company": ag2_synthesis.get("target_company", "n/v"),
+                "executive_summary": "Synthesis was not accepted by the Supervisor gate.",
+                "generation_mode": "blocked",
+                "confidence": "low",
+                "key_risks": ["Synthesis did not pass the quality gate."],
+                "next_steps": ["Re-run with improved department evidence."],
+                "sources": [],
+            }
 
         readiness = assess_research_readiness(
             company_profile=sections.get("company_profile", {}),

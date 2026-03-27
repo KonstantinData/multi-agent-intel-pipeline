@@ -24,11 +24,12 @@ logger = logging.getLogger(__name__)
 
 # Explicit outcomes — replaces magic strings like "retry", "skip", "accept"
 TaskDecisionOutcome = Literal[
-    "accepted",           # All core rules passed — task complete
-    "accepted_with_gaps", # Partial core passed — usable but gaps documented
-    "rework_required",    # Lead authorised retry — new attempt pending
-    "escalated_to_judge", # Ambiguous quality — Judge will decide
-    "closed_unresolved",  # Max retries reached — documented evidence gap
+    "accepted",              # All core rules passed — task complete
+    "accepted_with_gaps",    # Partial core passed — usable but gaps documented
+    "rework_required",       # Lead authorised retry — new attempt pending
+    "escalated_to_judge",    # Ambiguous quality — Judge will decide
+    "closed_unresolved",     # Max retries reached — documented evidence gap
+    "blocked_by_dependency", # F4: dependency not satisfied — scheduler state
 ]
 
 # Terminal states: no further action expected on this task
@@ -36,6 +37,15 @@ TERMINAL_OUTCOMES: frozenset[str] = frozenset({
     "accepted",
     "accepted_with_gaps",
     "closed_unresolved",
+    "blocked_by_dependency",
+})
+
+# F4: Dependency-satisfying outcomes — a dependent task may start only when
+# its upstream has one of these.  Distinct from terminal: closed_unresolved
+# and blocked_by_dependency are terminal but NOT dependency-satisfying.
+DEPENDENCY_SATISFYING_OUTCOMES: frozenset[str] = frozenset({
+    "accepted",
+    "accepted_with_gaps",
 })
 
 # Non-terminal states: task may still receive more work
@@ -45,13 +55,49 @@ NON_TERMINAL_OUTCOMES: frozenset[str] = frozenset({
 })
 
 # Map from TaskDecisionOutcome → TaskStatus (used in DepartmentPackage)
+# F7: `rejected` removed as task-level status. Only exists on Admission level.
 OUTCOME_TO_TASK_STATUS: dict[str, str] = {
     "accepted": "accepted",
     "accepted_with_gaps": "degraded",
     "rework_required": "pending",
     "escalated_to_judge": "pending",
     "closed_unresolved": "degraded",
+    "blocked_by_dependency": "blocked",
 }
+
+# ---------------------------------------------------------------------------
+# F7: Canonical vocabulary constants
+# ---------------------------------------------------------------------------
+
+# All layers import from here. No free-form status strings.
+TASK_LIFECYCLE_STATUSES: frozenset[str] = frozenset({
+    "pending", "pending_synthesis", "accepted", "degraded", "blocked", "skipped",
+})
+
+ADMISSION_DECISIONS: frozenset[str] = frozenset({
+    "accepted", "accepted_with_gaps", "rejected",
+})
+
+
+# ---------------------------------------------------------------------------
+# Contract violation record (F4)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ContractViolation:
+    """Structured record of a task-level schema violation."""
+    field_path: str
+    violation_type: str   # missing_required_field | type_mismatch | unexpected_field | empty_required_value
+    severity: str         # low | medium | high
+    message: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "field_path": self.field_path,
+            "violation_type": self.violation_type,
+            "severity": self.severity,
+            "message": self.message,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +121,8 @@ class TaskArtifact:
     open_questions: list[str] = field(default_factory=list)
     strategy_notes: str = ""
     objective: str = ""
+    contract_violations: list[ContractViolation] = field(default_factory=list)
+    needs_contract_review: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +136,8 @@ class TaskArtifact:
             "open_questions": self.open_questions,
             "strategy_notes": self.strategy_notes,
             "objective": self.objective,
+            "contract_violations": [v.to_dict() for v in self.contract_violations],
+            "needs_contract_review": self.needs_contract_review,
         }
 
     @classmethod
@@ -208,20 +258,19 @@ class TaskDecisionArtifact:
 
     @classmethod
     def from_judge_result(cls, result: dict[str, Any], *, task_key: str, attempt: int) -> "TaskDecisionArtifact":
-        """Build a TaskDecisionArtifact from a JudgeAgent result dict."""
-        status = result.get("task_status", "degraded")
-        # Map judge's task_status to outcome
-        outcome_map = {
-            "accepted": "accepted",
-            "degraded": "accepted_with_gaps",
-            "rejected": "closed_unresolved",
-        }
-        outcome = outcome_map.get(status, "accepted_with_gaps")
+        """Build a TaskDecisionArtifact from a JudgeAgent result dict.
+
+        F7: Judge now returns Contract-Outcome vocabulary directly in
+        the ``decision`` field. The ``task_status`` field carries the
+        lifecycle status.
+        """
+        outcome = str(result.get("decision", "accepted_with_gaps"))
+        task_status = str(result.get("task_status", "degraded"))
         return cls(
             task_key=task_key,
             attempt=attempt,
             outcome=outcome,
-            task_status=status,
+            task_status=task_status,
             decided_by="judge",
             confidence=str(result.get("confidence", "medium")),
             open_questions=list(result.get("open_questions", [])),
@@ -346,6 +395,40 @@ class DepartmentRunState:
     def is_task_terminal(self, task_key: str) -> bool:
         decision = self.latest_decision(task_key)
         return decision is not None and decision.is_terminal
+
+    def is_dependency_satisfied(self, task_key: str) -> bool:
+        """F4: A dependency is satisfied when the upstream task has produced output.
+
+        Hierarchy (most authoritative first):
+        1. Explicit decision with accepted/accepted_with_gaps outcome
+        2. Approved review (decision not yet recorded during GroupChat)
+        3. TaskArtifact exists (research completed, review pending)
+
+        Level 3 is necessary because the Lead may call run_research for
+        a dependent task before the Critic has reviewed the upstream task.
+        The dependency semantics is 'upstream has produced data', not
+        'upstream has been quality-checked'.
+
+        NOT satisfied:
+        - No artifact at all
+        - Decision is closed_unresolved or blocked_by_dependency
+        """
+        # Level 1: explicit decision
+        decision = self.latest_decision(task_key)
+        if decision is not None:
+            if decision.outcome in DEPENDENCY_SATISFYING_OUTCOMES:
+                return True
+            # Explicit non-satisfying decision (closed_unresolved, blocked_by_dependency)
+            return False
+        # Level 2: approved review without decision yet
+        review = self.latest_review(task_key)
+        if review is not None and review.approved:
+            return True
+        # Level 3: artifact exists (research completed, review pending)
+        artifact = self.latest_artifact(task_key)
+        if artifact is not None and artifact.facts:
+            return True
+        return False
 
     # ---------------------------------------------------------------------------
     # Observability helpers

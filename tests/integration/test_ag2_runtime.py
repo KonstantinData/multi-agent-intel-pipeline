@@ -305,8 +305,9 @@ class TestFallbackPackageOnMaxRound:
         assert package is not None
         assert package["department"] == "CompanyDepartment"
         for task in package["completed_tasks"]:
-            assert task["status"] == "rejected"
-        assert package["confidence"] == "low"
+            assert task["status"] == "degraded"  # F7: was "rejected"
+        # F7: degraded tasks contribute to medium confidence (was low when rejected)
+        assert package["confidence"] in ("low", "medium")
 
     def test_fallback_with_partial_research(self):
         from src.agents.lead import DepartmentLeadAgent

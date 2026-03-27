@@ -73,7 +73,7 @@ maintain workflow state.
 ### Synthesis Plane
 
 - **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment. Contains SynthesisLead, SynthesisAnalyst, SynthesisCritic, and SynthesisJudge.
-- **Report Writer** — turns the approved analysis into a professional operator-facing report for PDF export (German + English).
+- **Report rendering** — turns the approved analysis into a professional operator-facing report for PDF export (German + English). This is a rule-based rendering step, not an agent.
 
 ## Runtime Modes
 
@@ -86,7 +86,7 @@ maintain workflow state.
    - **Sequential**: Buyer → Contact (Contact depends on Buyer output)
 4. Each department returns a validated `DepartmentPackage`
 5. Synthesis Department builds the cross-domain interpretation via AG2 GroupChat
-6. Report Writer produces the operator-facing report package
+6. Report rendering produces the operator-facing report package
 7. Artifacts exported to `artifacts/runs/<run_id>/`
 
 ### Follow-up
@@ -109,7 +109,8 @@ maintain workflow state.
 | [src/orchestration/contracts.py](src/orchestration/contracts.py) | Typed runtime contracts: TaskArtifact, TaskReviewArtifact, TaskDecisionArtifact, DepartmentRunState |
 | [src/orchestration/speaker_selector.py](src/orchestration/speaker_selector.py) | Guardrail-only speaker selectors for department and synthesis GroupChats |
 | [src/orchestration/tool_policy.py](src/orchestration/tool_policy.py) | Per-role tool allow-lists |
-| [src/agents/definitions.py](src/agents/definitions.py) | Agent specs and runtime agent factory |
+| [src/agents/specs.py](src/agents/specs.py) | Agent and pipeline step metadata (AGENT_SPECS) |
+| [src/agents/runtime_factory.py](src/agents/runtime_factory.py) | Runtime agent instantiation |
 | [src/agents/lead.py](src/agents/lead.py) | DepartmentLeadAgent — owns the AG2 group lifecycle |
 | [src/agents/supervisor.py](src/agents/supervisor.py) | SupervisorAgent — intake, routing, package acceptance |
 | [src/agents/worker.py](src/agents/worker.py) | ResearchWorker — web search, page fetch, LLM synthesis |
@@ -117,7 +118,7 @@ maintain workflow state.
 | [src/agents/judge.py](src/agents/judge.py) | JudgeAgent — deterministic three-outcome quality gate |
 | [src/agents/coding_assistant.py](src/agents/coding_assistant.py) | CodingAssistantAgent — query refinement for stuck tasks |
 | [src/agents/synthesis_department.py](src/agents/synthesis_department.py) | SynthesisDepartmentAgent — AG2 GroupChat for cross-domain synthesis |
-| [src/agents/report_writer.py](src/agents/report_writer.py) | ReportWriterAgent |
+| [src/orchestration/synthesis.py](src/orchestration/synthesis.py) | Cross-domain synthesis context, quality review, report package assembly |
 | [src/app/use_cases.py](src/app/use_cases.py) | Liquisto standard scope, task backlog, and validation rules |
 | [src/config/settings.py](src/config/settings.py) | Model selection, role defaults, API key resolution |
 | [src/models/schemas.py](src/models/schemas.py) | Pydantic schemas for pipeline data |

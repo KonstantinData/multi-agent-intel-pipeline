@@ -183,6 +183,18 @@ class CriticAgent:
             for fi in worker_field_issues:
                 issues.append(f"Worker field issue: {fi}")
 
+        # F4/Patch 3: surface contract violations from task-level schema validation
+        contract_violations = (report or {}).get("contract_violations", [])
+        for cv in contract_violations:
+            cv_data = cv if isinstance(cv, dict) else (cv.to_dict() if hasattr(cv, "to_dict") else {})
+            sev = cv_data.get("severity", "low")
+            msg = cv_data.get("message", "unknown violation")
+            vtype = cv_data.get("violation_type", "unknown")
+            if sev == "high":
+                issues.append(f"Contract violation ({vtype}): {msg}")
+            else:
+                issues.append(f"Contract note ({vtype}): {msg}")
+
         method_issue = False
         if report:
             queries_used = report.get("queries_used", [])

@@ -5,10 +5,11 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 from src.config.settings import SOFT_TOKEN_BUDGET, HARD_TOKEN_CAP
 from src.domain.intake import SupervisorBrief
+from src.memory.short_term_store import ShortTermMemoryStore
 from src.orchestration.task_router import (
     DEPARTMENT_RESEARCHERS,
     build_department_assignments,
@@ -20,6 +21,85 @@ from src.orchestration.synthesis import build_synthesis_context, build_quality_r
 
 
 MessageHook = Callable[[dict[str, Any]], None] | None
+
+
+class SupervisorLoopResult(NamedTuple):
+    """F10: Typed return value for run_supervisor_loop."""
+    sections: dict[str, Any]
+    department_packages: dict[str, Any]
+    messages: list[dict[str, Any]]
+    completed_backlog: list[dict[str, str]]
+    department_timings: dict[str, float]
+
+
+def _blocked_section_artifact(reason: str, open_questions: list[str] | None = None) -> dict[str, Any]:
+    """Return a typed blocked-section artifact for rejected departments."""
+    return {
+        "section_status": "blocked",
+        "reason": reason,
+        "open_questions": list(open_questions or []),
+        "sources": [],
+    }
+
+
+def _apply_acceptance_gate(
+    acceptance: dict[str, Any],
+    *,
+    dept_name: str,
+    target_section: str,
+    section_payload: dict[str, Any],
+    package: dict[str, Any],
+    sections: dict[str, Any],
+    department_packages: dict[str, Any],
+) -> None:
+    """Authoritative downstream admission gate.
+
+    Decides what flows into ``sections`` and ``department_packages`` based
+    on the Supervisor's admission decision.  Raw package is always kept
+    for diagnostics; only admitted payloads are downstream-visible.
+    """
+    decision = acceptance.get("decision", "rejected")
+    reason = acceptance.get("reason", "")
+    open_questions = package.get("open_questions", [])
+
+    envelope: dict[str, Any] = {
+        "admission": {
+            "decision": decision,
+            "reason": reason,
+            "downstream_visible": decision != "rejected",
+        },
+        "raw_package": package,
+    }
+
+    if decision == "accepted":
+        sections[target_section] = section_payload
+        envelope["admitted_payload"] = section_payload
+    elif decision == "accepted_with_gaps":
+        sections[target_section] = {**section_payload, "_admission": "accepted_with_gaps"}
+        envelope["admitted_payload"] = section_payload
+    else:
+        # rejected — blocked artifact, raw preserved for diagnostics
+        sections[target_section] = _blocked_section_artifact(reason, open_questions)
+        envelope["admitted_payload"] = None
+
+    department_packages[dept_name] = envelope
+    logging.info(
+        "Acceptance gate: %s → %s (reason: %s)",
+        dept_name, decision, reason,
+    )
+
+
+def _admitted_packages_for_synthesis(
+    department_packages: dict[str, Any],
+) -> dict[str, Any]:
+    """Filter department_packages to only downstream-visible envelopes."""
+    return {
+        dept: pkg
+        for dept, pkg in department_packages.items()
+        if isinstance(pkg, dict)
+        and pkg.get("admission", {}).get("downstream_visible", False)
+    }
+
 
 # Departments that run sequentially after each other (order matters)
 _DEPARTMENT_RUN_ORDER = [
@@ -49,7 +129,7 @@ def run_supervisor_loop(
     run_context,
     agents: dict[str, Any],
     on_message: MessageHook = None,
-) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], list[dict[str, str]]]:
+) -> SupervisorLoopResult:
     sections: dict[str, Any] = {}
     department_packages: dict[str, Any] = {}
     messages: list[dict[str, Any]] = []
@@ -87,7 +167,7 @@ def run_supervisor_loop(
     _PARALLEL_BATCH = {"CompanyDepartment", "MarketDepartment"}
     _SEQUENTIAL_AFTER = ["BuyerDepartment", "ContactDepartment"]
 
-    def _run_single_department(dept_name, dept_assignment, current_sec):
+    def _run_single_department(dept_name, dept_assignment, current_sec, memory_store):
         """Execute one department and return its results with timing."""
         t0 = perf_counter()
         runtime = agents["departments"][dept_name]
@@ -95,7 +175,7 @@ def run_supervisor_loop(
             brief=brief,
             assignments=list(dept_assignment.assignments),
             current_section=current_sec,
-            memory_store=run_context.short_term_memory,
+            memory_store=memory_store,
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,
         )
@@ -110,6 +190,11 @@ def run_supervisor_loop(
         if name in _PARALLEL_BATCH and name in dept_assignment_map and name in agents.get("departments", {})
     ]
     if len(parallel_jobs) > 1:
+        # F5: Each parallel department gets an isolated working-set store
+        # seeded with a read-only snapshot of the current main store.
+        # After completion, only the delta (new writes) is merged back.
+        working_sets: dict[str, ShortTermMemoryStore] = {}
+        baselines: dict[str, ShortTermMemoryStore] = {}
         with ThreadPoolExecutor(max_workers=len(parallel_jobs)) as pool:
             futures = {}
             for dept_name in parallel_jobs:
@@ -130,17 +215,28 @@ def run_supervisor_loop(
                     )
                 )
                 current_section = sections.get(da.target_section, {})
-                futures[pool.submit(_run_single_department, dept_name, da, current_section)] = dept_name
+                ws = run_context.short_term_memory.create_working_set()
+                baseline = run_context.short_term_memory.create_working_set()
+                working_sets[dept_name] = ws
+                baselines[dept_name] = baseline
+                futures[pool.submit(_run_single_department, dept_name, da, current_section, ws)] = dept_name
 
             for future in as_completed(futures):
                 dept_name = futures[future]
                 da = dept_assignment_map[dept_name]
                 section_payload, department_messages, package = future.result()
                 messages.extend(department_messages)
-                department_packages[dept_name] = package
-                sections[da.target_section] = section_payload
 
                 acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
+                _apply_acceptance_gate(
+                    acceptance,
+                    dept_name=dept_name,
+                    target_section=da.target_section,
+                    section_payload=section_payload,
+                    package=package,
+                    sections=sections,
+                    department_packages=department_packages,
+                )
                 messages.append(
                     emit_message(
                         on_message,
@@ -154,6 +250,14 @@ def run_supervisor_loop(
                     run_context.update_task_status(task_key=assignment.task_key, status=task_status)
                     run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
                     completed_backlog.append({"task_key": assignment.task_key, "label": assignment.label, "target_section": assignment.target_section, "status": task_status})
+
+        # F5: Merge deltas in canonical department order (not as_completed order)
+        for dept_name in parallel_jobs:
+            ws = working_sets.get(dept_name)
+            baseline = baselines.get(dept_name)
+            if ws and baseline:
+                delta = ws.delta_from(baseline)
+                run_context.short_term_memory.merge_from(delta)
     else:
         # Fallback: run parallel_jobs sequentially if only one
         for dept_name in parallel_jobs:
@@ -161,11 +265,18 @@ def run_supervisor_loop(
             messages.append(
                 emit_message(on_message, agent="Supervisor", content=json.dumps({"department": da.department, "status": "department_assigned", "target_section": da.target_section, "tasks": [{"task_key": a.task_key, "label": a.label, "objective": a.objective} for a in da.assignments]}, ensure_ascii=False))
             )
-            section_payload, department_messages, package = _run_single_department(dept_name, da, sections.get(da.target_section, {}))
+            section_payload, department_messages, package = _run_single_department(dept_name, da, sections.get(da.target_section, {}), run_context.short_term_memory)
             messages.extend(department_messages)
-            department_packages[dept_name] = package
-            sections[da.target_section] = section_payload
             acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
+            _apply_acceptance_gate(
+                acceptance,
+                dept_name=dept_name,
+                target_section=da.target_section,
+                section_payload=section_payload,
+                package=package,
+                sections=sections,
+                department_packages=department_packages,
+            )
             messages.append(emit_message(on_message, agent="Supervisor", content=json.dumps({"department": dept_name, "status": "department_package_reviewed", **acceptance}, ensure_ascii=False)))
             status_by_task = {task["task_key"]: task["status"] for task in package.get("completed_tasks", [])}
             for assignment in da.assignments:
@@ -257,12 +368,19 @@ def run_supervisor_loop(
         department_timings[department_name] = elapsed
         logging.info("Department %s completed in %.3fs", department_name, elapsed)
         messages.extend(department_messages)
-        department_packages[department_name] = package
-        sections[department_assignment.target_section] = section_payload
 
         acceptance = agents["supervisor"].accept_department_package(
             department=department_name,
             package=package,
+        )
+        _apply_acceptance_gate(
+            acceptance,
+            dept_name=department_name,
+            target_section=department_assignment.target_section,
+            section_payload=section_payload,
+            package=package,
+            sections=sections,
+            department_packages=department_packages,
         )
         messages.append(
             emit_message(
@@ -345,7 +463,7 @@ def run_supervisor_loop(
         )
         synthesis_result, synthesis_messages = agents["synthesis"].run(
             brief=brief,
-            department_packages=department_packages,
+            department_packages=_admitted_packages_for_synthesis(department_packages),
             supervisor=agents["supervisor"],
             departments=agents["departments"],
             memory_store=run_context.short_term_memory,
@@ -353,18 +471,60 @@ def run_supervisor_loop(
             synthesis_context=synthesis_ctx,
         )
         messages.extend(synthesis_messages)
-        department_packages["SynthesisDepartment"] = synthesis_result
+
+        # F3: Synthesis acceptance gate — no more auto-accept.
+        # Gate reads generation_mode as an execution fact, does not set it.
+        synthesis_acceptance = agents["supervisor"].accept_synthesis(
+            synthesis_payload=synthesis_result,
+        )
+        synthesis_decision = synthesis_acceptance.get("decision", "rejected")
+
+        # Envelope: raw_synthesis / admission / admitted_synthesis (analogous to F2)
+        synthesis_envelope: dict[str, Any] = {
+            "admission": {
+                "decision": synthesis_decision,
+                "reason": synthesis_acceptance.get("reason", ""),
+                "downstream_visible": synthesis_decision != "rejected",
+            },
+            "raw_synthesis": synthesis_result,
+        }
+        if synthesis_decision != "rejected":
+            synthesis_envelope["admitted_synthesis"] = synthesis_result
+        else:
+            synthesis_envelope["admitted_synthesis"] = None
+
+        # Write admission marker for pipeline_runner to read
+        synthesis_result["_synthesis_admission"] = synthesis_decision
+        department_packages["SynthesisDepartment"] = synthesis_envelope
         sections["synthesis"] = synthesis_result
 
+        messages.append(
+            emit_message(
+                on_message,
+                agent="Supervisor",
+                content=json.dumps(
+                    {"department": "SynthesisDepartment", "status": "synthesis_reviewed", **synthesis_acceptance},
+                    ensure_ascii=False,
+                ),
+            )
+        )
+
+        _SYNTHESIS_DECISION_TO_STATUS = {
+            "accepted": "accepted",
+            "accepted_with_gaps": "degraded",
+            "rejected": "degraded",
+        }
+        synthesis_task_status = _SYNTHESIS_DECISION_TO_STATUS.get(synthesis_decision, "degraded")
+
         for assignment in synthesis_assignments:
-            run_context.update_task_status(task_key=assignment.task_key, status="accepted")
-            run_context.short_term_memory.task_statuses[assignment.task_key] = "accepted"
+            run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
+            run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
             completed_backlog.append(
                 {
                     "task_key": assignment.task_key,
                     "label": assignment.label,
                     "target_section": assignment.target_section,
-                    "status": "accepted",
+                    "status": synthesis_task_status,
                 }
             )
 
@@ -374,4 +534,4 @@ def run_supervisor_loop(
     )
     logging.info("Department timings: %s", timing_summary or "none")
 
-    return sections, department_packages, messages, completed_backlog, department_timings
+    return SupervisorLoopResult(sections, department_packages, messages, completed_backlog, department_timings)

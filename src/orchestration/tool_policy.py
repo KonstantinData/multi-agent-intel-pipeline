@@ -28,7 +28,6 @@ BASE_TOOL_POLICY: dict[str, tuple[str, ...]] = {
     "BuyerCodingSpecialist": ("query_refinement",),
     "ContactCodingSpecialist": ("query_refinement",),
     "CrossDomainStrategicAnalyst": (),
-    "ReportWriter": (),
 }
 
 TASK_TOOL_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {

@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 
 from src.orchestration.contracts import (
+    ContractViolation,
     DepartmentRunState,
+    DEPENDENCY_SATISFYING_OUTCOMES,
     TaskArtifact,
     TaskDecisionArtifact,
     TaskReviewArtifact,
@@ -111,7 +113,7 @@ class TestTaskDecisionArtifact:
     def test_from_judge_result_accept(self):
         result = {
             "task_status": "accepted",
-            "decision": "accept",
+            "decision": "accepted",
             "confidence": "high",
             "open_questions": [],
             "reason": "All core rules passed.",
@@ -127,6 +129,7 @@ class TestTaskDecisionArtifact:
     def test_from_judge_result_degraded(self):
         result = {
             "task_status": "degraded",
+            "decision": "accepted_with_gaps",
             "confidence": "low",
             "open_questions": ["Revenue not confirmed"],
         }
@@ -138,7 +141,7 @@ class TestTaskDecisionArtifact:
         assert "Revenue not confirmed" in decision.open_questions
 
     def test_from_judge_result_rejected(self):
-        result = {"task_status": "rejected", "open_questions": ["No evidence found"]}
+        result = {"task_status": "degraded", "decision": "closed_unresolved", "open_questions": ["No evidence found"]}
         decision = TaskDecisionArtifact.from_judge_result(
             result, task_key="peer_companies", attempt=2
         )
@@ -366,3 +369,177 @@ class TestPackageFinalizationFromDecisions:
 
         assert state.latest_decision("company_fundamentals").decided_by == "lead"
         assert state.latest_decision("company_fundamentals").task_status == "accepted"
+
+
+# ===========================================================================
+# F4 — Dependency satisfaction vs. terminality
+# ===========================================================================
+
+class TestDependencySatisfaction:
+    def test_accepted_is_dependency_satisfying(self):
+        state = DepartmentRunState(department="Test")
+        state.record_decision_artifact(TaskDecisionArtifact(
+            task_key="t1", attempt=1, outcome="accepted", task_status="accepted",
+        ))
+        assert state.is_dependency_satisfied("t1") is True
+        assert state.is_task_terminal("t1") is True
+
+    def test_accepted_with_gaps_is_dependency_satisfying(self):
+        state = DepartmentRunState(department="Test")
+        state.record_decision_artifact(TaskDecisionArtifact(
+            task_key="t1", attempt=1, outcome="accepted_with_gaps", task_status="degraded",
+        ))
+        assert state.is_dependency_satisfied("t1") is True
+        assert state.is_task_terminal("t1") is True
+
+    def test_closed_unresolved_is_terminal_but_not_dependency_satisfying(self):
+        state = DepartmentRunState(department="Test")
+        state.record_decision_artifact(TaskDecisionArtifact(
+            task_key="t1", attempt=2, outcome="closed_unresolved", task_status="degraded",
+        ))
+        assert state.is_task_terminal("t1") is True
+        assert state.is_dependency_satisfied("t1") is False
+
+    def test_blocked_by_dependency_is_terminal_but_not_dependency_satisfying(self):
+        state = DepartmentRunState(department="Test")
+        state.record_decision_artifact(TaskDecisionArtifact(
+            task_key="t1", attempt=1, outcome="blocked_by_dependency",
+            task_status="blocked", decided_by="runtime",
+        ))
+        assert state.is_task_terminal("t1") is True
+        assert state.is_dependency_satisfied("t1") is False
+
+    def test_no_decision_is_not_satisfied(self):
+        state = DepartmentRunState(department="Test")
+        assert state.is_dependency_satisfied("t1") is False
+
+    def test_dependency_satisfying_outcomes_is_subset_of_terminal(self):
+        assert DEPENDENCY_SATISFYING_OUTCOMES <= TERMINAL_OUTCOMES
+
+
+# ===========================================================================
+# F4 — ContractViolation
+# ===========================================================================
+
+class TestContractViolation:
+    def test_to_dict(self):
+        cv = ContractViolation(
+            field_path="company_name",
+            violation_type="missing_required_field",
+            severity="high",
+            message="Field is required",
+        )
+        d = cv.to_dict()
+        assert d["field_path"] == "company_name"
+        assert d["severity"] == "high"
+
+    def test_task_artifact_carries_violations(self):
+        cv = ContractViolation(
+            field_path="industry", violation_type="type_mismatch",
+            severity="medium", message="Expected str",
+        )
+        artifact = TaskArtifact(
+            task_key="t1", attempt=1,
+            contract_violations=[cv],
+            needs_contract_review=False,
+        )
+        d = artifact.to_dict()
+        assert len(d["contract_violations"]) == 1
+        assert d["contract_violations"][0]["field_path"] == "industry"
+        assert d["needs_contract_review"] is False
+
+    def test_task_artifact_needs_contract_review_flag(self):
+        cv = ContractViolation(
+            field_path="*", violation_type="type_mismatch",
+            severity="high", message="Total failure",
+        )
+        artifact = TaskArtifact(
+            task_key="t1", attempt=1,
+            contract_violations=[cv],
+            needs_contract_review=True,
+        )
+        assert artifact.needs_contract_review is True
+
+
+# ===========================================================================
+# F4 — Schema validation helper
+# ===========================================================================
+
+class TestSchemaValidationHelper:
+    def test_valid_payload_produces_no_violations(self):
+        from src.agents.lead import _validate_payload_against_task_schema
+        violations = _validate_payload_against_task_schema(
+            "CompanyFundamentals",
+            {"company_name": "ACME", "website": "acme.de", "industry": "Mfg"},
+        )
+        assert violations == []
+
+    def test_empty_schema_key_produces_no_violations(self):
+        from src.agents.lead import _validate_payload_against_task_schema
+        violations = _validate_payload_against_task_schema("", {"anything": "ok"})
+        assert violations == []
+
+    def test_unknown_schema_key_produces_no_violations(self):
+        from src.agents.lead import _validate_payload_against_task_schema
+        violations = _validate_payload_against_task_schema("NonExistent", {"x": 1})
+        assert violations == []
+
+    def test_empty_payload_against_schema_with_defaults_passes(self):
+        """Pydantic models with all-default fields accept empty dicts."""
+        from src.agents.lead import _validate_payload_against_task_schema
+        violations = _validate_payload_against_task_schema("CompanyFundamentals", {})
+        # CompanyFundamentals has all defaults, so empty dict validates fine
+        assert violations == []
+
+    def test_approved_review_without_decision_is_dependency_satisfying(self):
+        """Fix: during GroupChat, approved review satisfies dependency before finalize_package."""
+        state = DepartmentRunState(department="Test")
+        # Record artifact + approved review, but NO decision yet
+        state.record_task_artifact(TaskArtifact(task_key="t1", attempt=1, facts=["fact"]))
+        state.record_review_artifact(TaskReviewArtifact(
+            task_key="t1", attempt=1, approved=True, core_passed=2, core_total=2,
+        ))
+        # No decision recorded — simulates mid-GroupChat state
+        assert state.latest_decision("t1") is None
+        assert state.is_dependency_satisfied("t1") is True
+
+    def test_rejected_review_without_decision_is_still_satisfied_if_artifact_has_facts(self):
+        """Rejected review but artifact has facts — dependency satisfied (Level 3).
+        Dependency semantics = 'upstream produced data', not 'upstream passed review'."""
+        state = DepartmentRunState(department="Test")
+        state.record_task_artifact(TaskArtifact(task_key="t1", attempt=1, facts=["fact"]))
+        state.record_review_artifact(TaskReviewArtifact(
+            task_key="t1", attempt=1, approved=False, core_passed=0, core_total=2,
+        ))
+        assert state.is_dependency_satisfied("t1") is True
+
+    def test_artifact_without_review_is_dependency_satisfying(self):
+        """Research completed but not yet reviewed — dependency satisfied (Level 3)."""
+        state = DepartmentRunState(department="Test")
+        state.record_task_artifact(TaskArtifact(
+            task_key="t1", attempt=1, facts=["some evidence found"],
+        ))
+        # No review, no decision — just a research artifact with facts
+        assert state.latest_review("t1") is None
+        assert state.latest_decision("t1") is None
+        assert state.is_dependency_satisfied("t1") is True
+
+    def test_empty_artifact_without_facts_is_not_dependency_satisfying(self):
+        """Research ran but produced no facts — dependency NOT satisfied."""
+        state = DepartmentRunState(department="Test")
+        state.record_task_artifact(TaskArtifact(
+            task_key="t1", attempt=1, facts=[],
+        ))
+        assert state.is_dependency_satisfied("t1") is False
+
+    def test_explicit_closed_unresolved_overrides_artifact(self):
+        """Explicit non-satisfying decision takes precedence over artifact."""
+        state = DepartmentRunState(department="Test")
+        state.record_task_artifact(TaskArtifact(
+            task_key="t1", attempt=1, facts=["some evidence"],
+        ))
+        state.record_decision_artifact(TaskDecisionArtifact(
+            task_key="t1", attempt=1, outcome="closed_unresolved",
+            task_status="degraded",
+        ))
+        assert state.is_dependency_satisfied("t1") is False
