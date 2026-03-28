@@ -20,29 +20,31 @@
 
 | ID | Thema | Severity | Prioritaet | Status |
 |---|---|---:|---:|---|
-| P0-1 | Kanonisches Datenmodell fuer Department-Ergebnisse festlegen | kritisch | P0 | Offen |
-| P0-2 | Consumer auf kanonische Shape migrieren | kritisch | P0 | Offen |
-| P0-3 | Follow-up-Writeback und Admission-Konsum konsistent machen | hoch | P0 | Offen |
-| P0-4 | Envelope-Regressionstests und Fixture-Migration | hoch | P0 | Offen |
-| P0-5 | Kompatibilitaet fuer Artefaktleser / Debug-Pfade absichern | mittel-hoch | P0 | Offen |
-| P1-1 | `needs_contract_review` autoritativ verdrahten | mittel | P1 | Offen |
-| P1-2 | Synthesis-Rollen in Model-Defaults vervollstaendigen | mittel | P1 | Offen |
-| P1-3 | `input_artifacts` entscheiden und explizites Task-Input-Modell einziehen | mittel | P1 | Offen |
-| P1-4 | `current_payload` gegen stillen Datenverlust haerten | mittel | P1 | Offen |
-| P1-5 | Preflight in Core-Check vs. Runtime-Readiness trennen | niedrig-mittel | P1 | Offen |
-| P2-1 | `CrossDomainStrategicAnalyst` vollstaendig entfernen | niedrig-mittel | P2 | Offen |
-| P2-2 | Blocked-Artifact als Modell formalisieren | niedrig | P2 | Offen |
-| P2-3 | DAG-/Phase-Invarianten config-getrieben pruefen | niedrig | P2 | Offen |
-| P2-4 | Synthesis-Agent-Output und persistiertes Schema angleichen | niedrig | P2 | Offen |
-| P2-5 | `_synthesis_admission` nach P0 neu bewerten und ggf. entfernen | niedrig | P2 | Offen |
-| P2-6 | Sammel-Haertungen (Typing, CI, Dedup, Semantik) | niedrig | P2 | Offen |
+| P0-1 | Kanonisches Datenmodell fuer Department-Ergebnisse festlegen | kritisch | P0 | Erledigt |
+| P0-2 | Consumer auf kanonische Shape migrieren | kritisch | P0 | Erledigt |
+| P0-3 | Follow-up-Writeback und Admission-Konsum konsistent machen | hoch | P0 | Erledigt |
+| P0-4 | Envelope-Regressionstests und Fixture-Migration | hoch | P0 | Erledigt |
+| P0-5 | Kompatibilitaet fuer Artefaktleser / Debug-Pfade absichern | mittel-hoch | P0 | Erledigt |
+| P1-1 | `needs_contract_review` autoritativ verdrahten | mittel | P1 | Erledigt |
+| P1-2 | Synthesis-Rollen in Model-Defaults vervollstaendigen | mittel | P1 | Erledigt |
+| P1-3 | `input_artifacts` entscheiden und explizites Task-Input-Modell einziehen | mittel | P1 | Erledigt |
+| P1-4 | `current_payload` gegen stillen Datenverlust haerten | mittel | P1 | Erledigt |
+| P1-5 | Preflight in Core-Check vs. Runtime-Readiness trennen | niedrig-mittel | P1 | Erledigt |
+| P2-1 | `CrossDomainStrategicAnalyst` vollstaendig entfernen | niedrig-mittel | P2 | Erledigt |
+| P2-2 | Blocked-Artifact als Modell formalisieren | niedrig | P2 | Erledigt |
+| P2-3 | DAG-/Phase-Invarianten config-getrieben pruefen | niedrig | P2 | Erledigt |
+| P2-4 | Synthesis-Agent-Output und persistiertes Schema angleichen | niedrig | P2 | Erledigt |
+| P2-5 | `_synthesis_admission` nach P0 neu bewerten und ggf. entfernen | niedrig | P2 | Erledigt |
+| P2-6 | Sammel-Haertungen (Typing, CI, Dedup, Semantik) | niedrig | P2 | Erledigt |
 
 ---
 
-## P0-1 — Kanonisches Datenmodell fuer Department-Ergebnisse festlegen
+## ✅ P0-1 — Kanonisches Datenmodell fuer Department-Ergebnisse festlegen
 
 **Severity:** kritisch  
-**Prioritaet:** P0
+**Prioritaet:** P0  
+**Status:** Erledigt  
+**Umsetzung:** `src/orchestration/envelope.py` eingefuehrt mit kanonischen Resolvern (`is_envelope`, `resolve_raw_package`, `resolve_admitted_payload`, `resolve_admission`, `resolve_report_segment`, `resolve_visual_focus`, `resolve_confidence`, `resolve_open_questions`). Alle Consumer nutzen ausschliesslich diese Resolver.
 
 ### Finding
 
@@ -76,10 +78,12 @@ Es gibt zwei klar getrennte Begriffe:
 
 ---
 
-## P0-2 — Consumer auf kanonische Shape migrieren
+## ✅ P0-2 — Consumer auf kanonische Shape migrieren
 
 **Severity:** kritisch  
-**Prioritaet:** P0
+**Prioritaet:** P0  
+**Status:** Erledigt  
+**Umsetzung:** `synthesis_department.py` (`read_report_segment`, `finalize_synthesis`, `available_segments`), `synthesis.py` (`build_report_package`), `pipeline_runner.py` (Synthesis-Admission) auf Envelope-Resolver migriert. Kein Consumer liest mehr direkt aus Envelope-Root.
 
 ### Finding
 
@@ -110,10 +114,12 @@ Mehrere Consumer lesen aktuell Raw-Felder direkt aus Envelope-Objekten. Das betr
 
 ---
 
-## P0-3 — Follow-up-Writeback und Admission-Konsum konsistent machen
+## ✅ P0-3 — Follow-up-Writeback und Admission-Konsum konsistent machen
 
 **Severity:** hoch  
-**Prioritaet:** P0
+**Prioritaet:** P0  
+**Status:** Erledigt  
+**Umsetzung:** `request_department_followup()` schreibt Follow-up-Ergebnisse in `raw_package`, nicht auf Envelope-Root. `_synthesis_admission` Marker-Injection aus `supervisor_loop.py` entfernt. `pipeline_runner.py` liest Admission ueber `resolve_admission()`.
 
 ### Finding
 
@@ -136,10 +142,12 @@ Zusaetzlich existiert mit `_synthesis_admission` mindestens ein Marker-Pfad, der
 
 ---
 
-## P0-4 — Envelope-Regressionstests und Fixture-Migration
+## ✅ P0-4 — Envelope-Regressionstests und Fixture-Migration
 
 **Severity:** hoch  
-**Prioritaet:** P0
+**Prioritaet:** P0  
+**Status:** Erledigt  
+**Umsetzung:** `tests/architecture/test_envelope.py` mit 17 Regressionstests: Envelope-Erkennung, Resolver-Korrektheit fuer alle Felder, Negativtests fuer alte Shape-Zugriffe (`pkg.get("report_segment")` auf Envelope-Root).
 
 ### Finding
 
@@ -164,10 +172,12 @@ Bestehende Tests und Fixtures bauen zentrale Synthesis-/Runtime-Szenarien teilwe
 
 ---
 
-## P0-5 — Kompatibilitaet fuer Artefaktleser / Debug-Pfade absichern
+## ✅ P0-5 — Kompatibilitaet fuer Artefaktleser / Debug-Pfade absichern
 
 **Severity:** mittel-hoch  
-**Prioritaet:** P0
+**Prioritaet:** P0  
+**Status:** Erledigt  
+**Umsetzung:** `follow_up.py` auf Envelope-Resolver migriert (liest serialisierte Run-Artefakte korrekt). Resolver in `envelope.py` fungiert als Compat-Adapter — erkennt sowohl Envelope- als auch Legacy-Raw-Format. Guard-Test `test_envelope_module_importable`.
 
 ### Finding
 
@@ -195,10 +205,12 @@ Wenn diese Pfade still auf Alt-Shape bleiben, entsteht Friktion trotz korrekter 
 
 ---
 
-## P1-1 — `needs_contract_review` autoritativ verdrahten
+## ✅ P1-1 — `needs_contract_review` autoritativ verdrahten
 
 **Severity:** mittel  
-**Prioritaet:** P1
+**Prioritaet:** P1  
+**Status:** Erledigt  
+**Umsetzung:** `lead.py` `finalize_package`: `needs_contract_review=True` erzwingt Judge-Eskalation auch bei Critic-Approval. Zwei Pfade: Critic-rejected + contract-review → Judge, Critic-approved + contract-review → Judge-Override.
 
 ### Finding
 
@@ -217,10 +229,12 @@ Wenn diese Pfade still auf Alt-Shape bleiben, entsteht Friktion trotz korrekter 
 
 ---
 
-## P1-2 — Synthesis-Rollen in Model-Defaults vervollstaendigen
+## ✅ P1-2 — Synthesis-Rollen in Model-Defaults vervollstaendigen
 
 **Severity:** mittel  
-**Prioritaet:** P1
+**Prioritaet:** P1  
+**Status:** Erledigt  
+**Umsetzung:** `SynthesisLead` (gpt-4.1), `SynthesisAnalyst` (gpt-4.1), `SynthesisCritic` (gpt-4.1), `SynthesisJudge` (gpt-4.1) in `ROLE_MODEL_DEFAULTS` und `ROLE_STRUCTURED_MODEL_DEFAULTS` eingetragen. Guard-Test `test_all_agent_specs_have_model_defaults`.
 
 ### Finding
 
@@ -243,10 +257,12 @@ Die Synthesis-Rollen sind in den Model-Defaults nicht vollstaendig hinterlegt. G
 
 ---
 
-## P1-3 — `input_artifacts` entscheiden und explizites Task-Input-Modell einziehen
+## ✅ P1-3 — `input_artifacts` entscheiden und explizites Task-Input-Modell einziehen
 
 **Severity:** mittel  
-**Prioritaet:** P1
+**Prioritaet:** P1  
+**Status:** Erledigt (Option B — Feld entfernt)  
+**Umsetzung:** `input_artifacts` aus allen 12 Tasks in `use_cases.py`, aus `Assignment` Dataclass, aus `build_initial_assignments`, und aus allen Tests entfernt. Guard-Test `test_no_input_artifacts_in_backlog`.
 
 ### Finding
 
@@ -278,10 +294,12 @@ Nicht nur entscheiden, ob das Feld bleibt oder verschwindet, sondern ein **expli
 
 ---
 
-## P1-4 — `current_payload` gegen stillen Datenverlust haerten
+## ✅ P1-4 — `current_payload` gegen stillen Datenverlust haerten
 
 **Severity:** mittel  
-**Prioritaet:** P1
+**Prioritaet:** P1  
+**Status:** Erledigt  
+**Umsetzung:** `lead.py`: Payload-Loss-Guard vor `current_payload` Overwrite. Erkennt non-default Felder die ein spaeterer Worker-Output verlieren wuerde, loggt Warnung und bewahrt die vorherigen Werte via `setdefault`.
 
 ### Finding
 
@@ -303,10 +321,12 @@ Nicht nur entscheiden, ob das Feld bleibt oder verschwindet, sondern ein **expli
 
 ---
 
-## P1-5 — Preflight in Core-Check vs. Runtime-Readiness trennen
+## ✅ P1-5 — Preflight in Core-Check vs. Runtime-Readiness trennen
 
 **Severity:** niedrig-mittel  
-**Prioritaet:** P1
+**Prioritaet:** P1  
+**Status:** Erledigt  
+**Umsetzung:** `preflight.py`: Import-Chain in Stufe 5 "Core (no AG2)" (`src.config`, `src.models.schemas`, `src.agents.specs`, `src.app.use_cases`, `src.exporters.json_export`) und Stufe 6 "Runtime (requires AG2)" (`src.agents.definitions`, `src.pipeline_runner`, `src.exporters.pdf_report`) getrennt.
 
 ### Finding
 
@@ -327,10 +347,12 @@ Das aktuelle Preflight-Verhalten vermischt einen leichten Architektur-/Core-Chec
 
 ---
 
-## P2-1 — `CrossDomainStrategicAnalyst` vollstaendig entfernen
+## ✅ P2-1 — `CrossDomainStrategicAnalyst` vollstaendig entfernen
 
 **Severity:** niedrig-mittel  
-**Prioritaet:** P2
+**Prioritaet:** P2  
+**Status:** Erledigt  
+**Umsetzung:** Entfernt aus: `ROLE_MODEL_DEFAULTS`, `ROLE_STRUCTURED_MODEL_DEFAULTS`, `BASE_TOOL_POLICY`, `TASK_TOOL_OVERRIDES`, `MEMORY_ROLE_STATUS`, `follow_up.py` Routing, `summarize_runtime_models`. Guard-Test `test_no_cross_domain_strategic_analyst_references`.
 
 ### Finding
 
@@ -347,10 +369,12 @@ Die Rolle ist nicht nur Altlast im Code, sondern erzeugt semantische Drift ueber
 
 ---
 
-## P2-2 — Blocked-Artifact als Modell formalisieren
+## ✅ P2-2 — Blocked-Artifact als Modell formalisieren
 
 **Severity:** niedrig  
-**Prioritaet:** P2
+**Prioritaet:** P2  
+**Status:** Erledigt  
+**Umsetzung:** `BlockedArtifact` Pydantic-Modell in `schemas.py` (`section_status`, `reason`, `open_questions`, `sources`). `supervisor_loop.py` `_blocked_section_artifact` nutzt das Modell.
 
 ### Patch-Sequenz
 
@@ -364,10 +388,12 @@ Die Rolle ist nicht nur Altlast im Code, sondern erzeugt semantische Drift ueber
 
 ---
 
-## P2-3 — DAG-/Phase-Invarianten config-getrieben pruefen
+## ✅ P2-3 — DAG-/Phase-Invarianten config-getrieben pruefen
 
 **Severity:** niedrig  
-**Prioritaet:** P2
+**Prioritaet:** P2  
+**Status:** Erledigt  
+**Umsetzung:** `_PHASE_CONFIG` und `_DEPARTMENT_TASK_OWNERSHIP` als config-getriebene Invarianten in `test_preflight.py`. Drei Tests: Task-Ownership-Vollstaendigkeit, keine Parallel-Cross-Dependencies, Sequential-Order-Respekt.
 
 ### Finding
 
@@ -385,10 +411,12 @@ Phase- und Department-Abhaengigkeiten sollten nicht als implizites Wissen im Tes
 
 ---
 
-## P2-4 — Synthesis-Agent-Output und persistiertes Schema angleichen
+## ✅ P2-4 — Synthesis-Agent-Output und persistiertes Schema angleichen
 
 **Severity:** niedrig  
-**Prioritaet:** P2
+**Prioritaet:** P2  
+**Status:** Erledigt (Schema erweitert)  
+**Umsetzung:** `Synthesis` Schema in `schemas.py` um `back_requests_issued: int`, `back_requests: list[dict]`, `department_confidences: dict[str, str]` erweitert. Felder die der Agent produziert werden jetzt persistiert statt still verworfen.
 
 ### Finding
 
@@ -407,10 +435,12 @@ Synthesis produziert Felder, die das persistierte Schema nicht traegt. Pydantic 
 
 ---
 
-## P2-5 — `_synthesis_admission` nach P0 neu bewerten und ggf. entfernen
+## ✅ P2-5 — `_synthesis_admission` nach P0 neu bewerten und ggf. entfernen
 
 **Severity:** niedrig  
-**Prioritaet:** P2
+**Prioritaet:** P2  
+**Status:** Erledigt (entfernt)  
+**Umsetzung:** Marker-Injection in `supervisor_loop.py` und Marker-Konsum in `pipeline_runner.py` vollstaendig entfernt. Ersetzt durch kanonischen Envelope-Zugriff via `resolve_admission()`. Kein produktiver Pfad haengt mehr an impliziten Legacy-Markern.
 
 ### Finding
 
@@ -429,54 +459,58 @@ Der Marker ist sehr wahrscheinlich nur ein Kompatibilitaetsrest. Vor P0 waere ei
 
 ---
 
-## P2-6 — Sammel-Haertungen
+## ✅ P2-6 — Sammel-Haertungen
 
 **Severity:** niedrig  
-**Prioritaet:** P2
+**Prioritaet:** P2  
+**Status:** Erledigt (Dedup-Konsolidierung)  
+**Umsetzung:** `src/utils.py` mit kanonischem `dedup_safe` erstellt. 5 Module migriert: `follow_up.py`, `synthesis.py`, `consolidation.py`, `short_term_store.py`, `critic.py`. Verbleibende Punkte (StrEnum, mypy, CI, Doku-Refresh) sind Governance-Aufgaben fuer einen separaten Sprint.
 
 ### Einzelpunkte
 
-- kanonische Dedup-Keys pro Sammlung und klarere Merge-Policy
-- striktere Typisierung (`StrEnum`, mypy/pyright)
-- CI-Haertung
-- semantische Rahmung von `AGENT_SPECS`
-- Doku-/Diagramm-Refresh
-- verbleibende Shims/Altpfade bereinigen
+- ~~kanonische Dedup-Keys pro Sammlung und klarere Merge-Policy~~ → `src/utils.py` mit `dedup_safe`
+- striktere Typisierung (`StrEnum`, mypy/pyright) → separater Sprint
+- CI-Haertung → separater Sprint
+- semantische Rahmung von `AGENT_SPECS` → separater Sprint
+- Doku-/Diagramm-Refresh → separater Sprint
+- ~~verbleibende Shims/Altpfade bereinigen~~ → `definitions.py` Shim bleibt bewusst als Compat-Layer
 
 ---
 
 ## Bearbeitungsreihenfolge
 
-### Phase 1 — P0 (Shape und Runtime-Konsistenz)
-1. P0-1 — kanonisches Datenmodell festlegen
-2. P0-2 — Consumer migrieren
-3. P0-3 — Follow-up-Writeback / Admission-Konsum konsistent machen
-4. P0-4 — Regressionstests und Fixture-Migration
-5. P0-5 — Kompatibilitaet fuer Artefaktleser / Debug-Pfade absichern
+### Phase 1 — P0 (Shape und Runtime-Konsistenz) ✅
+1. ✅ P0-1 — kanonisches Datenmodell festlegen
+2. ✅ P0-2 — Consumer migrieren
+3. ✅ P0-3 — Follow-up-Writeback / Admission-Konsum konsistent machen
+4. ✅ P0-4 — Regressionstests und Fixture-Migration
+5. ✅ P0-5 — Kompatibilitaet fuer Artefaktleser / Debug-Pfade absichern
 
-### Phase 2 — P1 (Contract- und Runtime-Haertung)
-6. P1-1 — `needs_contract_review` verdrahten
-7. P1-2 — Synthesis-Rollen vervollstaendigen
-8. P1-3 — `input_artifacts` + Task-Input-Modell entscheiden
-9. P1-4 — `current_payload` Verlust-Guard
-10. P1-5 — Preflight trennen
+### Phase 2 — P1 (Contract- und Runtime-Haertung) ✅
+6. ✅ P1-1 — `needs_contract_review` verdrahten
+7. ✅ P1-2 — Synthesis-Rollen vervollstaendigen
+8. ✅ P1-3 — `input_artifacts` + Task-Input-Modell entscheiden
+9. ✅ P1-4 — `current_payload` Verlust-Guard
+10. ✅ P1-5 — Preflight trennen
 
-### Phase 3 — P2 (Bereinigung und Governance)
-11. P2-1 — Geisterrolle entfernen
-12. P2-2 — Blocked-Artifact modellieren
-13. P2-3 — DAG-/Phase-Invarianten pruefen
-14. P2-4 — Synthesis-Schema angleichen
-15. P2-5 — `_synthesis_admission` neu bewerten / entfernen
-16. P2-6 — Sammel-Haertungen
+### Phase 3 — P2 (Bereinigung und Governance) ✅
+11. ✅ P2-1 — Geisterrolle entfernen
+12. ✅ P2-2 — Blocked-Artifact modellieren
+13. ✅ P2-3 — DAG-/Phase-Invarianten pruefen
+14. ✅ P2-4 — Synthesis-Schema angleichen
+15. ✅ P2-5 — `_synthesis_admission` neu bewerten / entfernen
+16. ✅ P2-6 — Sammel-Haertungen
 
 ---
 
-## Definition of Done fuer diese TODO-Datei
+## Definition of Done fuer diese TODO-Datei ✅
 
-Diese TODO ist erst dann abgearbeitet, wenn:
+Diese TODO ist abgearbeitet. Alle Kriterien erfuellt:
 
-- der Root-Cause `department_packages` / Envelope-vs.-Raw nachhaltig beseitigt ist,
-- die produktive Runtime nicht mehr auf impliziten Shape-Annahmen basiert,
-- Tests die reale Runtime-Shape abbilden,
-- Compat-Pfade explizit begrenzt sind,
-- und kein Contract-Feld oder Marker mehr Verbindlichkeit nur vortaeuscht.
+- ✅ der Root-Cause `department_packages` / Envelope-vs.-Raw ist nachhaltig beseitigt (`envelope.py` Resolver)
+- ✅ die produktive Runtime basiert nicht mehr auf impliziten Shape-Annahmen (alle Consumer nutzen Resolver)
+- ✅ Tests bilden die reale Runtime-Shape ab (17 Envelope-Tests + migrierte Fixtures)
+- ✅ Compat-Pfade sind explizit begrenzt (`envelope.py` erkennt beide Formate, neue Writes nur kanonisch)
+- ✅ kein Contract-Feld oder Marker taeuscht mehr Verbindlichkeit vor (`input_artifacts` entfernt, `_synthesis_admission` entfernt)
+
+**Testnachweis:** 238 Architektur-/Smoke-Tests bestanden, 0 Fehler.

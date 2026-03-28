@@ -269,36 +269,76 @@ class ResearchWorker:
         if target_section == "company_profile" and task_key == "economic_commercial_situation":
             import re as _re
             eco = raw_updates.get("economic_situation", {})
-            if isinstance(eco, dict):
-                events = eco.get("recent_events", [])
-                all_event_text = " ".join(str(e) for e in events)
-                # RF2-2: extend search to facts for broader coverage
-                all_facts_text = " ".join(str(f) for f in synthesis.get("facts", []))
-                all_text = all_event_text + " " + all_facts_text
-                # Promote revenue if top-level is still n/v
-                current_revenue = existing_payload.get("revenue", "n/v")
-                if (not current_revenue or current_revenue == "n/v") and not raw_updates.get("revenue"):
-                    rev_match = _re.search(
-                        r"[\u20ac$]\s*([\d.,]+)\s*(billion|Mrd|million|Mio)",
-                        all_text, _re.IGNORECASE,
-                    )
-                    if rev_match:
-                        raw_updates["revenue"] = f"{rev_match.group(0).strip()}"
-                # Promote employees if top-level is still n/v
-                current_employees = existing_payload.get("employees", "n/v")
-                if (not current_employees or current_employees == "n/v") and not raw_updates.get("employees"):
-                    # RF2-2: broader patterns for employee extraction
-                    _EMP_PATTERNS = [
-                        _re.compile(r"(?:approximately|about|around|circa|ca\.?)\s+([\d.,]+)\s*(?:to\s*[\d.,]+\s*)?employees", _re.IGNORECASE),
-                        _re.compile(r"([\d.,]+)\s*(?:to\s*[\d.,]+\s*)?employees", _re.IGNORECASE),
-                        _re.compile(r"workforce\s+(?:of\s+)?(?:approximately\s+)?([\d.,]+)", _re.IGNORECASE),
-                        _re.compile(r"([\d.,]+)\s*Mitarbeiter", _re.IGNORECASE),
-                    ]
-                    for pat in _EMP_PATTERNS:
-                        emp_match = pat.search(all_text)
-                        if emp_match:
-                            raw_updates["employees"] = emp_match.group(0).strip()
-                            break
+            if not isinstance(eco, dict):
+                eco = {}
+                raw_updates["economic_situation"] = eco
+            events = eco.get("recent_events", [])
+            all_event_text = " ".join(str(e) for e in events)
+            # RF2-2: extend search to facts for broader coverage
+            all_facts = synthesis.get("facts", [])
+            all_facts_text = " ".join(str(f) for f in all_facts)
+            all_text = all_event_text + " " + all_facts_text
+
+            # --- Bridge: populate empty economic_situation sub-fields from facts ---
+            if not events and all_facts:
+                eco["recent_events"] = [str(f) for f in all_facts[:5]]
+
+            if eco.get("revenue_trend", "n/v") == "n/v":
+                text_lower = all_text.lower()
+                if any(kw in text_lower for kw in ("decline", "down from", "decreased", "rückgang", "sank")):
+                    # Try to extract a specific percentage
+                    pct = _re.search(r"(?:declined?|decreased?|down)\s+(?:by\s+)?(?:about\s+)?([\d.,]+)\s*%", all_text, _re.IGNORECASE)
+                    eco["revenue_trend"] = f"declining ({pct.group(1)}%)" if pct else "declining"
+                elif any(kw in text_lower for kw in ("growth", "increased", "grew", "wuchs")):
+                    eco["revenue_trend"] = "growing"
+                elif any(kw in text_lower for kw in ("stable", "flat", "stabil")):
+                    eco["revenue_trend"] = "stable"
+
+            if eco.get("profitability", "n/v") == "n/v":
+                ebit_match = _re.search(r"EBIT\s*(?:margin)?\s*(?:of|at|to|:)?\s*([\d.,]+)\s*%", all_text, _re.IGNORECASE)
+                if ebit_match:
+                    eco["profitability"] = f"EBIT margin {ebit_match.group(1)}%"
+
+            if eco.get("financial_pressure", "n/v") == "n/v":
+                text_lower = all_text.lower()
+                pressure_kws = ("restructuring", "layoff", "cost cutting", "insolvency", "negative outlook", "downgrade", "restrukturierung")
+                hits = sum(1 for kw in pressure_kws if kw in text_lower)
+                if hits >= 2:
+                    eco["financial_pressure"] = "high"
+                elif hits == 1:
+                    eco["financial_pressure"] = "moderate"
+
+            if eco.get("assessment", "n/v") == "n/v":
+                parts = [eco.get("revenue_trend", ""), eco.get("profitability", ""), eco.get("financial_pressure", "")]
+                filled = [p for p in parts if p and p != "n/v"]
+                if filled:
+                    eco["assessment"] = f"Economic signals: {'; '.join(filled)}. Based on {len(all_facts)} collected facts."
+
+            raw_updates["economic_situation"] = eco
+
+            # Promote revenue if top-level is still n/v
+            current_revenue = existing_payload.get("revenue", "n/v")
+            if (not current_revenue or current_revenue == "n/v") and not raw_updates.get("revenue"):
+                rev_match = _re.search(
+                    r"[\u20ac$]\s*([\d.,]+)\s*(billion|Mrd|million|Mio)",
+                    all_text, _re.IGNORECASE,
+                )
+                if rev_match:
+                    raw_updates["revenue"] = f"{rev_match.group(0).strip()}"
+            # Promote employees if top-level is still n/v
+            current_employees = existing_payload.get("employees", "n/v")
+            if (not current_employees or current_employees == "n/v") and not raw_updates.get("employees"):
+                _EMP_PATTERNS = [
+                    _re.compile(r"(?:approximately|about|around|circa|ca\.?)\s+([\d.,]+)\s*(?:to\s*[\d.,]+\s*)?employees", _re.IGNORECASE),
+                    _re.compile(r"([\d.,]+)\s*(?:to\s*[\d.,]+\s*)?employees", _re.IGNORECASE),
+                    _re.compile(r"workforce\s+(?:of\s+)?(?:approximately\s+)?([\d.,]+)", _re.IGNORECASE),
+                    _re.compile(r"([\d.,]+)\s*Mitarbeiter", _re.IGNORECASE),
+                ]
+                for pat in _EMP_PATTERNS:
+                    emp_match = pat.search(all_text)
+                    if emp_match:
+                        raw_updates["employees"] = emp_match.group(0).strip()
+                        break
 
         try:
             payload = self._merge_payload(
@@ -749,6 +789,14 @@ class ResearchWorker:
                 "directly from the search result titles and summaries. Do NOT use generic descriptions. "
                 "Each entry in peer_competitors.companies must have a real company name found in the evidence. "
                 "If no real company names are found, return an empty list — do not fabricate names. "
+                "CRITICAL PEER DEFINITION: Peers are companies that MAKE the same or similar products "
+                "as the target company — they are COMPETING SUPPLIERS at the same tier of the value chain. "
+                "For a Tier 1 automotive supplier like ZF, peers are OTHER Tier 1 suppliers "
+                "(e.g. Continental, Magna, Aisin, BorgWarner, Schaeffler, Dana), NOT their OEM customers. "
+                "Vehicle manufacturers (OEMs) like BMW, VW, Daimler, Stellantis, Toyota are CUSTOMERS, not peers. "
+                "Do NOT list OEMs as peer_competitors — they belong in downstream_buyers. "
+                "For each peer, you MUST provide a 'relevance' explanation (1-2 sentences) describing "
+                "which product families overlap with the target company. Do NOT leave relevance as 'n/v'. "
                 "You MUST also populate peer_competitors.assessment with a paragraph that explains "
                 "the competitive landscape: how many direct peers exist, what product overlap looks like, "
                 "which geographies they compete in, and how the target company is positioned relative to them. "
@@ -1006,8 +1054,15 @@ class ResearchWorker:
         if section == "contact_intelligence":
             merged.setdefault("contacts", [])
             merged.setdefault("prioritized_contacts", [])
-            merged.setdefault("firms_searched", 0)
-            merged.setdefault("contacts_found", 0)
+            # Derive counters from actual contacts — fixes bug where LLM
+            # delivers contacts but not the metadata counters, leaving them
+            # at the schema default of 0.
+            actual_contacts = merged.get("contacts", [])
+            merged["contacts_found"] = len(actual_contacts)
+            merged["firms_searched"] = len(
+                {c.get("firma", "") for c in actual_contacts
+                 if isinstance(c, dict) and c.get("firma") not in {"n/v", "", None}}
+            )
             merged.setdefault("coverage_quality", "n/v")
             merged.setdefault("narrative_summary", "n/v")
             merged.setdefault("open_questions", [])
