@@ -16,7 +16,19 @@ TaskStatus = Literal["accepted", "degraded", "skipped", "rejected", "pending"]
 ConfidenceLevel = Literal["high", "medium", "low"]
 
 # Synthesis generation mode (orthogonal to confidence)
-GenerationMode = Literal["normal", "fallback"]
+GenerationMode = Literal["normal", "fallback", "blocked"]
+
+
+# ---------------------------------------------------------------------------
+# P2-2: Blocked-Artifact — typed model for rejected sections/synthesis
+# ---------------------------------------------------------------------------
+
+class BlockedArtifact(BaseModel):
+    """Typed representation of a section or synthesis that was rejected by the gate."""
+    section_status: str = "blocked"
+    reason: str = "n/v"
+    open_questions: list[str] = Field(default_factory=list)
+    sources: list[Any] = Field(default_factory=list)
 
 
 class SourceRecord(BaseModel):
@@ -192,6 +204,11 @@ class Synthesis(BaseModel):
     # Tracks how this synthesis was produced (orthogonal to confidence)
     generation_mode: str = "normal"
     confidence: str = "medium"
+    # P2-4: Fields produced by SynthesisDepartmentAgent that were previously
+    # silently discarded by Pydantic. Now persisted explicitly.
+    back_requests_issued: int = 0
+    back_requests: list[dict[str, Any]] = Field(default_factory=list)
+    department_confidences: dict[str, str] = Field(default_factory=dict)
 
 
 class ResearchReadiness(BaseModel):

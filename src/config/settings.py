@@ -40,7 +40,10 @@ ROLE_MODEL_DEFAULTS = {
     "ContactCritic": "gpt-4.1",
     "ContactJudge": "gpt-4.1",
     "ContactCodingSpecialist": "gpt-4.1-mini",
-    "CrossDomainStrategicAnalyst": "gpt-4.1",
+    "SynthesisLead": "gpt-4.1",
+    "SynthesisAnalyst": "gpt-4.1",
+    "SynthesisCritic": "gpt-4.1",
+    "SynthesisJudge": "gpt-4.1",
 }
 ROLE_STRUCTURED_MODEL_DEFAULTS = {
     "Supervisor": "gpt-4.1",
@@ -68,7 +71,10 @@ ROLE_STRUCTURED_MODEL_DEFAULTS = {
     "ContactCritic": "gpt-4.1-mini",
     "ContactJudge": "gpt-4.1-mini",
     "ContactCodingSpecialist": "gpt-4.1-mini",
-    "CrossDomainStrategicAnalyst": "gpt-4.1-mini",
+    "SynthesisLead": "gpt-4.1-mini",
+    "SynthesisAnalyst": "gpt-4.1-mini",
+    "SynthesisCritic": "gpt-4.1-mini",
+    "SynthesisJudge": "gpt-4.1-mini",
 }
 
 
@@ -116,7 +122,7 @@ def summarize_runtime_models() -> str:
     parts = [
         f"Supervisor {get_role_model_selection('Supervisor')[0]}",
         f"Departments {get_role_model_selection('CompanyResearcher')[1]}",
-        f"Cross-domain {get_role_model_selection('CrossDomainStrategicAnalyst')[0]}",
+        f"Synthesis {get_role_model_selection('SynthesisLead')[0]}",
     ]
     return " · ".join(parts)
 

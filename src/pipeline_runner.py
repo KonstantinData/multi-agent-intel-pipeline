@@ -18,6 +18,7 @@ from src.memory.policies import should_store_strategy
 from src.memory.retrieval import retrieve_strategies
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
+from src.orchestration.envelope import resolve_admission
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
@@ -147,11 +148,11 @@ def run_pipeline(
             )
         )
 
-        # Synthesis admission — gate decision was made in supervisor_loop (F3).
-        # Read the admission marker set by accept_synthesis(); build fallback
-        # only when the AG2 GroupChat did not produce usable output.
+        # Synthesis admission — read from canonical envelope (P0-3).
+        synthesis_envelope = department_packages.get("SynthesisDepartment", {})
+        synthesis_admission_info = resolve_admission(synthesis_envelope)
+        synthesis_admission = synthesis_admission_info.get("decision", "rejected")
         ag2_synthesis = sections.get("synthesis", {})
-        synthesis_admission = ag2_synthesis.get("_synthesis_admission", "rejected")
         evidence_health = quality_review.get("evidence_health", "low")
 
         if synthesis_admission == "accepted":
@@ -174,7 +175,7 @@ def run_pipeline(
             # the machine-facing record is a typed blocked artifact.
             synthesis = {
                 "section_status": "blocked",
-                "reason": ag2_synthesis.get("_synthesis_admission", "rejected"),
+                "reason": synthesis_admission,
                 "target_company": ag2_synthesis.get("target_company", "n/v"),
                 "executive_summary": "Synthesis was not accepted by the Supervisor gate.",
                 "generation_mode": "blocked",
@@ -253,7 +254,12 @@ def run_pipeline(
             status=status,
             usable=readiness["usable"],
         )
-        if role_patterns and should_store_strategy(status=status, usable=readiness["usable"]):
+        if role_patterns and should_store_strategy(
+            status=status,
+            usable=readiness["usable"],
+            readiness_score=readiness.get("score", 0),
+            task_statuses=dict(run_context.short_term_memory.task_statuses),
+        ):
             for pattern in role_patterns:
                 memory_store.upsert_strategy(pattern)
 

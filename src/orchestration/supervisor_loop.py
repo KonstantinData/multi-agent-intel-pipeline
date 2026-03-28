@@ -18,6 +18,7 @@ from src.orchestration.task_router import (
     evaluate_run_conditions,
 )
 from src.orchestration.synthesis import build_synthesis_context, build_quality_review
+from src.models.schemas import BlockedArtifact
 
 
 MessageHook = Callable[[dict[str, Any]], None] | None
@@ -34,12 +35,10 @@ class SupervisorLoopResult(NamedTuple):
 
 def _blocked_section_artifact(reason: str, open_questions: list[str] | None = None) -> dict[str, Any]:
     """Return a typed blocked-section artifact for rejected departments."""
-    return {
-        "section_status": "blocked",
-        "reason": reason,
-        "open_questions": list(open_questions or []),
-        "sources": [],
-    }
+    return BlockedArtifact(
+        reason=reason,
+        open_questions=list(open_questions or []),
+    ).model_dump(mode="json")
 
 
 def _apply_acceptance_gate(
@@ -479,22 +478,21 @@ def run_supervisor_loop(
         )
         synthesis_decision = synthesis_acceptance.get("decision", "rejected")
 
-        # Envelope: raw_synthesis / admission / admitted_synthesis (analogous to F2)
+        # RF2-1: Synthesis envelope uses canonical keys (raw_package / admitted_payload)
+        # identical to department envelopes — one shape for all.
         synthesis_envelope: dict[str, Any] = {
             "admission": {
                 "decision": synthesis_decision,
                 "reason": synthesis_acceptance.get("reason", ""),
                 "downstream_visible": synthesis_decision != "rejected",
             },
-            "raw_synthesis": synthesis_result,
+            "raw_package": synthesis_result,
         }
         if synthesis_decision != "rejected":
-            synthesis_envelope["admitted_synthesis"] = synthesis_result
+            synthesis_envelope["admitted_payload"] = synthesis_result
         else:
-            synthesis_envelope["admitted_synthesis"] = None
+            synthesis_envelope["admitted_payload"] = None
 
-        # Write admission marker for pipeline_runner to read
-        synthesis_result["_synthesis_admission"] = synthesis_decision
         department_packages["SynthesisDepartment"] = synthesis_envelope
         sections["synthesis"] = synthesis_result
 

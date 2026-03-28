@@ -27,7 +27,6 @@ BASE_TOOL_POLICY: dict[str, tuple[str, ...]] = {
     "MarketCodingSpecialist": ("query_refinement",),
     "BuyerCodingSpecialist": ("query_refinement",),
     "ContactCodingSpecialist": ("query_refinement",),
-    "CrossDomainStrategicAnalyst": (),
 }
 
 TASK_TOOL_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
@@ -46,8 +45,6 @@ TASK_TOOL_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
     ("MarketCodingSpecialist", "query_refinement"): ("query_refinement",),
     ("BuyerCodingSpecialist", "query_refinement"): ("query_refinement",),
     ("ContactCodingSpecialist", "query_refinement"): ("query_refinement",),
-    ("CrossDomainStrategicAnalyst", "liquisto_opportunity_assessment"): (),
-    ("CrossDomainStrategicAnalyst", "negotiation_relevance"): (),
 }
 
 
