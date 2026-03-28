@@ -107,19 +107,23 @@ def main() -> int:
     print("\n4. Environment")
     check("OPENAI_API_KEY available", lambda: f"set via {_load_openai_api_key()[1]}", counters)
 
-    print("\n5. Import chain (simulates Streamlit loading app.py)")
+    print("\n5. Import chain — Core (no AG2 required)")
     sys.path.insert(0, str(ROOT))
     check("src.config", lambda: __import__("src.config") and "ok", counters)
     check("src.models.schemas", lambda: __import__("src.models.schemas") and "ok", counters)
+    check("src.agents.specs", lambda: __import__("src.agents.specs") and "ok", counters)
+    check("src.app.use_cases", lambda: __import__("src.app.use_cases") and "ok", counters)
+    check("src.exporters.json_export", lambda: __import__("src.exporters.json_export") and "ok", counters)
+
+    print("\n6. Import chain — Runtime (requires AG2 + OpenAI)")
     check("src.agents.definitions", lambda: __import__("src.agents.definitions") and "ok", counters)
     check("src.pipeline_runner", lambda: __import__("src.pipeline_runner") and "ok", counters)
     check("src.exporters.pdf_report", lambda: __import__("src.exporters.pdf_report") and "ok", counters)
-    check("src.exporters.json_export", lambda: __import__("src.exporters.json_export") and "ok", counters)
 
-    print(f"\n6. Port {STREAMLIT_PORT}")
+    print(f"\n7. Port {STREAMLIT_PORT}")
     check(f"Port {STREAMLIT_PORT}", lambda: _port_status(STREAMLIT_PORT), counters)
 
-    print("\n7. Streamlit CLI")
+    print("\n8. Streamlit CLI")
     check("streamlit.web.cli", lambda: __import__("streamlit.web.cli") and "ok", counters)
 
     print("\n" + "=" * 60)

@@ -22,43 +22,31 @@ from src.config import summarize_runtime_models
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
 from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline
+from ui.i18n import (
+    confidence_badge,
+    get_labels,
+    goods_label,
+    service_desc,
+    service_icon,
+    service_label,
+)
+from ui.theme import BRAND_CSS
 
 
 RUNS_DIR = PROJECT_ROOT / "artifacts" / "runs"
 BACKLOG = build_standard_backlog()
+LOGO_PATH = PROJECT_ROOT / "assets" / "image" / "liquisto_logo.png"
 
 st.set_page_config(page_title="Liquisto Briefing", page_icon="📋", layout="wide")
+st.markdown(BRAND_CSS, unsafe_allow_html=True)
 
-_SERVICE_LABELS = {
-    "excess_inventory": "Überschuss-Inventar-Verwertung",
-    "repurposing": "Repurposing & Kreislaufwirtschaft",
-    "analytics": "Analytics & Entscheidungsunterstützung",
-    "further_validation_required": "Weitere Validierung erforderlich",
-}
-_SERVICE_ICONS = {
-    "excess_inventory": "📦",
-    "repurposing": "♻️",
-    "analytics": "📊",
-    "further_validation_required": "🔍",
-}
-_SERVICE_DESCRIPTIONS = {
-    "excess_inventory": "Wiederverkauf, Redeployment und Sekundärmarktpfade für Güter und Anlagen",
-    "repurposing": "Kreislaufwirtschaft und Nachnutzungspfade für Materialien und Komponenten",
-    "analytics": "Lagertransparenz, Entscheidungsunterstützung und operative Berichtsverbesserungen",
-}
-_GOODS_LABELS = {
-    "manufacturer": "Hersteller",
-    "distributor": "Händler / Großhändler",
-    "held_in_stock": "Lagerhalter",
-    "mixed": "Gemischt (Herstellung + Handel)",
-    "unclear": "Geschäftsmodell unklar",
-    "n/v": "",
-}
-_CONFIDENCE_BADGE = {
-    "high": "🟢 Hohe Konfidenz",
-    "medium": "🟡 Mittlere Konfidenz",
-    "low": "🔴 Geringe Konfidenz",
-}
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _nv(val: object, fallback: str = "") -> str:
+    """Return empty string (or fallback) when val is n/v, None, or empty."""
+    s = str(val or "").strip()
+    return fallback if s in ("", "n/v", "N/V") else s
 
 
 def _init_state() -> None:
@@ -79,6 +67,7 @@ def _init_state() -> None:
         "worker_queue": None,
         "follow_up_answer": None,
         "loaded_notice": None,
+        "lang": "de",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -189,18 +178,18 @@ def _department_packages() -> dict[str, dict]:
     return st.session_state.run_context.get("short_term_memory", {}).get("department_packages", {})
 
 
-def _render_message_feed() -> None:
+def _render_message_feed(L: dict) -> None:
+    st.subheader(L["live_feed"])
     for m in reversed(st.session_state.messages[-40:]):
         agent = m.get("agent", "Agent")
         content = m.get("content", "")
         meta = AGENT_META.get(agent, {"summary": "", "icon": "[]"})
-        title = f"{meta.get('icon', '[]')} {agent} - {_message_preview(content)}"
+        title = f"{meta.get('icon', '[]')} {agent} — {_message_preview(content)}"
         with st.expander(title, expanded=False):
             st.code(content[:12000], language="json")
 
 
 def _ranked_service_paths(synthesis: dict) -> list[dict]:
-    """Return service_relevance items: positive first (ordered by recommended_paths), then unclear."""
     service_relevance = synthesis.get("liquisto_service_relevance", [])
     recommended = synthesis.get("recommended_engagement_paths", [])
     positive = [item for item in service_relevance if item.get("relevance") != "unclear"]
@@ -213,8 +202,31 @@ def _ranked_service_paths(synthesis: dict) -> list[dict]:
     return positive + unclear
 
 
-def _render_briefing_tab() -> None:
-    """Primary pre-meeting view: what matters, why, what to do, which Liquisto offer fits."""
+def _render_pdf_downloads(L: dict) -> None:
+    if not (st.session_state.run_id and st.session_state.pipeline_data):
+        return
+    col_de, col_en = st.columns(2)
+    with col_de:
+        pdf_de = generate_pdf(st.session_state.pipeline_data, lang="de")
+        st.download_button(
+            L["download_pdf_de"],
+            data=pdf_de,
+            file_name=f"liquisto_briefing_{st.session_state.run_id}_DE.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    with col_en:
+        pdf_en = generate_pdf(st.session_state.pipeline_data, lang="en")
+        st.download_button(
+            L["download_pdf_en"],
+            data=pdf_en,
+            file_name=f"liquisto_briefing_{st.session_state.run_id}_EN.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+
+def _render_briefing_tab(L: dict) -> None:
     pipeline_data = st.session_state.pipeline_data
     synthesis = pipeline_data.get("synthesis", {})
     company = pipeline_data.get("company_profile", {})
@@ -223,57 +235,57 @@ def _render_briefing_tab() -> None:
     contacts_section = pipeline_data.get("contact_intelligence", {})
     quality = pipeline_data.get("quality_review", {})
 
-    company_name = company.get("company_name", "n/v")
-    industry_name = company.get("industry") or industry.get("industry_name", "")
-    goods_type = _GOODS_LABELS.get(company.get("goods_classification", "n/v"), "")
+    company_name = _nv(company.get("company_name"), st.session_state.run_id or "")
+    industry_name = _nv(company.get("industry") or industry.get("industry_name", ""))
+    goods_lbl = goods_label(company.get("goods_classification", ""), L)
     confidence = synthesis.get("confidence") or quality.get("evidence_health", "low")
-    description = str(company.get("description", "") or "")
+    description = _nv(company.get("description", ""))
 
-    # ── Company snapshot ─────────────────────────────────────────────────────
+    # ── Company snapshot ──────────────────────────────────────────────────────
     st.markdown(f"## {company_name}")
-    tag_parts = [p for p in [industry_name, goods_type] if p and p not in ("n/v", "")]
-    caption_parts = [" · ".join(tag_parts), _CONFIDENCE_BADGE.get(confidence, "")]
+    tag_parts = [p for p in [industry_name, goods_lbl] if p]
+    caption_parts = [" · ".join(tag_parts), confidence_badge(confidence, L)]
     caption_line = "   ".join(p for p in caption_parts if p)
     if caption_line:
         st.caption(caption_line)
-    if description and description != "n/v":
+    if description:
         st.write(description[:400] + ("..." if len(description) > 400 else ""))
 
     econ = company.get("economic_situation", {})
-    econ_assessment = econ.get("assessment", "") if isinstance(econ, dict) else ""
-    if econ_assessment and econ_assessment not in ("n/v", ""):
-        st.info(f"**Wirtschaftliches Signal:** {econ_assessment}")
+    econ_assessment = _nv(econ.get("assessment", "") if isinstance(econ, dict) else "")
+    if econ_assessment:
+        st.info(f"**{L['economic_signal']}:** {econ_assessment}")
 
     st.divider()
 
     # ── Liquisto recommendation ───────────────────────────────────────────────
-    st.markdown("### Liquisto-Empfehlung")
+    st.markdown(f"### {L['recommendation']}")
     ranked = _ranked_service_paths(synthesis)
 
     if not ranked:
-        st.warning("Keine ausreichende Datenbasis für eine Empfehlung — Recherche vertiefen oder Follow-up nutzen.")
+        st.warning(L["no_recommendation"])
     else:
         primary = ranked[0]
         parea = primary.get("service_area", "")
-        plabel = _SERVICE_LABELS.get(parea, parea.replace("_", " ").title())
-        picon = _SERVICE_ICONS.get(parea, "📌")
-        preasoning = primary.get("reasoning") or synthesis.get("opportunity_assessment_summary", "")
+        plabel = service_label(parea, L)
+        picon = service_icon(parea)
+        preasoning = _nv(primary.get("reasoning") or synthesis.get("opportunity_assessment_summary", ""))
 
         with st.container(border=True):
             st.markdown(f"#### {picon} {plabel}")
-            st.caption("Primäre Empfehlung")
-            if preasoning and preasoning not in ("n/v", ""):
+            st.caption(L["primary_rec"])
+            if preasoning:
                 st.write(preasoning)
-            pdesc = _SERVICE_DESCRIPTIONS.get(parea, "")
+            pdesc = service_desc(parea, L)
             if pdesc:
                 st.caption(pdesc)
 
         if len(ranked) > 1:
             secondary = ranked[1]
             sarea = secondary.get("service_area", "")
-            slabel = _SERVICE_LABELS.get(sarea, sarea.replace("_", " ").title())
-            sicon = _SERVICE_ICONS.get(sarea, "📌")
-            sreasoning = secondary.get("reasoning", "")
+            slabel = service_label(sarea, L)
+            sicon = service_icon(sarea)
+            sreasoning = _nv(secondary.get("reasoning", ""))
 
             has_third = len(ranked) > 2
             if has_third:
@@ -285,25 +297,25 @@ def _render_briefing_tab() -> None:
             with col_sec:
                 with st.container(border=True):
                     st.markdown(f"**{sicon} {slabel}**")
-                    st.caption("Zweite Option")
-                    if sreasoning and sreasoning not in ("n/v", ""):
+                    st.caption(L["secondary_rec"])
+                    if sreasoning:
                         st.caption(sreasoning[:200])
 
             if has_third and col_low is not None:
                 third = ranked[2]
                 tarea = third.get("service_area", "")
-                tlabel = _SERVICE_LABELS.get(tarea, tarea.replace("_", " ").title())
+                tlabel = service_label(tarea, L)
                 with col_low:
                     with st.container(border=True):
                         st.markdown(f"**{tlabel}**")
-                        st.caption("Aktuell weniger relevant")
-                        reasoning_text = third.get("reasoning", "")
+                        st.caption(L["low_relevance"])
+                        reasoning_text = _nv(third.get("reasoning", ""))
                         if reasoning_text:
                             st.caption(reasoning_text[:140])
 
     gen_mode = synthesis.get("generation_mode", "normal")
     if gen_mode == "fallback":
-        st.caption("_Empfehlung basiert auf strukturierter Datenauswertung (kein AG2-Syntheselauf)._")
+        st.caption(f"_{L['fallback_note']}_")
 
     st.divider()
 
@@ -311,241 +323,271 @@ def _render_briefing_tab() -> None:
     col_talk, col_validate = st.columns(2)
 
     with col_talk:
-        st.markdown("### Im Termin ansprechen")
+        st.markdown(f"### {L['talk_about']}")
         next_steps = synthesis.get("next_steps", [])
-        buyer_summary = market.get("downstream_buyers", {}).get("assessment", "")
+        buyer_summary = _nv(market.get("downstream_buyers", {}).get("assessment", ""))
         peer_count = len(market.get("peer_competitors", {}).get("companies", []))
 
         points: list[str] = []
         for step in next_steps[:4]:
-            if step and step != "n/v":
-                points.append(step)
-        if buyer_summary and buyer_summary not in ("n/v", "") and len(points) < 4:
-            points.append(f"Käufermarkt: {buyer_summary[:200]}")
+            s = _nv(step)
+            if s:
+                points.append(s)
+        if buyer_summary and len(points) < 4:
+            points.append(f"{L['buyer_market']}: {buyer_summary[:200]}")
         if peer_count > 0 and len(points) < 4:
-            points.append(f"{peer_count} Wettbewerber identifiziert — Marktpositionierung ansprechen.")
+            points.append(f"{peer_count} {L['competitors_identified']}")
 
         if points:
             for point in points[:4]:
                 st.write(f"- {point}")
         else:
-            st.caption("Keine spezifischen Gesprächspunkte verfügbar.")
+            st.caption(L["no_talk_points"])
 
     with col_validate:
-        st.markdown("### Im Termin validieren")
+        st.markdown(f"### {L['validate']}")
         key_risks = synthesis.get("key_risks", [])
         open_gaps = quality.get("open_gaps", [])
         hypotheses: list[str] = []
         for risk in key_risks[:3]:
-            if risk and risk != "n/v":
-                hypotheses.append(risk)
+            r = _nv(risk)
+            if r:
+                hypotheses.append(r)
         for gap in open_gaps[:2]:
-            if gap and gap not in hypotheses and gap != "n/v":
-                hypotheses.append(gap)
+            g = _nv(gap)
+            if g and g not in hypotheses:
+                hypotheses.append(g)
 
         if hypotheses:
             for h in hypotheses[:4]:
                 st.write(f"- {h}")
         else:
-            st.caption("Keine offenen Validierungspunkte identifiziert.")
+            st.caption(L["no_validation_points"])
 
     st.divider()
 
     # ── Contacts ──────────────────────────────────────────────────────────────
-    st.markdown("### Kontakte")
+    st.markdown(f"### {L['contacts']}")
     prioritized = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts", [])
     if prioritized:
         contact_cols = st.columns(min(len(prioritized[:3]), 3))
         for i, contact in enumerate(prioritized[:3]):
             with contact_cols[i]:
                 with st.container(border=True):
-                    name = contact.get("name", "n/v")
-                    role = contact.get("rolle_titel") or contact.get("funktion", "n/v")
-                    firm = contact.get("firma", "")
-                    seniority = contact.get("senioritaet", "")
-                    outreach = contact.get("suggested_outreach_angle", "")
+                    name = _nv(contact.get("name"), "—")
+                    role = _nv(contact.get("rolle_titel") or contact.get("funktion", ""))
+                    firm = _nv(contact.get("firma", ""))
+                    seniority = _nv(contact.get("senioritaet", ""))
+                    outreach = _nv(contact.get("suggested_outreach_angle", ""))
                     st.markdown(f"**{name}**")
-                    meta_parts = [p for p in [role, firm] if p and p != "n/v"]
+                    meta_parts = [p for p in [role, firm] if p]
                     if meta_parts:
                         st.caption(" · ".join(meta_parts))
-                    if seniority and seniority != "n/v":
-                        st.caption(f"Seniorität: {seniority}")
-                    if outreach and outreach != "n/v":
-                        st.info(f"Outreach: {outreach}")
+                    if seniority:
+                        st.caption(f"{L['seniority']}: {seniority}")
+                    if outreach:
+                        st.info(f"{L['outreach']}: {outreach}")
         if len(prioritized) > 3:
-            st.caption(f"_+{len(prioritized) - 3} weitere Kontakte in der Recherche-Ansicht_")
+            st.caption(f"_+{len(prioritized) - 3} {L['more_contacts']}_")
     else:
-        st.caption("Keine verifizierten Kontakte gefunden — ContactDepartment-Ergebnisse im Recherche-Tab prüfen.")
+        st.caption(L["no_contacts"])
 
     st.divider()
 
     # ── Next action ───────────────────────────────────────────────────────────
-    st.markdown("### Empfohlener nächster Schritt")
+    st.markdown(f"### {L['next_step']}")
     next_steps_all = synthesis.get("next_steps", [])
     if next_steps_all:
-        st.success(next_steps_all[0])
+        st.success(_nv(next_steps_all[0], L["default_next_step"]))
     else:
         readiness_reasons = pipeline_data.get("research_readiness", {}).get("reasons", [])
         if readiness_reasons:
-            st.info(readiness_reasons[0])
+            st.info(_nv(readiness_reasons[0], L["default_next_step"]))
         else:
-            st.info("Follow-up durchführen oder Termin mit dem Kunden ansetzen.")
+            st.info(L["default_next_step"])
+
+    st.divider()
+
+    # ── PDF downloads ─────────────────────────────────────────────────────────
+    _render_pdf_downloads(L)
 
 
-def _render_research_tab() -> None:
-    """Secondary: detailed research depth per section."""
+def _render_research_tab(L: dict) -> None:
     pipeline_data = st.session_state.pipeline_data
     company = pipeline_data.get("company_profile", {})
     industry = pipeline_data.get("industry_analysis", {})
     market = pipeline_data.get("market_network", {})
     contacts_section = pipeline_data.get("contact_intelligence", {})
 
-    with st.expander("Unternehmensprofil", expanded=True):
+    with st.expander(L["company_profile"], expanded=True):
         col1, col2 = st.columns(2)
         with col1:
-            st.write(f"**Name:** {company.get('company_name', 'n/v')}")
-            st.write(f"**Website:** {company.get('website', 'n/v')}")
-            st.write(f"**Branche:** {company.get('industry', 'n/v')}")
-            goods_label = _GOODS_LABELS.get(company.get("goods_classification", "n/v"), "")
-            if goods_label:
-                st.write(f"**Gütertyp:** {goods_label}")
+            st.write(f"**{L['name']}:** {_nv(company.get('company_name'), '—')}")
+            website = _nv(company.get("website", ""))
+            st.write(f"**{L['website']}:** {website or '—'}")
+            st.write(f"**{L['industry']}:** {_nv(company.get('industry'), '—')}")
+            goods_lbl = goods_label(company.get("goods_classification", ""), L)
+            if goods_lbl:
+                st.write(f"**{L['goods_type']}:** {goods_lbl}")
         with col2:
             products = company.get("products_and_services", [])
             if products:
-                st.write("**Produkte / Leistungen:**")
+                st.write(f"**{L['products']}:**")
                 for p in products[:6]:
-                    st.write(f"- {p}")
-        desc = str(company.get("description", "") or "")
-        if desc and desc != "n/v":
+                    pv = _nv(p)
+                    if pv:
+                        st.write(f"- {pv}")
+        desc = _nv(company.get("description", ""))
+        if desc:
             st.write(desc)
         econ = company.get("economic_situation", {})
-        if isinstance(econ, dict) and (econ.get("assessment") or econ.get("recent_events")):
-            st.markdown("**Wirtschaftliche Signale:**")
-            if econ.get("assessment") and econ["assessment"] != "n/v":
-                st.write(econ["assessment"])
+        if isinstance(econ, dict) and (_nv(econ.get("assessment")) or econ.get("recent_events")):
+            st.markdown(f"**{L['economic_signals']}:**")
+            assessment = _nv(econ.get("assessment", ""))
+            if assessment:
+                st.write(assessment)
             for evt in econ.get("recent_events", [])[:5]:
-                st.write(f"- {evt}")
+                ev = _nv(evt)
+                if ev:
+                    st.write(f"- {ev}")
             for sig in econ.get("inventory_signals", [])[:4]:
-                st.write(f"- {sig}")
+                sv = _nv(sig)
+                if sv:
+                    st.write(f"- {sv}")
         scope = company.get("product_asset_scope", [])
         if scope:
-            st.markdown("**Asset-Scope:**")
+            st.markdown(f"**{L['asset_scope']}:**")
             for item in scope[:8]:
-                st.write(f"- {item}")
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
 
-    with st.expander("Markt und Industrie"):
-        st.write(f"**Branche:** {industry.get('industry_name', 'n/v')}")
-        assessment = str(industry.get("assessment", "") or "")
-        if assessment and assessment != "n/v":
+    with st.expander(L["market_industry"]):
+        st.write(f"**{L['industry']}:** {_nv(industry.get('industry_name'), '—')}")
+        assessment = _nv(industry.get("assessment", ""))
+        if assessment:
             st.write(assessment)
-        demand = industry.get("demand_outlook", "")
-        if demand and demand != "n/v":
-            st.write(f"**Nachfrage-Outlook:** {demand}")
+        demand = _nv(industry.get("demand_outlook", ""))
+        if demand:
+            st.write(f"**{L['demand_outlook']}:** {demand}")
         for trend in industry.get("key_trends", [])[:5]:
-            st.write(f"- {trend}")
+            tv = _nv(trend)
+            if tv:
+                st.write(f"- {tv}")
         repurposing = industry.get("repurposing_signals", [])
         if repurposing:
-            st.markdown("**Repurposing-Signale:**")
+            st.markdown(f"**{L['repurposing_signals']}:**")
             for item in repurposing[:5]:
-                st.write(f"- {item}")
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
         analytics = industry.get("analytics_signals", [])
         if analytics:
-            st.markdown("**Analytics-Signale:**")
+            st.markdown(f"**{L['analytics_signals']}:**")
             for item in analytics[:5]:
-                st.write(f"- {item}")
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
 
-    with st.expander("Käufer- und Wettbewerbernetzwerk"):
+    with st.expander(L["buyer_network"]):
         peers = market.get("peer_competitors", {})
         if peers:
-            peer_assessment = peers.get("assessment", "")
-            if peer_assessment and peer_assessment != "n/v":
-                st.markdown(f"**Wettbewerber** — {peer_assessment[:300]}")
+            peer_assessment = _nv(peers.get("assessment", ""))
+            if peer_assessment:
+                st.markdown(f"**{L['competitors']}** — {peer_assessment[:300]}")
             for company_item in peers.get("companies", [])[:10]:
                 if isinstance(company_item, dict):
-                    name = company_item.get("name", "")
-                    country = company_item.get("country", "")
-                    relevance = company_item.get("relevance", "")
+                    name = _nv(company_item.get("name", ""))
+                    country = _nv(company_item.get("country", ""))
+                    relevance = _nv(company_item.get("relevance", ""))
                     parts = [name]
-                    if country and country != "n/v":
+                    if country:
                         parts.append(f"({country})")
-                    if relevance and relevance != "n/v":
+                    if relevance:
                         parts.append(f"— {relevance}")
                     line = " ".join(p for p in parts if p)
                     if line.strip():
                         st.write(f"- {line}")
                 elif company_item:
-                    st.write(f"- {company_item}")
+                    cv = _nv(str(company_item))
+                    if cv:
+                        st.write(f"- {cv}")
         buyers = market.get("downstream_buyers", {})
         if buyers:
-            buyer_assessment = buyers.get("assessment", "")
-            if buyer_assessment and buyer_assessment != "n/v":
-                st.markdown(f"**Downstream-Käufer** — {buyer_assessment[:300]}")
+            buyer_assessment = _nv(buyers.get("assessment", ""))
+            if buyer_assessment:
+                st.markdown(f"**{L['downstream_buyers']}** — {buyer_assessment[:300]}")
             for buyer in buyers.get("companies", [])[:10]:
                 if isinstance(buyer, dict):
-                    name = buyer.get("name", "")
-                    country = buyer.get("country", "")
-                    line = name + (f" ({country})" if country and country != "n/v" else "")
+                    name = _nv(buyer.get("name", ""))
+                    country = _nv(buyer.get("country", ""))
+                    line = name + (f" ({country})" if country else "")
                     if line.strip():
                         st.write(f"- {line}")
                 elif buyer:
-                    st.write(f"- {buyer}")
+                    bv = _nv(str(buyer))
+                    if bv:
+                        st.write(f"- {bv}")
         monetization = market.get("monetization_paths", [])
         if monetization:
-            st.markdown("**Monetisierungspfade:**")
+            st.markdown(f"**{L['monetization_paths']}:**")
             for path in monetization[:5]:
-                st.write(f"- {path}")
+                pv = _nv(path)
+                if pv:
+                    st.write(f"- {pv}")
         redeployment = market.get("redeployment_paths", [])
         if redeployment:
-            st.markdown("**Redeployment-Pfade:**")
+            st.markdown(f"**{L['redeployment_paths']}:**")
             for path in redeployment[:5]:
-                st.write(f"- {path}")
+                pv = _nv(path)
+                if pv:
+                    st.write(f"- {pv}")
 
-    with st.expander("Kontakt-Intelligence"):
-        narrative = str(contacts_section.get("narrative_summary", "") or "")
-        if narrative and narrative != "n/v":
+    with st.expander(L["contact_intelligence"]):
+        narrative = _nv(contacts_section.get("narrative_summary", ""))
+        if narrative:
             st.write(narrative)
-        coverage = contacts_section.get("coverage_quality", "n/v")
-        st.caption(f"Abdeckungsqualität: {coverage}")
+        coverage = _nv(contacts_section.get("coverage_quality", ""), "—")
+        st.caption(f"{L['coverage_quality']}: {coverage}")
         all_contacts = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts", [])
         if all_contacts:
             for c in all_contacts:
-                name = c.get("name", "n/v")
-                role = c.get("rolle_titel") or c.get("funktion", "n/v")
-                firm = c.get("firma", "n/v")
+                name = _nv(c.get("name"), "—")
+                role = _nv(c.get("rolle_titel") or c.get("funktion", ""), "—")
+                firm = _nv(c.get("firma", ""), "—")
                 with st.expander(f"{name} — {role} @ {firm}"):
-                    st.write(f"**Funktion:** {c.get('funktion', 'n/v')}")
-                    st.write(f"**Seniorität:** {c.get('senioritaet', 'n/v')}")
-                    st.write(f"**Confidence:** {c.get('confidence', 'n/v')}")
-                    st.write(f"**Relevanz:** {c.get('relevance_reason', 'n/v')}")
-                    outreach = c.get("suggested_outreach_angle", "")
-                    if outreach and outreach != "n/v":
-                        st.info(f"**Outreach-Angle:** {outreach}")
+                    funktion = _nv(c.get("funktion", ""))
+                    senioritaet = _nv(c.get("senioritaet", ""))
+                    conf = _nv(c.get("confidence", ""))
+                    relevance_r = _nv(c.get("relevance_reason", ""))
+                    outreach = _nv(c.get("suggested_outreach_angle", ""))
+                    if funktion:
+                        st.write(f"**{L['function']}:** {funktion}")
+                    if senioritaet:
+                        st.write(f"**{L['seniority']}:** {senioritaet}")
+                    if conf:
+                        st.write(f"**{L['confidence']}:** {conf}")
+                    if relevance_r:
+                        st.write(f"**{L['relevance']}:** {relevance_r}")
+                    if outreach:
+                        st.info(f"**{L['outreach_angle']}:** {outreach}")
         else:
-            st.caption("Keine Kontakte gefunden.")
+            st.caption(L["no_contacts_found"])
 
 
-def _render_follow_up_panel() -> None:
+def _render_follow_up_panel(L: dict) -> None:
     current_run_id = st.session_state.run_id or ""
-    st.markdown(
-        "Stelle gezielte Fragen zu einem abgeschlossenen Run. Der **Question Router** entscheidet, "
-        "welches Department antwortet (Company, Market, Buyer, Contact Intelligence, Synthesis)."
-    )
+    st.markdown(L["followup_intro"])
     with st.form("follow_up_form", clear_on_submit=False):
-        run_id = st.text_input("Run ID", value=current_run_id, help="z.B. 20250322T143012Z")
-        question = st.text_area(
-            "Folgefrage",
-            placeholder=(
-                "z.B. 'Welche Ansprechpartner gibt es bei Bosch?' "
-                "oder 'Welche Drucksignale wurden bei der Marktanalyse gefunden?'"
-            ),
-        )
-        submitted = st.form_submit_button("Frage beantworten", use_container_width=True)
+        run_id = st.text_input(L["run_id"], value=current_run_id, help="z.B. 20250322T143012Z")
+        question = st.text_area(L["followup_question"], placeholder=L["followup_placeholder"])
+        submitted = st.form_submit_button(L["submit_question"], use_container_width=True)
 
     if submitted:
         if not run_id.strip() or not question.strip():
-            st.warning("Run ID und Frage sind erforderlich.")
+            st.warning(L["followup_required"])
         else:
-            with st.spinner("Routing und Antwort wird vorbereitet..."):
+            with st.spinner(L["followup_routing"]):
                 try:
                     artifact = load_run_artifact(run_id.strip())
                     from src.agents.supervisor import SupervisorAgent
@@ -560,9 +602,9 @@ def _render_follow_up_panel() -> None:
                     )
                     st.session_state.follow_up_answer = {**answer, "route_reason": route["reason"]}
                 except FileNotFoundError:
-                    st.error(f"Run '{run_id.strip()}' nicht gefunden.")
+                    st.error(f"{L['followup_not_found']}: '{run_id.strip()}'")
                 except Exception as exc:
-                    st.error(f"Fehler: {exc}")
+                    st.error(f"{L['followup_error']}: {exc}")
 
     answer = st.session_state.follow_up_answer
     if answer:
@@ -573,46 +615,54 @@ def _render_follow_up_panel() -> None:
             "ContactDepartment": "👤",
             "SynthesisDepartment": "🧠",
         }
-        routed_to = answer.get("routed_to", "n/v")
+        routed_to = _nv(answer.get("routed_to", ""), "—")
         icon = dept_icons.get(routed_to, "🔍")
         with st.container(border=True):
-            st.markdown(f"**{icon} Beantwortet von: {routed_to}**")
-            st.caption(answer.get("route_reason", ""))
-            st.write(answer.get("answer", "n/v"))
+            st.markdown(f"**{icon} {L['answered_by']}: {routed_to}**")
+            route_reason = _nv(answer.get("route_reason", ""))
+            if route_reason:
+                st.caption(route_reason)
+            st.write(_nv(answer.get("answer", ""), "—"))
             col_a, col_b = st.columns(2)
             with col_a:
                 if answer.get("evidence_used"):
-                    st.write("**Verwendete Belege**")
+                    st.write(f"**{L['evidence_used']}**")
                     for item in answer["evidence_used"]:
-                        if item:
-                            st.write(f"- {item[:200]}")
+                        iv = _nv(str(item or ""))
+                        if iv:
+                            st.write(f"- {iv[:200]}")
             with col_b:
                 if answer.get("unresolved_points"):
-                    st.write("**Offene Punkte**")
+                    st.write(f"**{L['unresolved_points']}**")
                     for item in answer["unresolved_points"]:
-                        st.write(f"- {item}")
+                        uv = _nv(str(item or ""))
+                        if uv:
+                            st.write(f"- {uv}")
 
 
-def _render_pipeline_tab() -> None:
-    """Technical internals for QA and debugging."""
+def _render_quality_tab(L: dict) -> None:
     pipeline_data = st.session_state.pipeline_data
     quality = pipeline_data.get("quality_review", {})
     readiness = pipeline_data.get("research_readiness", {})
 
-    with st.expander("Recherche-Qualität & Evidenz"):
+    with st.expander(L["research_quality"]):
         col1, col2, col3 = st.columns(3)
-        col1.metric("Readiness-Score", readiness.get("score", "n/v"))
-        col2.metric("Evidenz-Qualität", quality.get("evidence_health", "n/v"))
-        col3.metric("Status", st.session_state.status or "n/v")
+        col1.metric(L["readiness_score"], _nv(str(readiness.get("score", "")), "—"))
+        col2.metric(L["evidence_quality"], _nv(quality.get("evidence_health", ""), "—"))
+        col3.metric(L["status"], _nv(st.session_state.status or "", "—"))
         if readiness.get("reasons"):
             for r in readiness["reasons"]:
-                st.write(f"- {r}")
+                rv = _nv(r)
+                if rv:
+                    st.write(f"- {rv}")
         if quality.get("open_gaps"):
-            st.markdown("**Offene Lücken:**")
+            st.markdown(f"**{L['open_gaps']}:**")
             for g in quality["open_gaps"][:10]:
-                st.write(f"- {g}")
+                gv = _nv(g)
+                if gv:
+                    st.write(f"- {gv}")
 
-    with st.expander("Task-Status"):
+    with st.expander(L["task_status"]):
         status_icons = {"accepted": "✅", "degraded": "🟡", "rejected": "❌", "skipped": "⏭️", "pending": "⏳"}
         for row in _task_rows():
             icon = status_icons.get(row["status"], "·")
@@ -620,12 +670,12 @@ def _render_pipeline_tab() -> None:
 
     packages = _department_packages()
     if packages:
-        with st.expander("Department-Pakete (intern)"):
+        with st.expander(L["department_packages"]):
             for dept_name, package in packages.items():
                 st.markdown(f"**{dept_name}**")
                 st.json(package)
 
-    with st.expander("Run-Metadaten"):
+    with st.expander(L["run_metadata"]):
         budget = st.session_state.budget
         st.json({
             "run_id": st.session_state.run_id,
@@ -655,16 +705,28 @@ def _start_pipeline(company_name: str, web_domain: str) -> None:
     st.session_state.worker_queue = Queue()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
 _init_state()
 _drain_queue()
 
+L = get_labels(st.session_state.lang)
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("Initial Run")
-    company_name = st.text_input("Company name", value=st.session_state.get("input_company", ""))
-    web_domain = st.text_input("Web domain", value=st.session_state.get("input_domain", ""))
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), use_container_width=True)
+
+    if st.button(L["lang_toggle"], use_container_width=True):
+        st.session_state.lang = "en" if st.session_state.lang == "de" else "de"
+        st.rerun()
+
+    st.divider()
+
+    st.markdown(f"**{L['new_run']}**")
+    company_name = st.text_input(L["company_name"], value=st.session_state.get("input_company", ""))
+    web_domain = st.text_input(L["web_domain"], value=st.session_state.get("input_domain", ""))
     if st.button(
-        "Start run",
+        L["start_run"],
         disabled=st.session_state.running or not company_name or not web_domain,
         use_container_width=True,
     ):
@@ -672,11 +734,13 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
+
+    st.markdown(f"**{L['load_run']}**")
     run_dirs = _run_dirs()
     run_options = [p.name for p in run_dirs[:30]]
-    selected_run = st.selectbox("Load run", options=[""] + run_options, index=0)
+    selected_run = st.selectbox(L["select_run"], options=[""] + run_options, index=0)
     if st.button(
-        "Load selected run",
+        L["load_selected"],
         disabled=st.session_state.running or not selected_run,
         use_container_width=True,
     ):
@@ -684,29 +748,12 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    st.caption(f"Runtime models: {summarize_runtime_models()}")
-    if st.session_state.run_id and st.session_state.pipeline_data:
-        pdf_de = generate_pdf(st.session_state.pipeline_data, lang="de")
-        st.download_button(
-            "Download PDF (DE)",
-            data=pdf_de,
-            file_name=f"liquisto_briefing_{st.session_state.run_id}_DE.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
-        pdf_en = generate_pdf(st.session_state.pipeline_data, lang="en")
-        st.download_button(
-            "Download PDF (EN)",
-            data=pdf_en,
-            file_name=f"liquisto_briefing_{st.session_state.run_id}_EN.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+    st.caption(f"{L['runtime_models']}: {summarize_runtime_models()}")
 
 
 # ── Page header ───────────────────────────────────────────────────────────────
-st.title("Liquisto Briefing")
-st.caption("Gesprächsvorbereitung auf Basis strukturierter Markt- und Unternehmensrecherche")
+st.header(L["page_heading"])
+st.caption(L["page_subtitle"])
 
 # ── Live run view ─────────────────────────────────────────────────────────────
 if st.session_state.running and not st.session_state.done:
@@ -747,8 +794,7 @@ if st.session_state.running and not st.session_state.done:
         st.session_state.pipeline_started = True
         threading.Thread(target=_run, daemon=True).start()
 
-    st.subheader("Live message feed")
-    _render_message_feed()
+    _render_message_feed(L)
     time.sleep(0.8)
     st.rerun()
 
@@ -759,31 +805,38 @@ if st.session_state.error:
 # ── Post-run display ──────────────────────────────────────────────────────────
 if st.session_state.done and st.session_state.run_id:
     status = st.session_state.status
-    company_label = st.session_state.pipeline_data.get("company_profile", {}).get("company_name", st.session_state.run_id)
-    if status == "completed":
-        st.success(f"Briefing bereit — {company_label}")
-    elif status == "completed_partial":
-        st.warning(f"Briefing mit Lücken — {company_label}")
-    elif status == "completed_but_not_usable":
-        st.error(f"Recherche unvollständig — Briefing eingeschränkt nutzbar ({company_label})")
-    elif st.session_state.loaded_notice == st.session_state.run_id:
-        st.info(f"Run geladen — {company_label}")
-
-    tab_briefing, tab_research, tab_follow_up, tab_pipeline, tab_messages = st.tabs(
-        ["Briefing", "Recherche", "Follow-up", "Pipeline", "Messages"]
+    company_label = _nv(
+        st.session_state.pipeline_data.get("company_profile", {}).get("company_name", ""),
+        st.session_state.run_id,
     )
+    if status == "completed":
+        st.success(f"{L['briefing_ready']} — {company_label}")
+    elif status == "completed_partial":
+        st.warning(f"{L['briefing_partial']} — {company_label}")
+    elif status == "completed_but_not_usable":
+        st.error(f"{L['briefing_unusable']} ({company_label})")
+    elif st.session_state.loaded_notice == st.session_state.run_id:
+        st.info(f"{L['run_loaded']} — {company_label}")
+
+    tab_briefing, tab_research, tab_followup, tab_quality, tab_log = st.tabs([
+        L["tab_briefing"],
+        L["tab_research"],
+        L["tab_followup"],
+        L["tab_quality"],
+        L["tab_log"],
+    ])
 
     with tab_briefing:
-        _render_briefing_tab()
+        _render_briefing_tab(L)
 
     with tab_research:
-        _render_research_tab()
+        _render_research_tab(L)
 
-    with tab_follow_up:
-        _render_follow_up_panel()
+    with tab_followup:
+        _render_follow_up_panel(L)
 
-    with tab_pipeline:
-        _render_pipeline_tab()
+    with tab_quality:
+        _render_quality_tab(L)
 
-    with tab_messages:
-        _render_message_feed()
+    with tab_log:
+        _render_message_feed(L)
