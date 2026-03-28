@@ -24,6 +24,7 @@ from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgen
 from src.config.settings import get_openai_api_key, get_role_model_selection
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
+from src.orchestration.envelope import resolve_raw_package, resolve_report_segment, resolve_confidence
 from src.orchestration.speaker_selector import build_synthesis_selector
 
 
@@ -113,7 +114,7 @@ class SynthesisDepartmentAgent:
         ) -> str:
             """Read the domain report segment produced by a department."""
             package = run_state["department_packages"].get(department, {})
-            segment = package.get("report_segment", {})
+            segment = resolve_report_segment(package)
             if not segment or segment.get("narrative_summary", "n/v") == "n/v":
                 return json.dumps({"error": f"No report segment available for {department}"})
             return json.dumps(
@@ -160,8 +161,11 @@ class SynthesisDepartmentAgent:
             )
             updated_segment = followup_result.get("report_segment", {})
             if updated_segment:
+                # P0-3: Write follow-up results into raw_package, not envelope root
                 pkg = dict(run_state["department_packages"].get(routed_dept, {}))
-                pkg["report_segment"] = updated_segment
+                raw = dict(resolve_raw_package(pkg))
+                raw["report_segment"] = updated_segment
+                pkg["raw_package"] = raw
                 run_state["department_packages"][routed_dept] = pkg
 
             return json.dumps(
@@ -184,9 +188,7 @@ class SynthesisDepartmentAgent:
             back_requests = run_state["back_requests"]
             ctx = run_state.get("synthesis_context", {})
             dept_confidences = {
-                dept: run_state["department_packages"].get(dept, {})
-                .get("report_segment", {})
-                .get("confidence", "n/v")
+                dept: resolve_confidence(run_state["department_packages"].get(dept, {}))
                 for dept in _SYNTHESIS_DEPARTMENTS
             }
             # Derive overall confidence from department confidences
@@ -282,7 +284,7 @@ class SynthesisDepartmentAgent:
 
         available_segments = [
             d for d in _SYNTHESIS_DEPARTMENTS
-            if department_packages.get(d, {}).get("report_segment", {}).get("narrative_summary", "n/v") != "n/v"
+            if resolve_report_segment(department_packages.get(d, {})).get("narrative_summary", "n/v") != "n/v"
         ]
         # Include synthesis context summary in initiation message so the LLM
         # has the pre-computed structural data available from the start.

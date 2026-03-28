@@ -18,6 +18,7 @@ from src.agents._helpers import (
     coerce_sources as _coerce_sources_impl,
     deep_merge as _deep_merge_impl,
     dedup_list as _dedup_list_impl,
+    extract_contacts_from_facts as _extract_contacts_from_facts_impl,
     normalize_contact_fields as _normalize_contact_fields_impl,
     normalize_payload_updates as _normalize_payload_updates_impl,
     parse_contact_from_title as _parse_contact_from_title_static,
@@ -154,6 +155,31 @@ class ResearchWorker:
                     if facts:
                         raw_updates["redeployment_paths"] = [str(f) for f in facts[:3]]
 
+            # RF-3: Dedup guard — remove downstream_buyers that overlap with peer_competitors
+            peer_tier = existing_payload.get("peer_competitors", {})
+            if isinstance(peer_tier, dict):
+                peer_names = {
+                    str(c.get("name", "")).strip().lower()
+                    for c in peer_tier.get("companies", [])
+                    if isinstance(c, dict) and c.get("name", "n/v") != "n/v"
+                }
+                if peer_names:
+                    buyer_tier = raw_updates.get("downstream_buyers", {})
+                    if isinstance(buyer_tier, dict):
+                        buyer_companies = buyer_tier.get("companies", [])
+                        if buyer_companies:
+                            deduped = [
+                                c for c in buyer_companies
+                                if str(c.get("name", "")).strip().lower() not in peer_names
+                            ]
+                            if len(deduped) < len(buyer_companies):
+                                import logging as _log
+                                _log.getLogger(__name__).warning(
+                                    "RF-3 dedup guard: removed %d peer-duplicates from downstream_buyers",
+                                    len(buyer_companies) - len(deduped),
+                                )
+                            buyer_tier["companies"] = deduped
+
         # P3 bridge: if repurposing_circularity LLM synthesis left repurposing_signals empty,
         # generate indicative signals from product keywords as a last resort.
         if target_section == "industry_analysis" and task_key == "repurposing_circularity":
@@ -183,25 +209,39 @@ class ResearchWorker:
                     raw_updates["assessment"] = "Based on collected evidence: " + "; ".join(str(t) for t in kt[:3])
 
         # P0-3 bridge: if contact_discovery LLM synthesis left contacts empty,
-        # extract real person names from search result titles as a fallback.
+        # RF-2: first try to extract contacts from LLM facts/buyer_hypotheses,
+        # then fall back to title parsing only if that also yields nothing.
         if target_section == "contact_intelligence" and not raw_updates.get("contacts"):
-            # Bug-5: pass buyer_candidates so irrelevant firms are filtered out
-            _buyer_cands = (current_sections.get(target_section) or {}).get("buyer_candidates")
-            bridged: list[dict[str, str]] = []
-            for result in search_results[:6]:
-                parsed = self._parse_contact_from_title(
-                    str(result.get("title", "")), str(result.get("url", "")),
-                    buyer_candidates=_buyer_cands,
-                )
-                if parsed:
-                    bridged.append(parsed)
-            if bridged:
-                raw_updates["contacts"] = bridged
-                raw_updates["contacts_found"] = len(bridged)
+            # Step 1: promote LLM-extracted contacts from facts
+            fact_contacts = _extract_contacts_from_facts_impl(
+                synthesis.get("facts", []),
+                synthesis.get("buyer_hypotheses", []),
+            )
+            if fact_contacts:
+                raw_updates["contacts"] = fact_contacts
+                raw_updates["contacts_found"] = len(fact_contacts)
                 raw_updates["firms_searched"] = len(
-                    {c["firma"] for c in bridged if c.get("firma") not in {"n/v", ""}}
+                    {c["firma"] for c in fact_contacts if c.get("firma") not in {"n/v", ""}}
                 )
                 raw_updates.setdefault("coverage_quality", "low")
+            else:
+                # Step 2: fall back to title parsing (with stricter validation)
+                _buyer_cands = (current_sections.get(target_section) or {}).get("buyer_candidates")
+                bridged: list[dict[str, str]] = []
+                for result in search_results[:6]:
+                    parsed = self._parse_contact_from_title(
+                        str(result.get("title", "")), str(result.get("url", "")),
+                        buyer_candidates=_buyer_cands,
+                    )
+                    if parsed:
+                        bridged.append(parsed)
+                if bridged:
+                    raw_updates["contacts"] = bridged
+                    raw_updates["contacts_found"] = len(bridged)
+                    raw_updates["firms_searched"] = len(
+                        {c["firma"] for c in bridged if c.get("firma") not in {"n/v", ""}}
+                    )
+                    raw_updates.setdefault("coverage_quality", "low")
 
         if target_section == "company_profile" and task_key == "company_fundamentals":
             ps = raw_updates.get("products_and_services", [])
@@ -209,6 +249,56 @@ class ResearchWorker:
                 kw = hints.get("product_keywords", [])
                 if kw:
                     raw_updates["products_and_services"] = kw[:6]
+
+        # RF-4 bridge: if product_asset_scope LLM synthesis left the list empty,
+        # promote products_and_services as classified fallback entries.
+        if target_section == "company_profile" and task_key == "product_asset_scope":
+            if not raw_updates.get("product_asset_scope"):
+                # Try current_payload first (has products from company_fundamentals)
+                existing_products = existing_payload.get("products_and_services", [])
+                if not existing_products:
+                    existing_products = hints.get("product_keywords", [])
+                if existing_products:
+                    raw_updates["product_asset_scope"] = [
+                        f"{p} \u2014 classification pending" for p in existing_products[:6]
+                    ]
+
+        # RF-5 bridge: if economic_commercial_situation produced revenue/employee
+        # data in economic_situation but top-level fields are still n/v, promote.
+        # RF2-2: also search in synthesis.facts for employee counts.
+        if target_section == "company_profile" and task_key == "economic_commercial_situation":
+            import re as _re
+            eco = raw_updates.get("economic_situation", {})
+            if isinstance(eco, dict):
+                events = eco.get("recent_events", [])
+                all_event_text = " ".join(str(e) for e in events)
+                # RF2-2: extend search to facts for broader coverage
+                all_facts_text = " ".join(str(f) for f in synthesis.get("facts", []))
+                all_text = all_event_text + " " + all_facts_text
+                # Promote revenue if top-level is still n/v
+                current_revenue = existing_payload.get("revenue", "n/v")
+                if (not current_revenue or current_revenue == "n/v") and not raw_updates.get("revenue"):
+                    rev_match = _re.search(
+                        r"[\u20ac$]\s*([\d.,]+)\s*(billion|Mrd|million|Mio)",
+                        all_text, _re.IGNORECASE,
+                    )
+                    if rev_match:
+                        raw_updates["revenue"] = f"{rev_match.group(0).strip()}"
+                # Promote employees if top-level is still n/v
+                current_employees = existing_payload.get("employees", "n/v")
+                if (not current_employees or current_employees == "n/v") and not raw_updates.get("employees"):
+                    # RF2-2: broader patterns for employee extraction
+                    _EMP_PATTERNS = [
+                        _re.compile(r"(?:approximately|about|around|circa|ca\.?)\s+([\d.,]+)\s*(?:to\s*[\d.,]+\s*)?employees", _re.IGNORECASE),
+                        _re.compile(r"([\d.,]+)\s*(?:to\s*[\d.,]+\s*)?employees", _re.IGNORECASE),
+                        _re.compile(r"workforce\s+(?:of\s+)?(?:approximately\s+)?([\d.,]+)", _re.IGNORECASE),
+                        _re.compile(r"([\d.,]+)\s*Mitarbeiter", _re.IGNORECASE),
+                    ]
+                    for pat in _EMP_PATTERNS:
+                        emp_match = pat.search(all_text)
+                        if emp_match:
+                            raw_updates["employees"] = emp_match.group(0).strip()
+                            break
 
         try:
             payload = self._merge_payload(
@@ -414,12 +504,14 @@ class ResearchWorker:
             return self._dedup_list([*peer_queries, *base_queries])
         queries = build_buyer_queries(company_name, product_keywords, industry_hint)
         if task_key == "monetization_redeployment":
-            queries.extend(
-                [
-                    f"{' '.join(product_keywords[:3])} distributors brokers marketplace",
-                    f"{company_name} customers aftermarket service",
-                ]
-            )
+            # RF-3: OEM-specific and aftermarket queries instead of generic buyer queries
+            queries = [
+                f"\"{company_name}\" OEM customers vehicle manufacturers",
+                f"\"{company_name}\" aftermarket distributors service network",
+                f"{industry_hint} fleet operators industrial end-users {company_name}",
+                f"\"{company_name}\" customers aftermarket service",
+                f"{' '.join(product_keywords[:3])} distributors brokers marketplace",
+            ]
         return queries
 
     # Task-specific search limits: contact and peer tasks need broader coverage
@@ -427,7 +519,7 @@ class ResearchWorker:
         # task_key_prefix → (max_queries, max_results)
         "contact_discovery": (8, 12),
         "contact_qualification": (8, 12),
-        "peer_companies": (6, 8),
+        "peer_companies": (8, 12),
         "monetization_redeployment": (6, 8),
     }
     _DEFAULT_QUERY_LIMIT = (4, 5)
@@ -549,7 +641,13 @@ class ResearchWorker:
                 "employees (number as string, e.g. '150000'), revenue (e.g. '38 billion EUR'), "
                 "goods_classification ('manufacturer', 'distributor', 'held_in_stock', 'mixed', or 'unclear'). "
                 "If a field is mentioned anywhere in the evidence (titles, summaries, page excerpts), extract it. "
-                "Only use 'n/v' if the field is genuinely absent from ALL evidence."
+                "Only use 'n/v' if the field is genuinely absent from ALL evidence. "
+                "IMPORTANT for employees: extract the TOTAL current headcount (e.g. '161600'), "
+                "NOT a planned reduction or layoff number. If the evidence mentions both a total "
+                "(e.g. '161,600 employees') and a reduction (e.g. 'reduction of 14,000'), use the TOTAL. "
+                "IMPORTANT for revenue: extract the MOST RECENT annual revenue figure. "
+                "If multiple years are mentioned, use the latest year. "
+                "Always include the year (e.g. '41.4 billion EUR (2024)', not '36.4 billion EUR (2017)')."
             )
 
         if task_key == "economic_commercial_situation":
@@ -564,17 +662,29 @@ class ResearchWorker:
                 "assessment (one paragraph summarizing the economic situation and commercial pressure). "
                 "Extract ALL financial figures, restructuring news, layoff numbers, and pressure signals "
                 "directly from search result titles, summaries, and page excerpts. "
-                "Only use 'n/v' or [] if the field is genuinely absent from ALL evidence."
+                "Only use 'n/v' or [] if the field is genuinely absent from ALL evidence. "
+                "ADDITIONALLY: if the evidence contains a revenue figure, you MUST also set the TOP-LEVEL field "
+                "'revenue' (e.g. '41.4 billion EUR') in payload_updates. "
+                "If the evidence contains an employee count or workforce reduction number, you MUST also set "
+                "the TOP-LEVEL field 'employees' (e.g. '150000' or 'approximately 150,000') in payload_updates. "
+                "IMPORTANT for revenue: use the MOST RECENT full-year figure, not a forecast or historical comparison. "
+                "If multiple years appear, pick the latest. Always include the year. "
+                "IMPORTANT for employees: use the TOTAL current headcount, NOT a reduction, layoff, or cut number. "
+                "If the evidence says 'reduction of 14,000 employees', that is NOT the headcount — look for the total."
             )
 
         if task_key in {"contact_discovery", "contact_qualification"}:
             system_parts.append(
                 "For contact tasks: extract REAL person names, job titles, and companies directly from "
                 "the search result titles, summaries, and page excerpts. "
-                "Each contact entry must have: name (real person, not a placeholder), title, company, source_url. "
+                "You MUST return contacts inside payload_updates.contacts as a list of objects, each with: "
+                "name (real person name), firma (company name), rolle_titel (job title), "
+                "quelle (source URL where the person was found). "
                 "Do NOT use placeholders like 'n/v', 'unknown', or 'target_company'. "
                 "If a person's name appears in a title like 'John Smith, Head of Procurement at Acme Corp', "
-                "extract all three fields. Return an empty list only if NO real names appear anywhere in the evidence."
+                "extract all fields into a structured contact object in payload_updates.contacts. "
+                "Do NOT put contacts only in facts — they MUST appear in payload_updates.contacts. "
+                "Return an empty list only if NO real names appear anywhere in the evidence."
             )
 
         if task_key == "market_situation":
@@ -624,7 +734,13 @@ class ResearchWorker:
                 "redeployment_paths (list of concrete redeployment or adjacent-use paths). "
                 "Use buyer_hypotheses you generate as the basis — turn them into concrete schema fields. "
                 "Extract firm names from search result titles and summaries. "
-                "Only use empty lists if no relevant companies or paths appear anywhere in the evidence."
+                "Only use empty lists if no relevant companies or paths appear anywhere in the evidence. "
+                "CRITICAL: downstream_buyers must be DIFFERENT from peer_competitors. "
+                "Peers are companies that MAKE similar products (competing Tier 1 suppliers). "
+                "Buyers are companies that BUY, DISTRIBUTE, or USE the target company's products: "
+                "OEMs (vehicle manufacturers like BMW, VW, Daimler, Stellantis, Toyota), "
+                "aftermarket distributors, fleet operators, industrial end-users, and service networks. "
+                "Do NOT list competing Tier 1 suppliers as downstream buyers."
             )
 
         if task_key == "peer_companies":

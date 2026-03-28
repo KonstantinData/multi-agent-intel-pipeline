@@ -36,7 +36,6 @@ class Assignment:
     # Contract fields from use_cases.py — carried through to runtime
     depends_on: tuple[str, ...] = ()
     run_condition: str | None = None
-    input_artifacts: tuple[str, ...] = ()
     output_schema_key: str = ""
     industry_hint: str = "n/v"
 
@@ -75,7 +74,6 @@ def build_initial_assignments(brief: SupervisorBrief) -> list[Assignment]:
                 allowed_tools=allowed_tools,
                 depends_on=tuple(item.get("depends_on") or []),
                 run_condition=item.get("run_condition"),
-                input_artifacts=tuple(item.get("input_artifacts") or []),
                 output_schema_key=str(item.get("output_schema_key", "")),
                 industry_hint=brief.industry_hint,
             )

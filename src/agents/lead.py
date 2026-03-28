@@ -545,8 +545,25 @@ class DepartmentLeadAgent:
 
             run_state.record_task_artifact(artifact)
 
-            # Keep current_payload updated (for backward compat with finalize_payload assembly)
-            run_state.current_payload = dict(report["payload"])
+            # P1-4: Payload loss guard — warn if worker returned fewer fields
+            # than already existed, then merge defensively.
+            new_payload = dict(report["payload"])
+            prev_keys = set(run_state.current_payload.keys()) - {"sources"}
+            new_keys = set(new_payload.keys()) - {"sources"}
+            lost_keys = prev_keys - new_keys
+            if lost_keys:
+                non_default_lost = {
+                    k for k in lost_keys
+                    if run_state.current_payload.get(k) not in (None, "", "n/v", [])
+                }
+                if non_default_lost:
+                    logger.warning(
+                        "Payload loss guard: task=%s lost non-default keys %s — preserving previous values",
+                        task_key, non_default_lost,
+                    )
+                    for k in non_default_lost:
+                        new_payload.setdefault(k, run_state.current_payload[k])
+            run_state.current_payload = new_payload
             run_state.revision_requests.pop(task_key, None)  # consumed
 
             if memory_store is not None:
@@ -753,8 +770,48 @@ class DepartmentLeadAgent:
 
                 elif artifact and review:
                     # Fallback path: research + review exist but Lead never called judge_decision.
-                    # If critic approved, accept. If rejected, degrade (one inline judge call).
-                    if review.approved:
+                    # P1-1: If artifact has needs_contract_review, force Judge escalation
+                    # even if Critic approved — contract violations override Critic approval.
+                    if artifact.needs_contract_review and not review.approved:
+                        logger.debug(
+                            "finalize_package: contract review escalation for task=%s",
+                            task_key,
+                        )
+                        inline_result = self.judge.decide(
+                            section=task_key,
+                            critic_review=review.to_dict(),
+                        )
+                        inline_decision = TaskDecisionArtifact.from_judge_result(
+                            inline_result, task_key=task_key, attempt=artifact.attempt
+                        )
+                        run_state.record_decision_artifact(inline_decision)
+                        task_status = inline_result["task_status"]
+                        task_accepted = review.accepted_points
+                        task_open = _dedup(
+                            inline_result.get("open_questions", [])
+                            + artifact.open_questions
+                        )
+                    elif artifact.needs_contract_review and review.approved:
+                        # Critic approved but contract violations exist — degrade to Judge
+                        logger.debug(
+                            "finalize_package: contract review override for approved task=%s",
+                            task_key,
+                        )
+                        inline_result = self.judge.decide(
+                            section=task_key,
+                            critic_review=review.to_dict(),
+                        )
+                        inline_decision = TaskDecisionArtifact.from_judge_result(
+                            inline_result, task_key=task_key, attempt=artifact.attempt
+                        )
+                        run_state.record_decision_artifact(inline_decision)
+                        task_status = inline_result["task_status"]
+                        task_accepted = review.accepted_points
+                        task_open = _dedup(
+                            inline_result.get("open_questions", [])
+                            + artifact.open_questions
+                        )
+                    elif review.approved:
                         # Critic approved → implicit Lead-accepted decision
                         implicit_decision = TaskDecisionArtifact.lead_accepted(
                             task_key=task_key,
@@ -854,6 +911,13 @@ class DepartmentLeadAgent:
                 run_state.current_payload["goods_classification"] = self._classify_goods(
                     run_state.current_payload
                 )
+                # RF3-1 Fix C: safety net for product_asset_scope in finalize_package path too
+                if not run_state.current_payload.get("product_asset_scope"):
+                    existing_products = run_state.current_payload.get("products_and_services", [])
+                    if existing_products:
+                        run_state.current_payload["product_asset_scope"] = [
+                            f"{p} \u2014 classification pending" for p in existing_products[:6]
+                        ]
 
             report_segment = DomainReportSegment(
                 department=self.department,
@@ -1214,16 +1278,24 @@ The Supervisor sees only the contract handoff and the final package. It does NOT
 For each mandatory task:
 1. Tell {self.researcher_name} to call run_research(task_key) for the task.
 2. Tell {self.critic_name} to call review_research(task_key).
-3. Read the review result:
+3. Read the review result carefully — distinguish between CORE and SUPPORTING failures:
    - **APPROVED** (approved=true) → note the accepted points, move to the next task.
-   - **REJECTED** (approved=false, attempt=1):
+   - **REJECTED with core failures** (approved=false AND core_passed < core_total, attempt < {MAX_TASK_RETRIES}):
      - If method_issue=true → ask {self.coding_name} to suggest_refined_queries(task_key), then ask {self.researcher_name} to run_research again.
-     - Otherwise → ask {self.researcher_name} to run_research again (with the rejected_points as revision context in the initiation message).
+     - Otherwise → ask {self.researcher_name} to run_research again (with the rejected_points as revision context).
+   - **REJECTED with only supporting failures** (approved=false BUT core_passed == core_total) → do NOT retry. Accept the task with documented gaps and move to the next task. Supporting gaps are expected and do not justify consuming retry budget.
    - **REJECTED** (approved=false, attempt ≥ {MAX_TASK_RETRIES}) → ask {self.judge_name} to judge_decision(task_key). The Judge's decision is final.
 4. After all tasks are complete (or explicitly unresolved with justification):
    - Call finalize_package(summary) with a full narrative domain report section.
    - Write it as a briefing-ready paragraph: key findings, confidence, what remains open.
    - The chat will end after this call.
+
+## CRITICAL: Budget discipline
+- You have {mandatory_count} tasks and a limited round budget. Do NOT spend more than 2 retries on any single task.
+- If a task passes all core rules but fails supporting rules, ACCEPT IT and move on.
+- Completing all tasks with gaps is better than completing fewer tasks perfectly.
+- You MUST call run_research for EVERY mandatory task before calling finalize_package. Skipping a task entirely is NOT acceptable — even a single research attempt with gaps is far more valuable than no attempt at all.
+- Do NOT call finalize_package until you have started ALL {mandatory_count} tasks.
 
 ## Rules
 - Always name the next agent explicitly in your message (e.g., "{self.researcher_name}, please call run_research(task_key=...)")
@@ -1474,6 +1546,15 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
                 "open_points": task_open[:6],
                 "summary": assignment.objective,
             })
+
+        # RF3-1 Fix C: if product_asset_scope was never executed, populate from
+        # current_payload.products_and_services as a safety net.
+        if not run_state.current_payload.get("product_asset_scope"):
+            existing_products = run_state.current_payload.get("products_and_services", [])
+            if existing_products:
+                run_state.current_payload["product_asset_scope"] = [
+                    f"{p} \u2014 classification pending" for p in existing_products[:6]
+                ]
 
         accepted_count = sum(1 for t in task_summaries if t.get("status") == "accepted")
         degraded_count = sum(1 for t in task_summaries if t.get("status") == "degraded")

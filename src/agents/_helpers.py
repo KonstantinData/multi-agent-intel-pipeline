@@ -62,6 +62,15 @@ def coerce_string_list(items: Any) -> list[str]:
     for item in items:
         if isinstance(item, str):
             text = item.strip()
+            # Fix Python-dict-repr strings like "{'buyer_type': 'OEM', ...}"
+            if text.startswith("{") and "':" in text:
+                try:
+                    import ast
+                    parsed = ast.literal_eval(text)
+                    if isinstance(parsed, dict):
+                        text = " | ".join(str(v).strip() for v in parsed.values() if str(v).strip())
+                except (ValueError, SyntaxError):
+                    pass
         elif isinstance(item, dict):
             text = " | ".join(str(v).strip() for v in item.values() if str(v).strip())
         else:
@@ -303,7 +312,10 @@ def build_memory_context(
     if role_memory:
         successful_queries = []
         for mem in role_memory[:3]:
-            successful_queries.extend(mem.get("successful_queries", [])[:5])
+            # Prefer structural_queries (scrubbed); fall back to successful_queries
+            # only for legacy compat, but skip entries that contain company names
+            queries = mem.get("structural_queries") or mem.get("successful_queries", [])
+            successful_queries.extend(queries[:5])
         if successful_queries:
             ctx["prior_successful_queries"] = dedup_list(successful_queries)[:10]
 
@@ -349,6 +361,40 @@ def dedup_list(items: list) -> list:
     return result
 
 
+# RF-2: Blacklist for parse_contact_from_title — generic terms that are not person names
+_CONTACT_NAME_BLACKLIST = (
+    "update", "outlook", "report", "description", "job",
+    "homepage", "press", "news", "credit", "opinion",
+    "automotive", "industry", "market", "forecast",
+    "supply chain", "annual report", "press release", "product portfolio",
+    "global technology", "procurement group", "purchasing group",
+    "battery management", "market report", "presse-information",
+    "reviced", "revised", "predictions", "insights",
+)
+
+
+def _looks_like_person_name(name: str) -> bool:
+    """RF-2: Heuristic check — does this string look like a real person name?"""
+    words = name.split()
+    if len(words) < 2 or len(name) > 50:
+        return False
+    # At least 2 words must start with uppercase (Title Case)
+    title_case_words = sum(1 for w in words if w[0].isupper())
+    if title_case_words < 2:
+        return False
+    # Must not contain blacklisted terms
+    name_lower = name.lower()
+    if any(kw in name_lower for kw in _CONTACT_NAME_BLACKLIST):
+        return False
+    # Must not be all-caps (acronyms like "GF GTC 2020")
+    if name == name.upper():
+        return False
+    # Must not contain digits (years, version numbers)
+    if any(c.isdigit() for c in name):
+        return False
+    return True
+
+
 def parse_contact_from_title(
     title: str,
     url: str,
@@ -356,6 +402,8 @@ def parse_contact_from_title(
 ) -> dict[str, str] | None:
     """Extract a contact from a search result title.
 
+    RF-2: Strengthened validation — rejects page titles, conference names,
+    and generic terms that are not real person names.
     Returns None if no real person name is detected.
     """
     for sep in (" \u2013 ", " - ", " | "):
@@ -363,38 +411,69 @@ def parse_contact_from_title(
             parts = title.split(sep, 1)
             candidate_name = parts[0].strip()
             rest = parts[1].strip() if len(parts) > 1 else ""
-            words = candidate_name.split()
-            if (
-                len(words) >= 2
-                and not any(kw in candidate_name.lower() for kw in (
-                    "update", "outlook", "report", "description", "job",
-                    "homepage", "press", "news", "credit", "opinion",
-                    "automotive", "industry", "market", "forecast",
-                ))
-                and len(candidate_name) < 50
-            ):
-                rolle = rest
-                firma = "n/v"
-                for role_sep in (" | ", " at ", ", "):
-                    if role_sep in rest:
-                        role_parts = rest.split(role_sep, 1)
-                        rolle = role_parts[0].strip()
-                        firma = role_parts[1].strip()
-                        break
-                if buyer_candidates and firma and firma != "n/v":
-                    firma_lower = firma.lower()
-                    if not any(
-                        bc.lower() in firma_lower or firma_lower in bc.lower()
-                        for bc in buyer_candidates
-                    ):
-                        return None
-                return {
-                    "name": candidate_name,
-                    "firma": firma if firma else "n/v",
-                    "rolle_titel": rolle if rolle else "n/v",
-                    "funktion": "n/v", "senioritaet": "n/v", "standort": "n/v",
-                    "quelle": url, "confidence": "inferred",
-                    "relevance_reason": "Extracted from public search result.",
-                    "suggested_outreach_angle": "n/v",
-                }
+            if not _looks_like_person_name(candidate_name):
+                continue
+            rolle = rest
+            firma = "n/v"
+            for role_sep in (" | ", " at ", ", "):
+                if role_sep in rest:
+                    role_parts = rest.split(role_sep, 1)
+                    rolle = role_parts[0].strip()
+                    firma = role_parts[1].strip()
+                    break
+            if buyer_candidates and firma and firma != "n/v":
+                firma_lower = firma.lower()
+                if not any(
+                    bc.lower() in firma_lower or firma_lower in bc.lower()
+                    for bc in buyer_candidates
+                ):
+                    return None
+            return {
+                "name": candidate_name,
+                "firma": firma if firma else "n/v",
+                "rolle_titel": rolle if rolle else "n/v",
+                "funktion": "n/v", "senioritaet": "n/v", "standort": "n/v",
+                "quelle": url, "confidence": "inferred",
+                "relevance_reason": "Extracted from public search result.",
+                "suggested_outreach_angle": "n/v",
+            }
     return None
+
+
+def extract_contacts_from_facts(facts: list, buyer_hypotheses: list) -> list[dict[str, str]]:
+    """RF-2: Extract structured contacts from LLM facts/buyer_hypotheses.
+
+    Looks for patterns like:
+    - "Dr. Arne Flemming serves as SVP Supply Chain at Robert Bosch GmbH"
+    - "Jiro Ebihara is Head of the Purchasing Group at Denso Corporation"
+    """
+    import re
+    contacts: list[dict[str, str]] = []
+    seen_names: set[str] = set()
+    # Patterns: "Name serves as/is/was Role at Company"
+    _ROLE_PATTERNS = [
+        re.compile(r"([A-Z][\w.]+(?:\s+[A-Z][\w.]+)+)\s+(?:serves? as|is|was)\s+(?:the\s+)?(.+?)\s+at\s+(.+?)(?:\.|,|$)", re.IGNORECASE),
+        re.compile(r"([A-Z][\w.]+(?:\s+[A-Z][\w.]+)+),\s+(.+?)\s+at\s+(.+?)(?:\.|,|$)", re.IGNORECASE),
+    ]
+    all_texts = [str(f) for f in facts] + [str(h) for h in buyer_hypotheses if isinstance(h, str)]
+    for text in all_texts:
+        for pattern in _ROLE_PATTERNS:
+            for match in pattern.finditer(text):
+                name = match.group(1).strip()
+                role = match.group(2).strip()
+                company = match.group(3).strip()
+                if name in seen_names or len(name) < 5 or len(name) > 60:
+                    continue
+                if not _looks_like_person_name(name):
+                    continue
+                seen_names.add(name)
+                contacts.append({
+                    "name": name,
+                    "firma": company[:80],
+                    "rolle_titel": role[:100],
+                    "funktion": "n/v", "senioritaet": "n/v", "standort": "n/v",
+                    "quelle": "n/v", "confidence": "inferred",
+                    "relevance_reason": "Extracted from LLM research facts.",
+                    "suggested_outreach_angle": "n/v",
+                })
+    return contacts
