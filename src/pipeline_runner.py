@@ -19,6 +19,7 @@ from src.memory.retrieval import retrieve_strategies
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
+from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
@@ -119,6 +120,8 @@ def run_pipeline(
     try:
         brief, supervisor_message = agents["supervisor"].build_intake_brief(intake)
         run_context.supervisor_brief = supervisor_message["payload"]
+        run_context.question_registry = build_question_registry()
+        run_context.answer_matrix = build_initial_answer_matrix()
         messages.append(
             emit_message(
                 on_message,

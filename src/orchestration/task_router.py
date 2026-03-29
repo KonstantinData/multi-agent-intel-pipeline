@@ -13,6 +13,7 @@ from typing import Any
 from src.app.use_cases import build_standard_backlog
 from src.config import get_role_model_selection
 from src.domain.intake import SupervisorBrief
+from src.orchestration.meeting_questions import question_ids_for_task
 from src.orchestration.tool_policy import resolve_allowed_tools
 
 
@@ -38,6 +39,7 @@ class Assignment:
     run_condition: str | None = None
     output_schema_key: str = ""
     industry_hint: str = "n/v"
+    question_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +78,7 @@ def build_initial_assignments(brief: SupervisorBrief) -> list[Assignment]:
                 run_condition=item.get("run_condition"),
                 output_schema_key=str(item.get("output_schema_key", "")),
                 industry_hint=brief.industry_hint,
+                question_ids=question_ids_for_task(str(item["task_key"])),
             )
         )
     return assignments

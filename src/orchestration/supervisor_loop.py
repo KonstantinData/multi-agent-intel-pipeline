@@ -10,6 +10,11 @@ from typing import Any, Callable, NamedTuple
 from src.config.settings import SOFT_TOKEN_BUDGET, HARD_TOKEN_CAP
 from src.domain.intake import SupervisorBrief
 from src.memory.short_term_store import ShortTermMemoryStore
+from src.orchestration.meeting_questions import (
+    build_initial_answer_matrix,
+    build_question_registry,
+    matrix_status_for_task_status,
+)
 from src.orchestration.task_router import (
     DEPARTMENT_RESEARCHERS,
     build_department_assignments,
@@ -129,6 +134,11 @@ def run_supervisor_loop(
     agents: dict[str, Any],
     on_message: MessageHook = None,
 ) -> SupervisorLoopResult:
+    if not run_context.question_registry:
+        run_context.question_registry = build_question_registry()
+    if not run_context.answer_matrix:
+        run_context.answer_matrix = build_initial_answer_matrix()
+
     sections: dict[str, Any] = {}
     department_packages: dict[str, Any] = {}
     messages: list[dict[str, Any]] = []
@@ -136,6 +146,27 @@ def run_supervisor_loop(
     department_assignments = build_department_assignments(brief)
     completed_backlog: list[dict[str, str]] = []
     department_timings: dict[str, float] = {}
+
+    def _update_answer_matrix_from_task(assignment, task_status: str) -> None:
+        matrix_status = matrix_status_for_task_status(task_status)
+        for question_id in assignment.question_ids:
+            entry = run_context.answer_matrix.setdefault(
+                question_id,
+                {
+                    "status": "pending",
+                    "answer": "",
+                    "notes": "",
+                    "source_tasks": [],
+                    "target_section": assignment.target_section,
+                },
+            )
+            if assignment.task_key not in entry["source_tasks"]:
+                entry["source_tasks"].append(assignment.task_key)
+            entry["status"] = matrix_status
+            entry["notes"] = (
+                f"Last update from task '{assignment.task_key}' "
+                f"({task_status}) in department '{assignment.assignee}'."
+            )
 
     # Index department assignments by department name for ordered access
     dept_assignment_map = {da.department: da for da in department_assignments}
@@ -248,6 +279,7 @@ def run_supervisor_loop(
                     task_status = status_by_task.get(assignment.task_key, "degraded")
                     run_context.update_task_status(task_key=assignment.task_key, status=task_status)
                     run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
+                    _update_answer_matrix_from_task(assignment, task_status)
                     completed_backlog.append({"task_key": assignment.task_key, "label": assignment.label, "target_section": assignment.target_section, "status": task_status})
 
         # F5: Merge deltas in canonical department order (not as_completed order)
@@ -282,6 +314,7 @@ def run_supervisor_loop(
                 task_status = status_by_task.get(assignment.task_key, "degraded")
                 run_context.update_task_status(task_key=assignment.task_key, status=task_status)
                 run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
+                _update_answer_matrix_from_task(assignment, task_status)
                 completed_backlog.append({"task_key": assignment.task_key, "label": assignment.label, "target_section": assignment.target_section, "status": task_status})
 
     # Phase 2: sequential departments (Buyer → Contact)
@@ -330,6 +363,9 @@ def run_supervisor_loop(
             run_context.update_task_status(task_key=sk["task_key"], status="skipped")
             run_context.short_term_memory.task_statuses[sk["task_key"]] = "skipped"
             completed_backlog.append(sk)
+            assignment = next((a for a in department_assignment.assignments if a.task_key == sk["task_key"]), None)
+            if assignment:
+                _update_answer_matrix_from_task(assignment, "skipped")
 
         if not runnable:
             # All tasks in this department were skipped
@@ -401,6 +437,7 @@ def run_supervisor_loop(
             task_status = status_by_task.get(assignment.task_key, "degraded")
             run_context.update_task_status(task_key=assignment.task_key, status=task_status)
             run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
+            _update_answer_matrix_from_task(assignment, task_status)
             completed_backlog.append(
                 {
                     "task_key": assignment.task_key,
@@ -517,6 +554,7 @@ def run_supervisor_loop(
         for assignment in synthesis_assignments:
             run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
             run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
+            _update_answer_matrix_from_task(assignment, synthesis_task_status)
             completed_backlog.append(
                 {
                     "task_key": assignment.task_key,
