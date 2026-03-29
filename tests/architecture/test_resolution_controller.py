@@ -102,3 +102,61 @@ def test_finalization_blocked_when_public_gaps_remain_after_closure():
         remaining_public_gaps=[],
     )
     assert status_not_ready == BLOCKED_RUN_STATUS
+
+
+def test_meeting_readiness_gate_blocks_on_low_evidence():
+    """RA-06: Gate blocks when evidence quality is low."""
+    from src.orchestration.meeting_readiness import MeetingReadinessGate
+
+    gate = MeetingReadinessGate()
+    result = gate.evaluate(
+        answer_matrix={"q_company_fundamentals": {"status": "answered"}},
+        resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
+        evidence_health="low",
+        readiness_usable=True,
+    )
+    assert not result.meeting_ready
+    assert any("low" in r.lower() for r in result.blocked_reasons)
+
+
+def test_meeting_readiness_gate_passes_when_ready():
+    """RA-06: Gate passes when all conditions met."""
+    from src.orchestration.meeting_readiness import MeetingReadinessGate
+
+    gate = MeetingReadinessGate()
+    result = gate.evaluate(
+        answer_matrix={
+            "q_company_fundamentals": {"status": "answered"},
+            "q_market_situation": {"status": "answered"},
+            "q_contact_intelligence": {"status": "partially_answered"},
+        },
+        resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
+        evidence_health="medium",
+        readiness_usable=True,
+    )
+    assert result.meeting_ready
+    assert result.blocked_reasons == []
+
+
+def test_final_briefing_composer_produces_meeting_actions():
+    """RA-06: Composer produces concrete meeting_actions."""
+    from src.orchestration.meeting_readiness import FinalBriefingComposer
+
+    composer = FinalBriefingComposer()
+    actions = composer.compose(
+        synthesis={
+            "recommended_engagement_paths": ["excess_inventory"],
+            "opportunity_assessment_summary": "Strong excess inventory signal.",
+        },
+        answer_matrix={
+            "q_company_fundamentals": {"status": "answered"},
+            "q_contact_intelligence": {"status": "partially_answered"},
+        },
+        quality_review={"open_gaps": ["Revenue trend unclear"]},
+        resolution_state={"resolution_plan": {"unresolved": {"customer_confirmation_items": ["Confirm ownership"]}}},
+        company_name="TestCo",
+    )
+    assert len(actions) >= 2
+    types = [a.action_type for a in actions]
+    assert "prepare_meeting" in types
+    assert any(a.title for a in actions)

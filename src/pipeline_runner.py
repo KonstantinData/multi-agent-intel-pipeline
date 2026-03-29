@@ -28,6 +28,7 @@ from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
 from src.orchestration.follow_up import run_bounded_follow_up
+from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
 from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
@@ -391,6 +392,27 @@ def run_pipeline(
                 content=json.dumps({"section": "report_package", "payload": report_package}, ensure_ascii=False),
             )
         )
+
+        # RA-06: Meeting-readiness gate — enforced before finalization
+        readiness_gate = MeetingReadinessGate()
+        meeting_assessment = readiness_gate.evaluate(
+            answer_matrix=run_context.answer_matrix,
+            resolution_state=run_context.resolution_state,
+            evidence_health=quality_review.get("evidence_health", "low"),
+            readiness_usable=bool(readiness.get("usable")),
+        )
+        run_context.meeting_readiness_assessment = meeting_assessment
+
+        # RA-06: Final briefing composer — meeting_actions replace next_steps
+        composer = FinalBriefingComposer()
+        meeting_actions = composer.compose(
+            synthesis=synthesis,
+            answer_matrix=run_context.answer_matrix,
+            quality_review=quality_review,
+            resolution_state=run_context.resolution_state,
+            company_name=company_name,
+        )
+        run_context.short_term_memory.meeting_actions = meeting_actions
 
         status = determine_final_status(
             readiness_usable=bool(readiness.get("usable")),

@@ -396,15 +396,28 @@ def _render_briefing_tab(L: dict) -> None:
 
     # ── Next action ───────────────────────────────────────────────────────────
     st.markdown(f"### {L['next_step']}")
-    next_steps_all = synthesis.get("next_steps", [])
-    if next_steps_all:
-        st.success(_nv(next_steps_all[0], L["default_next_step"]))
+    # RA-06: meeting_actions are the primary action output
+    memory_snap = st.session_state.run_context.get("short_term_memory", {})
+    meeting_actions = memory_snap.get("meeting_actions", [])
+    if meeting_actions:
+        action_icons = {"prepare_meeting": "🎯", "collect_missing_evidence": "🔍", "ask_user_selection": "📋", "hold": "⏸️"}
+        for action in meeting_actions[:4]:
+            icon = action_icons.get(action.get("action_type", ""), "▸")
+            title = _nv(action.get("title", ""), "—")
+            desc = _nv(action.get("description", ""))
+            st.write(f"{icon} **{title}**")
+            if desc:
+                st.caption(desc[:200])
     else:
-        readiness_reasons = pipeline_data.get("research_readiness", {}).get("reasons", [])
-        if readiness_reasons:
-            st.info(_nv(readiness_reasons[0], L["default_next_step"]))
+        next_steps_all = synthesis.get("next_steps", [])
+        if next_steps_all:
+            st.success(_nv(next_steps_all[0], L["default_next_step"]))
         else:
-            st.info(L["default_next_step"])
+            readiness_reasons = pipeline_data.get("research_readiness", {}).get("reasons", [])
+            if readiness_reasons:
+                st.info(_nv(readiness_reasons[0], L["default_next_step"]))
+            else:
+                st.info(L["default_next_step"])
 
     st.divider()
 
