@@ -179,6 +179,14 @@ def run_pipeline(
                 "triggered": True,
                 **auto_close_result,
             }
+            # RA-04: Feed closure results back into answer matrix
+            for attempt in auto_close_result.get("attempts", []):
+                if attempt.get("resolved"):
+                    for qid, entry in run_context.answer_matrix.items():
+                        if entry.get("status") in {"pending", "blocked"}:
+                            # Mark as partially answered by closure
+                            entry["status"] = "partially_answered"
+                            entry["notes"] = f"Auto-close follow-up resolved: {attempt.get('question', '')[:80]}"
             messages.append(
                 emit_message(
                     on_message,

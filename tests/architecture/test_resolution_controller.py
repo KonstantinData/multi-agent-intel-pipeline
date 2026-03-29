@@ -70,3 +70,35 @@ def test_run_bounded_follow_up_limits_questions():
     )
     assert result["attempted_questions"] == 2
     assert result["max_questions"] == 2
+    assert result["closure_pass"] == 1
+    assert result["max_closure_passes"] == 1
+    assert "stop_reason" in result
+
+
+def test_finalization_blocked_when_public_gaps_remain_after_closure():
+    """RA-04: Finalization must be blocked when public meeting-critical gaps remain."""
+    from src.app.use_cases import BLOCKED_RUN_STATUS, SUCCESS_RUN_STATUS, determine_final_status
+
+    # Gaps remain after closure → must block
+    status = determine_final_status(
+        readiness_usable=True,
+        first_round_resolution={"bucket": "AUTO_CLOSE_REQUIRED"},
+        remaining_public_gaps=["Revenue trend unclear"],
+    )
+    assert status == BLOCKED_RUN_STATUS
+
+    # No gaps remain → success
+    status_ok = determine_final_status(
+        readiness_usable=True,
+        first_round_resolution={"bucket": "NOT_MEETING_CRITICAL"},
+        remaining_public_gaps=[],
+    )
+    assert status_ok == SUCCESS_RUN_STATUS
+
+    # readiness_usable=False → blocked even without gaps
+    status_not_ready = determine_final_status(
+        readiness_usable=False,
+        first_round_resolution={"bucket": "NOT_MEETING_CRITICAL"},
+        remaining_public_gaps=[],
+    )
+    assert status_not_ready == BLOCKED_RUN_STATUS

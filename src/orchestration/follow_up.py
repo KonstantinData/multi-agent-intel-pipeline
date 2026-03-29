@@ -401,12 +401,20 @@ def run_bounded_follow_up(
         for item in attempts
         if not item.get("resolved", False)
     ]
+    resolved_questions = [
+        item["question"]
+        for item in attempts
+        if item.get("resolved", False)
+    ]
     stop_reason = "all_questions_resolved" if not unresolved_after else "bounded_budget_exhausted"
     return {
         "run_id": run_id,
         "attempted_questions": len(attempts),
         "max_questions": max_questions,
+        "closure_pass": 1,
+        "max_closure_passes": 1,
         "stop_reason": stop_reason,
         "attempts": attempts,
+        "resolved_questions": resolved_questions,
         "remaining_public_gaps": unresolved_after,
     }
