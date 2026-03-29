@@ -18,6 +18,8 @@ class RunContext:
     retrieved_role_strategies: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     active_tasks: list[dict[str, Any]] = field(default_factory=list)
     report_package: dict[str, Any] = field(default_factory=dict)
+    question_registry: dict[str, dict[str, Any]] = field(default_factory=dict)
+    answer_matrix: dict[str, dict[str, Any]] = field(default_factory=dict)
     meeting_readiness_assessment: MeetingReadinessAssessment = field(default_factory=MeetingReadinessAssessment)
     final_briefing: FinalBriefing | None = None
     status: RunStatus = "running"
@@ -56,6 +58,8 @@ class RunContext:
             "retrieved_role_strategies": self.retrieved_role_strategies,
             "active_tasks": self.active_tasks,
             "report_package": self.report_package,
+            "question_registry": self.question_registry,
+            "answer_matrix": self.answer_matrix,
             "meeting_readiness_assessment": self.meeting_readiness_assessment.model_dump(mode="json"),
             "final_briefing": self.final_briefing.model_dump(mode="json") if self.final_briefing else None,
             "short_term_memory": self.short_term_memory.snapshot(),
@@ -74,6 +78,8 @@ class RunContext:
             retrieved_role_strategies=dict(payload.get("retrieved_role_strategies", {})),
             active_tasks=list(payload.get("active_tasks", [])),
             report_package=dict(payload.get("report_package", {})),
+            question_registry=dict(payload.get("question_registry", {})),
+            answer_matrix=dict(payload.get("answer_matrix", {})),
             meeting_readiness_assessment=MeetingReadinessAssessment.model_validate(
                 payload.get("meeting_readiness_assessment", {})
             ),
