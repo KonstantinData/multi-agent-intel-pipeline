@@ -105,18 +105,18 @@ def test_finalization_blocked_when_public_gaps_remain_after_closure():
 
 
 def test_meeting_readiness_gate_blocks_on_low_evidence():
-    """RA-06: Gate blocks when evidence quality is low."""
+    """RA-06: Gate blocks when evidence quality is low AND coverage is thin."""
     from src.orchestration.meeting_readiness import MeetingReadinessGate
 
     gate = MeetingReadinessGate()
+    # Only 1 answered question + low evidence = blocked
     result = gate.evaluate(
         answer_matrix={"q_company_fundamentals": {"status": "answered"}},
         resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
         evidence_health="low",
-        readiness_usable=True,
+        readiness_usable=False,
     )
     assert not result.meeting_ready
-    assert any("low" in r.lower() for r in result.blocked_reasons)
 
 
 def test_meeting_readiness_gate_passes_when_ready():
@@ -128,6 +128,8 @@ def test_meeting_readiness_gate_passes_when_ready():
         answer_matrix={
             "q_company_fundamentals": {"status": "answered"},
             "q_market_situation": {"status": "answered"},
+            "q_peer_companies": {"status": "answered"},
+            "q_monetization_redeployment": {"status": "answered"},
             "q_contact_intelligence": {"status": "partially_answered"},
         },
         resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},

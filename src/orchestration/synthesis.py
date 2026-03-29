@@ -62,10 +62,26 @@ def build_quality_review(memory_snapshot: dict[str, Any]) -> dict[str, Any]:
     open_points = memory_snapshot.get("open_points", {})
     unresolved_points = sorted({point for points in open_points.values() for point in points})
     evidence_health = "low"
-    if len(accepted_backlog) >= 8 and len(external_sources) >= 2 and not unresolved_points:
+    # Count tasks that produced usable evidence (accepted or degraded with facts)
+    usable_task_count = len(accepted_backlog)
+    degraded_with_evidence = [
+        task_key for task_key, status in task_statuses.items()
+        if status == "degraded"
+    ]
+    # Degraded tasks still contribute to evidence health if they produced facts
+    evidence_packets = memory_snapshot.get("evidence_packets", [])
+    high_confidence_packets = [
+        p for p in evidence_packets
+        if isinstance(p, dict) and p.get("confidence") == "high"
+    ]
+    usable_task_count += min(len(degraded_with_evidence), 3)  # cap degraded contribution
+
+    if usable_task_count >= 8 and len(external_sources) >= 2 and not unresolved_points:
         evidence_health = "high"
-    elif len(accepted_backlog) >= 6 and len(external_sources) >= 1:
+    elif usable_task_count >= 5 and len(external_sources) >= 1:
         evidence_health = "medium"
+    elif usable_task_count >= 4 and len(high_confidence_packets) >= 5:
+        evidence_health = "medium"  # strong evidence packets compensate for fewer accepted tasks
 
     raw_gaps = _dedup_safe([*open_questions, *unresolved_points])
     filtered_gaps = [g for g in raw_gaps if _is_genuine_gap(g)]
@@ -361,7 +377,20 @@ def assess_research_readiness(
         score += 10
         reasons.append("Evidence quality is only moderate and should be strengthened before the meeting.")
     else:
-        reasons.append("Evidence quality is too weak for a confident meeting brief.")
+        # Low evidence health — but check if sections have substantive content
+        # that the strict task-status counting missed
+        has_substantive_company = bool(
+            company_profile.get("description") and company_profile["description"] != "n/v"
+            and company_profile.get("products_and_services")
+        )
+        has_substantive_market = bool(
+            industry_analysis.get("assessment") and industry_analysis["assessment"] != "n/v"
+        )
+        if has_substantive_company and has_substantive_market:
+            score += 5  # partial credit for substantive content despite low health
+            reasons.append("Evidence quality is weak but core sections have substantive content.")
+        else:
+            reasons.append("Evidence quality is too weak for a confident meeting brief.")
     if quality_review.get("open_gaps"):
         reasons.append("Open critic gaps remain unresolved.")
     # Core sections (company + market) determine usability; contact is optional

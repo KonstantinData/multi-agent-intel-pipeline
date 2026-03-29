@@ -33,9 +33,6 @@ class MeetingReadinessGate:
     ) -> MeetingReadinessAssessment:
         blocked_reasons: list[str] = []
 
-        if not readiness_usable:
-            blocked_reasons.append("Research readiness score is below the usable threshold.")
-
         # Check for unresolved meeting-critical public gaps
         remaining_gaps = (
             resolution_state
@@ -52,20 +49,32 @@ class MeetingReadinessGate:
         if dashboard.get("pending_user_selection"):
             blocked_reasons.append("Required user depth selections are pending.")
 
-        # Evidence quality threshold
-        if evidence_health == "low":
-            blocked_reasons.append("Evidence quality is too low for a confident meeting brief.")
-
         # Unresolved critical answer-matrix entries
-        critical_pending = [
+        # Only "pending" and "blocked" are blockers; "partially_answered" means
+        # evidence exists (degraded task) and is acceptable for meeting prep.
+        hard_blocked = [
             qid for qid, entry in answer_matrix.items()
             if entry.get("status") in {"pending", "blocked"}
             and not qid.startswith("q_contact")  # contact gaps are customer-confirmation
+            and not qid.startswith("q_liquisto")  # synthesis questions depend on departments
+            and not qid.startswith("q_negotiation")  # synthesis questions depend on departments
         ]
-        if critical_pending:
+        if hard_blocked:
             blocked_reasons.append(
-                f"{len(critical_pending)} non-contact question(s) still pending/blocked."
+                f"{len(hard_blocked)} core question(s) still pending/blocked: {', '.join(hard_blocked)}."
             )
+
+        # Readiness score and evidence health are informational but only block
+        # when no other evidence compensates. If answer_matrix shows enough
+        # answered/partially_answered questions, don't double-block.
+        answered_or_partial = sum(
+            1 for entry in answer_matrix.values()
+            if entry.get("status") in {"answered", "partially_answered"}
+        )
+        if not readiness_usable and answered_or_partial < 4:
+            blocked_reasons.append("Research readiness score is below the usable threshold.")
+        if evidence_health == "low" and answered_or_partial < 4:
+            blocked_reasons.append("Evidence quality is too low for a confident meeting brief.")
 
         meeting_ready = len(blocked_reasons) == 0
         return MeetingReadinessAssessment(

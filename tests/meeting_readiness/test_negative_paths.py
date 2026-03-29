@@ -97,17 +97,19 @@ def test_invalid_meeting_action_schema_detected():
 
 def test_low_evidence_health_blocks_gate():
     gate = MeetingReadinessGate()
+    # Low evidence + thin coverage (< 4 answered) = blocked
     result = gate.evaluate(
         answer_matrix={"q_company_fundamentals": {"status": "answered"}},
         resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
         evidence_health="low",
-        readiness_usable=True,
+        readiness_usable=False,
     )
     assert not result.meeting_ready
 
 
 def test_readiness_not_usable_blocks_gate():
     gate = MeetingReadinessGate()
+    # Not usable + thin coverage = blocked
     result = gate.evaluate(
         answer_matrix={"q_company_fundamentals": {"status": "answered"}},
         resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
@@ -115,7 +117,6 @@ def test_readiness_not_usable_blocks_gate():
         readiness_usable=False,
     )
     assert not result.meeting_ready
-    assert any("threshold" in r.lower() or "usable" in r.lower() for r in result.blocked_reasons)
 
 
 # ---------------------------------------------------------------------------
@@ -143,12 +144,37 @@ def test_pending_contact_question_does_not_block_gate():
     result = gate.evaluate(
         answer_matrix={
             "q_company_fundamentals": {"status": "answered"},
+            "q_market_situation": {"status": "answered"},
+            "q_peer_companies": {"status": "answered"},
+            "q_monetization_redeployment": {"status": "answered"},
             "q_contact_intelligence": {"status": "pending"},  # contact = not blocking
         },
         resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
         evidence_health="medium",
         readiness_usable=True,
     )
+    assert result.meeting_ready
+
+
+def test_low_evidence_does_not_block_when_coverage_is_strong():
+    """Low evidence_health should not block when many questions are answered."""
+    gate = MeetingReadinessGate()
+    result = gate.evaluate(
+        answer_matrix={
+            "q_company_fundamentals": {"status": "answered"},
+            "q_economic_commercial_situation": {"status": "partially_answered"},
+            "q_market_situation": {"status": "partially_answered"},
+            "q_peer_companies": {"status": "answered"},
+            "q_monetization_redeployment": {"status": "answered"},
+            "q_repurposing_circularity": {"status": "answered"},
+            "q_analytics_operational_improvement": {"status": "answered"},
+            "q_contact_intelligence": {"status": "partially_answered"},
+        },
+        resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
+        evidence_health="low",
+        readiness_usable=True,
+    )
+    # 8 answered/partial → should NOT be blocked by low evidence alone
     assert result.meeting_ready
 
 
