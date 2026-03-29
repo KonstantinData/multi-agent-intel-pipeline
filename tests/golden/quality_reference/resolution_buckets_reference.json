@@ -1,0 +1,7 @@
+{
+  "blocking_failure": "BLOCKING_FAILURE",
+  "auto_close_required": "AUTO_CLOSE_REQUIRED",
+  "customer_confirmation_required": "CUSTOMER_CONFIRMATION_REQUIRED",
+  "user_decision_required": "USER_DECISION_REQUIRED",
+  "not_meeting_critical": "NOT_MEETING_CRITICAL"
+}

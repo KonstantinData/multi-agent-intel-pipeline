@@ -1,0 +1,18 @@
+{
+  "task_statuses": {
+    "company_fundamentals": "accepted",
+    "contact_discovery": "degraded"
+  },
+  "department_packages": {
+    "CompanyDepartment": {
+      "admission": {
+        "decision": "accepted"
+      }
+    }
+  },
+  "department_run_states": {
+    "CompanyDepartment": {
+      "department": "CompanyDepartment"
+    }
+  }
+}
