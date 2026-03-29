@@ -53,6 +53,8 @@ def build_quality_review(memory_snapshot: dict[str, Any]) -> dict[str, Any]:
     task_statuses = memory_snapshot.get("task_statuses", {})
     accepted_backlog = [task_key for task_key, status in task_statuses.items() if status == "accepted"]
     sources = memory_snapshot.get("sources", [])
+    # LEGACY (RA-10): open_questions consumed here for quality_review gap detection.
+    # The authoritative gap model is gap_candidates from typed department outputs.
     open_questions = memory_snapshot.get("open_questions", [])
     external_sources = [
         source for source in sources if isinstance(source, dict) and source.get("source_type") not in {"owned", "first_party"}
@@ -248,6 +250,9 @@ def build_synthesis_context(
         key_risks = _fallback_risks or ["Evidence base is solid; validate contacts and financials directly in the meeting."]
     else:
         key_risks = ["Public web evidence remains incomplete and should be validated in the meeting."]
+    # LEGACY (RA-10): next_steps exists for backward compatibility with PDF/UI
+    # fallback rendering. The authoritative action model is meeting_actions
+    # produced by FinalBriefingComposer. Do not add new consumers of next_steps.
     next_steps = _dedup_safe(memory_snapshot.get("next_actions", [])) or [
         "Validate buyer paths and inventory pressure directly with the prospect."
     ]
