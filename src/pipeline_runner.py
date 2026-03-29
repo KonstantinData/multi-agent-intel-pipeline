@@ -454,6 +454,9 @@ def run_pipeline(
             [a.model_dump(mode="json") for a in meeting_actions]
         )
 
+        # Inject meeting_actions into pipeline_data for PDF/export access
+        pipeline_data["meeting_actions"] = sorted_action_dicts
+
         status = determine_final_status(
             readiness_usable=bool(readiness.get("usable")),
             first_round_resolution=first_round_resolution,

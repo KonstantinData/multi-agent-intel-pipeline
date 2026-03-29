@@ -872,16 +872,109 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     story.append(Paragraph(labels["buyer_section"], styles["section"]))
     for flowable in _buyer_landscape(market, labels, styles):
         story.append(flowable)
-    story.append(Spacer(1, 7 * mm))
+
+    # Monetization & redeployment paths
+    monet_paths = _top_items(market.get("monetization_paths"), 5)
+    redep_paths = _top_items(market.get("redeployment_paths"), 5)
+    if monet_paths or redep_paths:
+        story.append(Table(
+            [[_bullet_col("Monetization Paths" if lang == "en" else "Monetarisierungspfade",
+                          monet_paths or ["n/v"], styles, 82 * mm, BRAND_GREEN),
+              _bullet_col("Redeployment Paths" if lang == "en" else "Redeployment-Pfade",
+                          redep_paths or ["n/v"], styles, 82 * mm, BRAND_TEAL)]],
+            colWidths=[84 * mm, 84 * mm],
+        ))
+        story.append(Spacer(1, 3 * mm))
+
+    # Repurposing & analytics signals
+    repurp = _top_items(industry.get("repurposing_signals"), 5)
+    analytics = _top_items(industry.get("analytics_signals"), 5)
+    if repurp or analytics:
+        story.append(Table(
+            [[_bullet_col("Repurposing Signals" if lang == "en" else "Repurposing-Signale",
+                          repurp or ["n/v"], styles, 82 * mm, BRAND_TEAL),
+              _bullet_col("Analytics Signals" if lang == "en" else "Analytics-Signale",
+                          analytics or ["n/v"], styles, 82 * mm, BRAND_BLUE)]],
+            colWidths=[84 * mm, 84 * mm],
+        ))
+        story.append(Spacer(1, 3 * mm))
+
+    story.append(Spacer(1, 4 * mm))
+
+    # Contact intelligence
+    contacts_section = pipeline_data.get("contact_intelligence", {}) or {}
+    all_contacts = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts", [])
+    if all_contacts:
+        story.append(Paragraph(
+            "Contact Intelligence" if lang == "en" else "Kontakt-Intelligence",
+            styles["section"],
+        ))
+        contact_data = [[
+            Paragraph("<b>Name</b>", styles["table_header"]),
+            Paragraph("<b>Role</b>" if lang == "en" else "<b>Rolle</b>", styles["table_header"]),
+            Paragraph("<b>Company</b>" if lang == "en" else "<b>Firma</b>", styles["table_header"]),
+        ]]
+        for i, c in enumerate(all_contacts[:10]):
+            name = _safe_text(c.get("name"), "\u2014")
+            role = _safe_text(c.get("rolle_titel") or c.get("funktion", ""), "\u2014")
+            firma = _safe_text(c.get("firma", ""), "\u2014")
+            contact_data.append([
+                Paragraph(name, styles["table_cell"]),
+                Paragraph(role, styles["table_cell"]),
+                Paragraph(firma, styles["table_cell"]),
+            ])
+        contact_table = Table(contact_data, colWidths=[50 * mm, 70 * mm, 50 * mm], repeatRows=1)
+        ct_style = [
+            ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+            ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]
+        for i in range(len(all_contacts[:10])):
+            bg = WHITE if i % 2 == 0 else SURFACE
+            ct_style.append(("BACKGROUND", (0, i + 1), (-1, i + 1), bg))
+        contact_table.setStyle(TableStyle(ct_style))
+        story.append(contact_table)
+        cov = _safe_text(contacts_section.get("coverage_quality"), "\u2014")
+        if cov != "\u2014":
+            story.append(Spacer(1, 2 * mm))
+            story.append(Paragraph(
+                f"Coverage: {cov}", styles["small"],
+            ))
+        story.append(Spacer(1, 5 * mm))
 
     # Risks
     story.append(Paragraph(labels["risk_section"], styles["section"]))
     story.append(_risk_table(risks, styles))
     story.append(Spacer(1, 5 * mm))
 
-    # Next steps
+    # Next steps / Meeting Actions
     story.append(Paragraph(labels["action_section"], styles["section"]))
-    story.append(_steps_table(next_steps, styles))
+    # RA-06: meeting_actions are the primary action output
+    meeting_actions_raw = pipeline_data.get("meeting_actions", [])
+    if not meeting_actions_raw:
+        # Fallback: extract from run_context short_term_memory if available
+        meeting_actions_raw = (
+            pipeline_data.get("run_context", {})
+            .get("short_term_memory", {})
+            .get("meeting_actions", [])
+        )
+    if meeting_actions_raw:
+        _action_icons = {"prepare_meeting": "\u25b8", "collect_missing_evidence": "\u25b8",
+                         "ask_user_selection": "\u25b8", "hold": "\u25b8"}
+        action_items = [
+            f"{_action_icons.get(a.get('action_type',''), '\u25b8')}  {_safe_text(a.get('title',''))}"
+            + (f" \u2014 {_safe_text(a.get('description',''))[:120]}" if a.get('description') else "")
+            for a in meeting_actions_raw[:6]
+        ]
+        story.append(_steps_table(action_items, styles))
+    else:
+        story.append(_steps_table(next_steps, styles))
     story.append(Spacer(1, 7 * mm))
 
     # Evidence appendix
