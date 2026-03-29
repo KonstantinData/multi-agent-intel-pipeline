@@ -29,6 +29,7 @@ from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
 from src.orchestration.follow_up import run_bounded_follow_up
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
+from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
 from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
@@ -242,6 +243,7 @@ def run_pipeline(
     }
 
     messages: list[dict[str, Any]] = []
+    budget_tracker = PhaseBudgetTracker()
     try:
         brief, supervisor_message = agents["supervisor"].build_intake_brief(intake)
         run_context.supervisor_brief = supervisor_message["payload"]
@@ -265,6 +267,13 @@ def run_pipeline(
         run_context.short_term_memory.task_statuses.update(
             {item["task_key"]: item["status"] for item in completed_backlog}
         )
+        # RA-08: Record first-pass token consumption
+        first_pass_snapshot = run_context.short_term_memory.snapshot()
+        first_pass_tokens = int(first_pass_snapshot.get("usage_totals", {}).get("total_tokens", 0) or 0)
+        budget_tracker.record_phase_tokens("first_pass", first_pass_tokens)
+        if not budget_tracker.check_budget("first_pass"):
+            budget_tracker.record_stop("first_pass", "token_budget_exceeded")
+
         run_context.resolution_state = {
             "first_round_resolution": first_round_resolution,
             "auto_close": {
@@ -319,6 +328,13 @@ def run_pipeline(
                     ),
                 )
             )
+
+        # RA-08: Record closure token consumption
+            closure_tokens = int(
+                run_context.short_term_memory.snapshot()
+                .get("usage_totals", {}).get("total_tokens", 0) or 0
+            ) - first_pass_tokens
+            budget_tracker.record_phase_tokens("closure", max(closure_tokens, 0))
 
             # RA-07: Checkpoint after closure
             _write_checkpoint(run_dir, "after_closure", run_context)
@@ -433,6 +449,11 @@ def run_pipeline(
         )
         run_context.short_term_memory.meeting_actions = meeting_actions
 
+        # RA-08: Deterministic ordering for meeting actions
+        sorted_action_dicts = sort_meeting_actions(
+            [a.model_dump(mode="json") for a in meeting_actions]
+        )
+
         status = determine_final_status(
             readiness_usable=bool(readiness.get("usable")),
             first_round_resolution=first_round_resolution,
@@ -456,6 +477,9 @@ def run_pipeline(
                 "open_gaps": list(remaining_public_gaps),
             }
         run_context.status = status
+
+        # RA-08: Persist budget tracker and guardrail telemetry
+        run_context.resolution_state["budget_tracker"] = budget_tracker.snapshot()
 
         # RA-07: Checkpoint after finalization gate
         _write_checkpoint(run_dir, "after_finalization", run_context)

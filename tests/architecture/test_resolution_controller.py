@@ -160,3 +160,59 @@ def test_final_briefing_composer_produces_meeting_actions():
     types = [a.action_type for a in actions]
     assert "prepare_meeting" in types
     assert any(a.title for a in actions)
+
+
+def test_runtime_guardrails_structured_validation():
+    """RA-08: Structured-output validation for runtime artifacts."""
+    from src.orchestration.runtime_guardrails import validate_structured_artifact
+
+    valid = validate_structured_artifact("EvidencePacket", {"packet_id": "p1", "claim": "test"})
+    assert valid["valid"] is True
+
+    invalid = validate_structured_artifact("EvidencePacket", {"confidence": "INVALID"})
+    assert invalid["valid"] is False
+
+    unknown = validate_structured_artifact("UnknownType", {})
+    assert unknown["valid"] is True  # no schema = passthrough
+
+
+def test_runtime_guardrails_phase_budget_tracker():
+    """RA-08: Phase-aware budget tracking with stop reasons."""
+    from src.orchestration.runtime_guardrails import PhaseBudgetTracker
+
+    tracker = PhaseBudgetTracker(first_pass_budget=100, closure_budget=50)
+    assert tracker.check_budget("first_pass") is True
+
+    tracker.record_phase_tokens("first_pass", 120)
+    assert tracker.check_budget("first_pass") is False
+    tracker.record_stop("first_pass", "token_budget_exceeded")
+
+    snap = tracker.snapshot()
+    assert snap["budgets"]["first_pass"]["used"] == 120
+    assert len(snap["stop_reasons"]) == 1
+    assert snap["stop_reasons"][0]["reason"] == "token_budget_exceeded"
+
+
+def test_runtime_guardrails_deterministic_ordering():
+    """RA-08: Deterministic ordering for answer matrix and meeting actions."""
+    from src.orchestration.runtime_guardrails import sort_answer_matrix, sort_meeting_actions
+
+    matrix = {
+        "q_contact_intelligence": {"status": "pending"},
+        "q_company_fundamentals": {"status": "answered"},
+        "q_market_situation": {"status": "answered"},
+    }
+    sorted_items = sort_answer_matrix(matrix)
+    assert sorted_items[0][0] == "q_company_fundamentals"
+    assert sorted_items[1][0] == "q_market_situation"
+    assert sorted_items[2][0] == "q_contact_intelligence"
+
+    actions = [
+        {"action_type": "hold", "title": "wait"},
+        {"action_type": "prepare_meeting", "title": "lead"},
+        {"action_type": "collect_missing_evidence", "title": "validate"},
+    ]
+    sorted_actions = sort_meeting_actions(actions)
+    assert sorted_actions[0]["action_type"] == "prepare_meeting"
+    assert sorted_actions[1]["action_type"] == "collect_missing_evidence"
+    assert sorted_actions[2]["action_type"] == "hold"
