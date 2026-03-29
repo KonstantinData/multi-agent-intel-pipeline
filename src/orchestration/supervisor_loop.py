@@ -23,6 +23,7 @@ from src.orchestration.task_router import (
     evaluate_run_conditions,
 )
 from src.orchestration.synthesis import build_synthesis_context, build_quality_review
+from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import BlockedArtifact
 
 
@@ -103,6 +104,44 @@ def _admitted_packages_for_synthesis(
         if isinstance(pkg, dict)
         and pkg.get("admission", {}).get("downstream_visible", False)
     }
+
+
+def _apply_structured_runtime_artifacts(run_context, package: dict[str, Any]) -> None:
+    """Consume structured artifacts as runtime state (not narrative-only fields)."""
+    updates = [
+        AnswerMatrixUpdate.model_validate(item)
+        for item in package.get("answer_matrix_updates", [])
+    ]
+    for update in updates:
+        run_context.short_term_memory.answer_matrix_updates.append(update)
+        matrix_entry = run_context.answer_matrix.setdefault(
+            update.field_key,
+            {
+                "status": "pending",
+                "answer": "",
+                "notes": "",
+                "source_tasks": [],
+                "target_section": "n/v",
+            },
+        )
+        matrix_entry["status"] = update.status
+        matrix_entry["answer"] = update.answer
+        matrix_entry["notes"] = update.notes
+        source_tasks = matrix_entry.setdefault("source_tasks", [])
+        for packet_id in update.evidence_packet_ids:
+            if packet_id not in source_tasks:
+                source_tasks.append(packet_id)
+
+    gaps = [
+        GapCandidate.model_validate(item)
+        for item in package.get("gap_candidates", [])
+    ]
+    run_context.short_term_memory.gap_candidates.extend(gaps)
+    packets = [
+        EvidencePacket.model_validate(item)
+        for item in package.get("evidence_packages", [])
+    ]
+    run_context.short_term_memory.evidence_packets.extend(packets)
 
 
 # Departments that run sequentially after each other (order matters)
@@ -258,6 +297,7 @@ def run_supervisor_loop(
                 messages.extend(department_messages)
 
                 acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
+                _apply_structured_runtime_artifacts(run_context, package)
                 _apply_acceptance_gate(
                     acceptance,
                     dept_name=dept_name,
@@ -299,6 +339,7 @@ def run_supervisor_loop(
             section_payload, department_messages, package = _run_single_department(dept_name, da, sections.get(da.target_section, {}), run_context.short_term_memory)
             messages.extend(department_messages)
             acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
+            _apply_structured_runtime_artifacts(run_context, package)
             _apply_acceptance_gate(
                 acceptance,
                 dept_name=dept_name,
@@ -408,6 +449,7 @@ def run_supervisor_loop(
             department=department_name,
             package=package,
         )
+        _apply_structured_runtime_artifacts(run_context, package)
         _apply_acceptance_gate(
             acceptance,
             dept_name=department_name,

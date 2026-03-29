@@ -5,7 +5,13 @@ from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
-from src.models.meeting_ready import FinalBriefing, MeetingReadinessAssessment
+from src.models.meeting_ready import (
+    AnswerMatrixUpdate,
+    EvidencePacket,
+    FinalBriefing,
+    GapCandidate,
+    MeetingReadinessAssessment,
+)
 
 # ---------------------------------------------------------------------------
 # Canonical vocabulary — single source of truth for status/confidence/mode
@@ -249,6 +255,9 @@ class DepartmentPackage(BaseModel):
     report_segment: DomainReportSegment = Field(default_factory=DomainReportSegment)
     # Derived from Judge outcomes across completed_tasks
     confidence: str = "medium"
+    evidence_packages: list[EvidencePacket] = Field(default_factory=list)
+    gap_candidates: list[GapCandidate] = Field(default_factory=list)
+    answer_matrix_updates: list[AnswerMatrixUpdate] = Field(default_factory=list)
 
 
 class FollowUpAnswer(BaseModel):

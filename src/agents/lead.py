@@ -66,6 +66,19 @@ def _dedup(items: list) -> list:
             result.append(item)
     return result
 
+
+def _dedup_model_dump(items: list[Any]) -> list[dict[str, Any]]:
+    """Deduplicate Pydantic-like objects by their JSON representation."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        payload = item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item)
+        key = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        if key not in seen:
+            seen.add(key)
+            out.append(payload)
+    return out
+
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
 from src.agents.coding_assistant import CodingAssistantAgent
@@ -75,6 +88,7 @@ from src.agents.judge import JudgeAgent
 from src.agents.worker import ResearchWorker
 from src.config.settings import get_openai_api_key, get_role_model_selection, MAX_TASK_RETRIES
 from src.domain.intake import SupervisorBrief
+from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import DepartmentPackage, DomainReportSegment
 from src.orchestration.contracts import (
     ContractViolation,
@@ -741,6 +755,9 @@ class DepartmentLeadAgent:
             accepted_points: list[str] = []
             open_questions: list[str] = []
             sources: list[dict[str, Any]] = []
+            evidence_packages: list[EvidencePacket] = []
+            gap_candidates: list[GapCandidate] = []
+            answer_matrix_updates: list[AnswerMatrixUpdate] = []
 
             for assignment in assignments:
                 task_key = assignment.task_key
@@ -886,6 +903,29 @@ class DepartmentLeadAgent:
                 accepted_points.extend(task_accepted)
                 open_questions.extend(task_open)
                 sources.extend(task_sources)
+                task_evidence = [
+                    EvidencePacket.model_validate(item)
+                    for item in (artifact.evidence_packages if artifact else [])
+                ]
+                evidence_packages.extend(task_evidence)
+                gap_candidates.extend(
+                    self._build_gap_candidates_for_task(
+                        department=self.department,
+                        assignment=assignment,
+                        task_status=task_status,
+                        task_open=task_open,
+                        evidence_packages=task_evidence,
+                    )
+                )
+                answer_matrix_updates.extend(
+                    self._build_answer_matrix_updates_for_task(
+                        assignment=assignment,
+                        task_status=task_status,
+                        task_accepted=task_accepted,
+                        task_open=task_open,
+                        evidence_packages=task_evidence,
+                    )
+                )
                 task_summaries.append({
                     "task_key": task_key,
                     "label": assignment.label,
@@ -942,6 +982,9 @@ class DepartmentLeadAgent:
                     "autogen_group": self.autogen_group_spec(),
                     "report_segment": report_segment,
                     "confidence": confidence,
+                    "evidence_packages": _dedup_model_dump(evidence_packages),
+                    "gap_candidates": _dedup_model_dump(gap_candidates),
+                    "answer_matrix_updates": _dedup_model_dump(answer_matrix_updates),
                 }
             ).model_dump(mode="json")
 
@@ -953,6 +996,18 @@ class DepartmentLeadAgent:
                 )
 
             self._completed_package = package
+            run_state.evidence_packages = [
+                EvidencePacket.model_validate(item)
+                for item in package.get("evidence_packages", [])
+            ]
+            run_state.gap_candidates = [
+                GapCandidate.model_validate(item)
+                for item in package.get("gap_candidates", [])
+            ]
+            run_state.answer_matrix_updates = [
+                AnswerMatrixUpdate.model_validate(item)
+                for item in package.get("answer_matrix_updates", [])
+            ]
             if memory_store is not None:
                 memory_store.store_department_package(self.department, package)
                 # CHG-02: persist the full run state (artifact history) in the run brain
@@ -1483,6 +1538,72 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
             task_key=task_key,
         )
 
+    @staticmethod
+    def _matrix_status_for_task_status(task_status: str) -> str:
+        if task_status == "accepted":
+            return "answered"
+        if task_status in {"degraded", "blocked", "skipped"}:
+            return "partially_answered"
+        return "pending"
+
+    def _build_gap_candidates_for_task(
+        self,
+        *,
+        department: str,
+        assignment: Assignment,
+        task_status: str,
+        task_open: list[str],
+        evidence_packages: list[EvidencePacket],
+    ) -> list[GapCandidate]:
+        if task_status not in {"degraded", "blocked", "skipped"}:
+            return []
+        evidence_ids = [packet.packet_id for packet in evidence_packages[:5] if packet.packet_id != "n/v"]
+        gaps: list[GapCandidate] = []
+        for idx, question in enumerate(task_open[:6], start=1):
+            text = str(question).strip()
+            if not text:
+                continue
+            severity = "high" if task_status in {"blocked", "skipped"} else "medium"
+            gaps.append(
+                GapCandidate(
+                    gap_id=f"{assignment.task_key}-gap-{idx}",
+                    question=text,
+                    severity=severity,
+                    owner=department,
+                    resolution_hint=f"Follow-up research for task '{assignment.task_key}'.",
+                    evidence_packet_ids=evidence_ids,
+                    legacy_origin="department_package",
+                )
+            )
+        return gaps
+
+    def _build_answer_matrix_updates_for_task(
+        self,
+        *,
+        assignment: Assignment,
+        task_status: str,
+        task_accepted: list[str],
+        task_open: list[str],
+        evidence_packages: list[EvidencePacket],
+    ) -> list[AnswerMatrixUpdate]:
+        evidence_ids = [packet.packet_id for packet in evidence_packages[:5] if packet.packet_id != "n/v"]
+        answer_text = "; ".join([str(item).strip() for item in task_accepted[:3] if str(item).strip()]) or "n/v"
+        notes = ""
+        if task_open:
+            notes = "; ".join([str(item).strip() for item in task_open[:3] if str(item).strip()])
+        updates: list[AnswerMatrixUpdate] = []
+        for question_id in assignment.question_ids:
+            updates.append(
+                AnswerMatrixUpdate(
+                    field_key=str(question_id),
+                    answer=answer_text,
+                    status=self._matrix_status_for_task_status(task_status),
+                    evidence_packet_ids=evidence_ids,
+                    notes=notes,
+                )
+            )
+        return updates
+
     # ------------------------------------------------------------------
     # Fallback package (if max_round hit before finalize_package called)
     # ------------------------------------------------------------------
@@ -1498,6 +1619,9 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
         accepted_points: list[str] = []
         open_questions: list[str] = []
         sources: list[dict[str, Any]] = []
+        evidence_packages: list[EvidencePacket] = []
+        gap_candidates: list[GapCandidate] = []
+        answer_matrix_updates: list[AnswerMatrixUpdate] = []
 
         for assignment in assignments:
             task_key = assignment.task_key
@@ -1538,6 +1662,29 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
             accepted_points.extend(task_accepted)
             open_questions.extend(task_open)
             sources.extend(task_sources)
+            task_evidence = [
+                EvidencePacket.model_validate(item)
+                for item in (artifact.evidence_packages if artifact else [])
+            ]
+            evidence_packages.extend(task_evidence)
+            gap_candidates.extend(
+                self._build_gap_candidates_for_task(
+                    department=self.department,
+                    assignment=assignment,
+                    task_status=task_status,
+                    task_open=task_open,
+                    evidence_packages=task_evidence,
+                )
+            )
+            answer_matrix_updates.extend(
+                self._build_answer_matrix_updates_for_task(
+                    assignment=assignment,
+                    task_status=task_status,
+                    task_accepted=task_accepted,
+                    task_open=task_open,
+                    evidence_packages=task_evidence,
+                )
+            )
             task_summaries.append({
                 "task_key": task_key,
                 "label": assignment.label,
@@ -1579,5 +1726,8 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
                 "sources": sources[:12],
                 "autogen_group": self.autogen_group_spec(),
                 "confidence": fallback_confidence,
+                "evidence_packages": _dedup_model_dump(evidence_packages),
+                "gap_candidates": _dedup_model_dump(gap_candidates),
+                "answer_matrix_updates": _dedup_model_dump(answer_matrix_updates),
             }
         ).model_dump(mode="json")

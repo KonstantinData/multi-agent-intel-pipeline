@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from src.agents.lead import DepartmentLeadAgent
 from src.domain.intake import SupervisorBrief
+from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.orchestration.task_router import Assignment
 
 
@@ -43,7 +44,7 @@ class DepartmentRuntime:
         role_memory: dict[str, list[dict[str, Any]]] | None = None,
         on_message: MessageHook = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-        return self.lead.run(
+        section_payload, package_messages, department_package = self.lead.run(
             brief=brief,
             assignments=assignments,
             current_section=current_section,
@@ -51,6 +52,19 @@ class DepartmentRuntime:
             role_memory=role_memory,
             on_message=on_message,
         )
+        department_package["evidence_packages"] = [
+            EvidencePacket.model_validate(item).model_dump(mode="json")
+            for item in department_package.get("evidence_packages", [])
+        ]
+        department_package["gap_candidates"] = [
+            GapCandidate.model_validate(item).model_dump(mode="json")
+            for item in department_package.get("gap_candidates", [])
+        ]
+        department_package["answer_matrix_updates"] = [
+            AnswerMatrixUpdate.model_validate(item).model_dump(mode="json")
+            for item in department_package.get("answer_matrix_updates", [])
+        ]
+        return section_payload, package_messages, department_package
 
     def run_followup(
         self,

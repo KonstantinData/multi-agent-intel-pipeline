@@ -27,6 +27,7 @@ from typing import Any
 
 from src.models.meeting_ready import (
     AnswerMatrixUpdate,
+    EvidencePacket,
     FinalBriefing,
     GapCandidate,
     MeetingAction,
@@ -69,6 +70,7 @@ class ShortTermMemoryStore:
     meeting_readiness_assessment: MeetingReadinessAssessment = field(default_factory=MeetingReadinessAssessment)
     meeting_actions: list[MeetingAction] = field(default_factory=list)
     final_briefing: FinalBriefing | None = None
+    evidence_packets: list[EvidencePacket] = field(default_factory=list)
     usage_totals: dict[str, int] = field(
         default_factory=lambda: {
             "llm_calls": 0,
@@ -132,6 +134,10 @@ class ShortTermMemoryStore:
         self.gap_candidates.extend(self._legacy_open_questions_to_gap_candidates(report_open_questions))
         self.next_actions.extend(report.get("next_actions", []))
         self.sources.extend(report.get("sources", []))
+        self.evidence_packets.extend(
+            EvidencePacket.model_validate(item)
+            for item in report.get("evidence_packages", report.get("evidence_packets", []))
+        )
         for key, value in report.get("usage", {}).items():
             if key in self.usage_totals:
                 self.usage_totals[key] += int(value or 0)
@@ -201,6 +207,10 @@ class ShortTermMemoryStore:
         ws.buyer_hypotheses = list(self.buyer_hypotheses)
         ws.open_questions = list(self.open_questions)
         ws.gap_candidates = [GapCandidate.model_validate(g.model_dump(mode="json")) for g in self.gap_candidates]
+        ws.evidence_packets = [
+            EvidencePacket.model_validate(packet.model_dump(mode="json"))
+            for packet in self.evidence_packets
+        ]
         ws.next_actions = list(self.next_actions)
         ws.task_statuses = dict(self.task_statuses)
         ws.section_outputs = {k: dict(v) for k, v in self.section_outputs.items()}
@@ -227,6 +237,8 @@ class ShortTermMemoryStore:
         delta.open_questions = [q for q in self.open_questions if q not in baseline_questions]
         baseline_gap_ids = {g.gap_id for g in baseline.gap_candidates}
         delta.gap_candidates = [g for g in self.gap_candidates if g.gap_id not in baseline_gap_ids]
+        baseline_packet_ids = {p.packet_id for p in baseline.evidence_packets}
+        delta.evidence_packets = [p for p in self.evidence_packets if p.packet_id not in baseline_packet_ids]
         baseline_actions = set(baseline.next_actions)
         delta.next_actions = [a for a in self.next_actions if a not in baseline_actions]
         delta.rejected_claims = list(self.rejected_claims)  # typically empty at parallel start
@@ -279,6 +291,7 @@ class ShortTermMemoryStore:
         self.buyer_hypotheses.extend(other.buyer_hypotheses)
         self.open_questions.extend(other.open_questions)
         self.gap_candidates.extend(other.gap_candidates)
+        self.evidence_packets.extend(other.evidence_packets)
         self.next_actions.extend(other.next_actions)
         self.rejected_claims.extend(other.rejected_claims)
         self.worker_reports.extend(other.worker_reports)
@@ -340,6 +353,7 @@ class ShortTermMemoryStore:
             "buyer_hypotheses": _dedup_safe(self.buyer_hypotheses),
             "open_questions": _dedup_safe(self.open_questions),
             "gap_candidates": [gap.model_dump(mode="json") for gap in self.gap_candidates],
+            "evidence_packets": [packet.model_dump(mode="json") for packet in self.evidence_packets],
             "next_actions": _dedup_safe(self.next_actions),
             "rejected_claims": _dedup_safe(self.rejected_claims),
             "task_outputs": self.task_outputs,
@@ -384,6 +398,9 @@ class ShortTermMemoryStore:
             buyer_hypotheses=list(data.get("buyer_hypotheses", [])),
             open_questions=legacy_open_questions,
             gap_candidates=gap_candidates,
+            evidence_packets=[
+                EvidencePacket.model_validate(item) for item in data.get("evidence_packets", [])
+            ],
             next_actions=list(data.get("next_actions", [])),
             rejected_claims=list(data.get("rejected_claims", [])),
             task_outputs=dict(data.get("task_outputs", {})),
