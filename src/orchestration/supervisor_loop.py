@@ -25,6 +25,7 @@ from src.orchestration.task_router import (
 from src.orchestration.synthesis import build_synthesis_context, build_quality_review
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import BlockedArtifact
+from src.orchestration.resolution_controller import ResolutionController
 
 
 MessageHook = Callable[[dict[str, Any]], None] | None
@@ -37,6 +38,7 @@ class SupervisorLoopResult(NamedTuple):
     messages: list[dict[str, Any]]
     completed_backlog: list[dict[str, str]]
     department_timings: dict[str, float]
+    first_round_resolution: dict[str, Any]
 
 
 def _blocked_section_artifact(reason: str, open_questions: list[str] | None = None) -> dict[str, Any]:
@@ -505,6 +507,21 @@ def run_supervisor_loop(
                 total_tokens, SOFT_TOKEN_BUDGET, department_name,
             )
 
+    controller = ResolutionController()
+    first_round_resolution = controller.classify(
+        sections=sections,
+        department_packages=department_packages,
+        answer_matrix=run_context.answer_matrix,
+        task_statuses=dict(run_context.short_term_memory.task_statuses),
+    )
+    messages.append(
+        emit_message(
+            on_message,
+            agent="Supervisor",
+            content=json.dumps({"status": "first_round_resolution", **first_round_resolution}, ensure_ascii=False),
+        )
+    )
+
     # Strategic Synthesis Department — AG2 GroupChat
     synthesis_assignments = build_synthesis_assignments(brief)
     for assignment in synthesis_assignments:
@@ -612,4 +629,4 @@ def run_supervisor_loop(
     )
     logging.info("Department timings: %s", timing_summary or "none")
 
-    return SupervisorLoopResult(sections, department_packages, messages, completed_backlog, department_timings)
+    return SupervisorLoopResult(sections, department_packages, messages, completed_backlog, department_timings, first_round_resolution)

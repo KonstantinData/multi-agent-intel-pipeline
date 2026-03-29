@@ -353,3 +353,60 @@ def answer_follow_up(
     ).model_dump(mode="json")
     export_follow_up(RUNS_DIR / run_id, payload)
     return payload
+
+
+def run_bounded_follow_up(
+    *,
+    run_id: str,
+    run_context: dict[str, Any],
+    pipeline_data: dict[str, Any],
+    public_gap_questions: list[str],
+    max_questions: int = 4,
+) -> dict[str, Any]:
+    """Run bounded, run-brain-grounded follow-up for public evidence gaps.
+
+    This helper is used inside the live run (before final export) and therefore
+    does not write follow-up artifacts to disk.
+    """
+    candidates = [q.strip() for q in public_gap_questions if str(q).strip()]
+    queue = candidates[:max_questions]
+    attempts: list[dict[str, Any]] = []
+
+    for question in queue:
+        lowered = question.lower()
+        if any(token in lowered for token in ("contact", "buyer firm", "decision maker", "reach")):
+            route = "ContactDepartment"
+            answer, evidence, unresolved = _contact_answer(question, pipeline_data, run_context)
+        elif any(token in lowered for token in ("market", "demand", "supply", "industry")):
+            route = "MarketDepartment"
+            answer, evidence, unresolved = _market_answer(question, pipeline_data, run_context)
+        elif any(token in lowered for token in ("buyer", "competitor", "redeployment", "monetization")):
+            route = "BuyerDepartment"
+            answer, evidence, unresolved = _buyer_answer(question, pipeline_data, run_context)
+        else:
+            route = "CompanyDepartment"
+            answer, evidence, unresolved = _company_answer(question, pipeline_data, run_context)
+
+        attempts.append({
+            "route": route,
+            "question": question,
+            "answer": answer,
+            "evidence_used": evidence[:3],
+            "unresolved_points": unresolved[:2],
+            "resolved": not bool(unresolved),
+        })
+
+    unresolved_after = [
+        item["question"]
+        for item in attempts
+        if not item.get("resolved", False)
+    ]
+    stop_reason = "all_questions_resolved" if not unresolved_after else "bounded_budget_exhausted"
+    return {
+        "run_id": run_id,
+        "attempted_questions": len(attempts),
+        "max_questions": max_questions,
+        "stop_reason": stop_reason,
+        "attempts": attempts,
+        "remaining_public_gaps": unresolved_after,
+    }
