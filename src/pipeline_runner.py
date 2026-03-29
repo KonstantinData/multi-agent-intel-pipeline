@@ -19,6 +19,7 @@ from src.memory.retrieval import retrieve_strategies
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
+from src.orchestration.follow_up import run_bounded_follow_up
 from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
@@ -130,7 +131,7 @@ def run_pipeline(
             )
         )
 
-        sections, department_packages, loop_messages, completed_backlog, department_timings = run_supervisor_loop(
+        sections, department_packages, loop_messages, completed_backlog, department_timings, first_round_resolution = run_supervisor_loop(
             brief=brief,
             run_context=run_context,
             agents=agents,
@@ -140,6 +141,49 @@ def run_pipeline(
         run_context.short_term_memory.task_statuses.update(
             {item["task_key"]: item["status"] for item in completed_backlog}
         )
+        run_context.resolution_state = {
+            "first_round_resolution": first_round_resolution,
+            "auto_close": {
+                "triggered": False,
+                "max_questions": 4,
+                "attempted_questions": 0,
+                "stop_reason": "not_required",
+                "remaining_public_gaps": [],
+            },
+        }
+
+        if first_round_resolution.get("bucket") == "AUTO_CLOSE_REQUIRED":
+            auto_close_result = run_bounded_follow_up(
+                run_id=run_id,
+                run_context=run_context.snapshot(),
+                pipeline_data={
+                    "company_profile": sections.get("company_profile", {}),
+                    "industry_analysis": sections.get("industry_analysis", {}),
+                    "market_network": sections.get("market_network", {}),
+                    "contact_intelligence": sections.get("contact_intelligence", {}),
+                    "synthesis": sections.get("synthesis", {}),
+                    "quality_review": {},
+                },
+                public_gap_questions=first_round_resolution.get("meeting_critical_public_gaps", []),
+                max_questions=4,
+            )
+            run_context.resolution_state["auto_close"] = {
+                "triggered": True,
+                **auto_close_result,
+            }
+            messages.append(
+                emit_message(
+                    on_message,
+                    agent="Supervisor",
+                    content=json.dumps(
+                        {
+                            "status": "auto_close_follow_up_completed",
+                            **auto_close_result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            )
 
         # Quality review still derived from memory snapshot
         quality_review = build_quality_review(run_context.short_term_memory.snapshot())
@@ -207,6 +251,51 @@ def run_pipeline(
                 "validation_errors": [],
             }
         )
+
+        remaining_public_gaps = run_context.resolution_state.get("auto_close", {}).get("remaining_public_gaps", [])
+        if remaining_public_gaps:
+            run_context.status = "blocked_not_meeting_ready"
+            run_context.resolution_state["finalization_blocked"] = {
+                "reason": "meeting_critical_public_gaps_open",
+                "open_gaps": remaining_public_gaps,
+            }
+            elapsed_seconds = round(perf_counter() - start_time, 3)
+            memory_snapshot = run_context.short_term_memory.snapshot()
+            usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))
+            export_run(
+                run_dir=run_dir,
+                run_id=run_id,
+                company_name=company_name,
+                web_domain=web_domain,
+                status="blocked_not_meeting_ready",
+                messages=messages,
+                pipeline_data=validate_pipeline_data(
+                    {
+                        "company_profile": assemble_section("company_profile", sections.get("company_profile", {})),
+                        "industry_analysis": assemble_section("industry_analysis", sections.get("industry_analysis", {})),
+                        "market_network": assemble_section("market_network", sections.get("market_network", {})),
+                        "contact_intelligence": assemble_section("contact_intelligence", sections.get("contact_intelligence", {})),
+                        "quality_review": build_quality_review(run_context.short_term_memory.snapshot()),
+                        "synthesis": {"section_status": "blocked", "reason": "meeting_critical_public_gaps_open"},
+                        "research_readiness": {"usable": False, "partial": False, "score": 0, "blocking_reasons": ["meeting_critical_public_gaps_open"]},
+                        "validation_errors": [],
+                    }
+                ),
+                run_context=run_context.snapshot(),
+                usage=usage,
+                budget={"elapsed_seconds": elapsed_seconds, "auto_close": run_context.resolution_state.get("auto_close", {})},
+            )
+            return {
+                "run_id": run_id,
+                "run_dir": str(run_dir),
+                "messages": messages,
+                "pipeline_data": _extract_pipeline_data(messages),
+                "run_context": run_context.snapshot(),
+                "usage": usage,
+                "budget": {"elapsed_seconds": elapsed_seconds, "auto_close": run_context.resolution_state.get("auto_close", {})},
+                "status": "blocked_not_meeting_ready",
+                "error": None,
+            }
 
         report_package = build_report_package(
             pipeline_data=pipeline_data,

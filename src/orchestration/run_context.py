@@ -23,6 +23,7 @@ class RunContext:
     meeting_readiness_assessment: MeetingReadinessAssessment = field(default_factory=MeetingReadinessAssessment)
     final_briefing: FinalBriefing | None = None
     status: RunStatus = "running"
+    resolution_state: dict[str, Any] = field(default_factory=dict)
 
     def record_task(
         self,
@@ -64,6 +65,7 @@ class RunContext:
             "final_briefing": self.final_briefing.model_dump(mode="json") if self.final_briefing else None,
             "short_term_memory": self.short_term_memory.snapshot(),
             "status": self.status,
+            "resolution_state": self.resolution_state,
         }
 
 
@@ -89,4 +91,5 @@ class RunContext:
                 else None
             ),
             status=payload.get("status", "running"),
+            resolution_state=dict(payload.get("resolution_state", {})),
         )
