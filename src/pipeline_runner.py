@@ -9,6 +9,13 @@ from typing import Any, Callable
 
 from src.agents.specs import AGENT_SPECS
 from src.agents.runtime_factory import create_runtime_agents
+from src.app.use_cases import (
+    BLOCKED_RUN_STATUS,
+    SELECTION_REQUIRED_RUN_STATUS,
+    build_dashboard_state,
+    build_resolution_plan,
+    determine_final_status,
+)
 from src.config import summarize_worker_report_costs
 from src.domain.intake import IntakeRequest
 from src.exporters.json_export import export_run
@@ -16,6 +23,7 @@ from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_pa
 from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
 from src.memory.retrieval import retrieve_strategies
+from src.models.meeting_ready import ResolutionPlan
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
@@ -253,49 +261,13 @@ def run_pipeline(
         )
 
         remaining_public_gaps = run_context.resolution_state.get("auto_close", {}).get("remaining_public_gaps", [])
-        if remaining_public_gaps:
-            run_context.status = "blocked_not_meeting_ready"
-            run_context.resolution_state["finalization_blocked"] = {
-                "reason": "meeting_critical_public_gaps_open",
-                "open_gaps": remaining_public_gaps,
-            }
-            elapsed_seconds = round(perf_counter() - start_time, 3)
-            memory_snapshot = run_context.short_term_memory.snapshot()
-            usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))
-            export_run(
-                run_dir=run_dir,
-                run_id=run_id,
-                company_name=company_name,
-                web_domain=web_domain,
-                status="blocked_not_meeting_ready",
-                messages=messages,
-                pipeline_data=validate_pipeline_data(
-                    {
-                        "company_profile": assemble_section("company_profile", sections.get("company_profile", {})),
-                        "industry_analysis": assemble_section("industry_analysis", sections.get("industry_analysis", {})),
-                        "market_network": assemble_section("market_network", sections.get("market_network", {})),
-                        "contact_intelligence": assemble_section("contact_intelligence", sections.get("contact_intelligence", {})),
-                        "quality_review": build_quality_review(run_context.short_term_memory.snapshot()),
-                        "synthesis": {"section_status": "blocked", "reason": "meeting_critical_public_gaps_open"},
-                        "research_readiness": {"usable": False, "partial": False, "score": 0, "blocking_reasons": ["meeting_critical_public_gaps_open"]},
-                        "validation_errors": [],
-                    }
-                ),
-                run_context=run_context.snapshot(),
-                usage=usage,
-                budget={"elapsed_seconds": elapsed_seconds, "auto_close": run_context.resolution_state.get("auto_close", {})},
-            )
-            return {
-                "run_id": run_id,
-                "run_dir": str(run_dir),
-                "messages": messages,
-                "pipeline_data": _extract_pipeline_data(messages),
-                "run_context": run_context.snapshot(),
-                "usage": usage,
-                "budget": {"elapsed_seconds": elapsed_seconds, "auto_close": run_context.resolution_state.get("auto_close", {})},
-                "status": "blocked_not_meeting_ready",
-                "error": None,
-            }
+        resolution_plan = build_resolution_plan(
+            run_id=run_id,
+            first_round_resolution=first_round_resolution,
+            remaining_public_gaps=list(remaining_public_gaps),
+        )
+        run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
+        run_context.resolution_state["resolution_plan"] = resolution_plan
 
         report_package = build_report_package(
             pipeline_data=pipeline_data,
@@ -310,12 +282,28 @@ def run_pipeline(
             )
         )
 
-        if readiness["usable"]:
-            status = "completed"
-        elif readiness.get("partial"):
-            status = "completed_partial"
-        else:
-            status = "completed_but_not_usable"
+        status = determine_final_status(
+            readiness_usable=bool(readiness.get("usable")),
+            first_round_resolution=first_round_resolution,
+            remaining_public_gaps=list(remaining_public_gaps),
+        )
+        resume_entrypoint = (
+            "supervisor_resume_after_user_selection"
+            if status == SELECTION_REQUIRED_RUN_STATUS
+            else "supervisor_finalization_entrypoint"
+        )
+        run_context.resolution_state["dashboard_state"] = build_dashboard_state(
+            status=status,
+            run_id=run_id,
+            resolution_plan=resolution_plan,
+            resume_entrypoint=resume_entrypoint,
+        )
+        run_context.resolution_state["resume_entrypoint"] = resume_entrypoint
+        if status == BLOCKED_RUN_STATUS:
+            run_context.resolution_state["finalization_blocked"] = {
+                "reason": "meeting_critical_public_gaps_open" if remaining_public_gaps else "meeting_not_ready",
+                "open_gaps": list(remaining_public_gaps),
+            }
         run_context.status = status
         elapsed_seconds = round(perf_counter() - start_time, 3)
         memory_snapshot = run_context.short_term_memory.snapshot()
@@ -331,6 +319,7 @@ def run_pipeline(
             ),
             "max_tool_calls": 140,
             "max_department_attempts": 3,
+            "resume_entrypoint": resume_entrypoint,
             "llm_calls_used": int(usage_totals.get("llm_calls", 0) or 0),
             "search_calls_used": int(usage_totals.get("search_calls", 0) or 0),
             "page_fetches_used": int(usage_totals.get("page_fetches", 0) or 0),
