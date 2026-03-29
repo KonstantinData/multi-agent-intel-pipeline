@@ -45,6 +45,16 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "artifacts" / "runs"
 LONG_TERM_MEMORY_PATH = ROOT / "artifacts" / "memory" / "long_term_memory.json"
 
+
+def _write_checkpoint(run_dir: Path, phase: str, run_context: "RunContext") -> None:
+    """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
+    cp_dir = run_dir / "checkpoints"
+    cp_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"phase": phase, "status": run_context.status, **run_context.snapshot()}
+    (cp_dir / f"{phase}.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8",
+    )
+
 AGENT_META = {
     name: {"icon": spec.icon, "color": spec.color, "summary": spec.summary}
     for name, spec in AGENT_SPECS.items()
@@ -162,6 +172,9 @@ def resume_pipeline(
     )
     run_context.status = status
 
+    # RA-07: Checkpoint after dashboard resume
+    _write_checkpoint(run_dir, "after_dashboard_resume", run_context)
+
     # Re-export
     run_context_snapshot = run_context.snapshot()
     export_run(
@@ -263,6 +276,9 @@ def run_pipeline(
             },
         }
 
+        # RA-07: Checkpoint after first pass
+        _write_checkpoint(run_dir, "after_first_pass", run_context)
+
         if first_round_resolution.get("bucket") == "AUTO_CLOSE_REQUIRED":
             auto_close_result = run_bounded_follow_up(
                 run_id=run_id,
@@ -303,6 +319,9 @@ def run_pipeline(
                     ),
                 )
             )
+
+            # RA-07: Checkpoint after closure
+            _write_checkpoint(run_dir, "after_closure", run_context)
 
         # Quality review still derived from memory snapshot
         quality_review = build_quality_review(run_context.short_term_memory.snapshot())
@@ -437,6 +456,10 @@ def run_pipeline(
                 "open_gaps": list(remaining_public_gaps),
             }
         run_context.status = status
+
+        # RA-07: Checkpoint after finalization gate
+        _write_checkpoint(run_dir, "after_finalization", run_context)
+
         elapsed_seconds = round(perf_counter() - start_time, 3)
         memory_snapshot = run_context.short_term_memory.snapshot()
         usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))

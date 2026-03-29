@@ -59,6 +59,7 @@ def export_run(
         "budget": budget or {},
         "error": error,
         "unresolved": _extract_export_unresolved(status=status, run_context=run_context),
+        "meeting_readiness": (run_context or {}).get("meeting_readiness_assessment", {}),
     }
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
