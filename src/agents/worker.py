@@ -389,6 +389,13 @@ class ResearchWorker:
         field_issues: list[str] = []
         if fallback_note:
             field_issues.append(fallback_note)
+        evidence_packages = self._build_evidence_packages(
+            task_key=task_key,
+            objective=objective,
+            facts=synthesis.get("facts", []),
+            sources=payload.get("sources", []),
+            open_questions=synthesis.get("open_questions", []),
+        )
 
         return {
             "task_key": task_key,
@@ -406,6 +413,7 @@ class ResearchWorker:
             "next_actions": synthesis.get("next_actions", []),
             "field_issues": field_issues,
             "sources": payload.get("sources", []),
+            "evidence_packages": evidence_packages,
             "queries_used": queries,
             "usage": {
                 **llm_usage,
@@ -413,6 +421,78 @@ class ResearchWorker:
                 "page_fetches": page_fetches,
             },
         }
+
+    def _build_evidence_packages(
+        self,
+        *,
+        task_key: str,
+        objective: str,
+        facts: list[Any],
+        sources: list[Any],
+        open_questions: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Build structured evidence packets for one task execution."""
+        source_urls = [
+            str(item.get("url", "")).strip()
+            for item in sources
+            if isinstance(item, dict) and str(item.get("url", "")).strip()
+        ]
+        source_notes = [
+            str(item.get("summary", "")).strip()
+            for item in sources
+            if isinstance(item, dict) and str(item.get("summary", "")).strip()
+        ]
+        unique_urls = self._dedup_list(source_urls)[:6]
+        unique_notes = self._dedup_list(source_notes)[:6]
+
+        def _confidence() -> str:
+            if len(unique_urls) >= 3:
+                return "high"
+            if len(unique_urls) >= 1:
+                return "medium"
+            return "low"
+
+        packets: list[dict[str, Any]] = []
+        for idx, fact in enumerate(facts[:6], start=1):
+            fact_text = str(fact).strip()
+            if not fact_text:
+                continue
+            packets.append(
+                {
+                    "packet_id": f"{task_key}-fact-{idx}",
+                    "claim": fact_text,
+                    "confidence": _confidence(),
+                    "source_urls": unique_urls,
+                    "source_notes": unique_notes,
+                    "metadata": {
+                        "task_key": task_key,
+                        "worker": self.name,
+                        "objective": objective,
+                        "kind": "fact",
+                    },
+                }
+            )
+
+        for idx, question in enumerate(open_questions[:3], start=1):
+            question_text = str(question).strip()
+            if not question_text:
+                continue
+            packets.append(
+                {
+                    "packet_id": f"{task_key}-gap-{idx}",
+                    "claim": question_text,
+                    "confidence": "low",
+                    "source_urls": unique_urls,
+                    "source_notes": unique_notes,
+                    "metadata": {
+                        "task_key": task_key,
+                        "worker": self.name,
+                        "objective": objective,
+                        "kind": "open_question",
+                    },
+                }
+            )
+        return packets
 
     def _build_memory_context(
         self,
