@@ -251,6 +251,26 @@ def _render_briefing_tab(L: dict) -> None:
     if description:
         st.write(description[:400] + ("..." if len(description) > 400 else ""))
 
+    # ── KPI Cards (dashboard-style) ───────────────────────────────────────────
+    revenue_val = _nv(company.get("revenue"), "—")
+    employees_val = _nv(company.get("employees"), "—")
+    founded_val = _nv(company.get("founded"), "—")
+    readiness_data = pipeline_data.get("research_readiness", {})
+    readiness_score = readiness_data.get("score", 0)
+
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.metric(L.get("revenue", "Revenue"), revenue_val)
+    with kpi2:
+        st.metric(L.get("employees", "Employees"), employees_val)
+    with kpi3:
+        st.metric(L.get("founded", "Founded"), founded_val)
+    with kpi4:
+        st.metric(L.get("readiness_score", "Readiness"), f"{readiness_score}/100")
+
+    if readiness_score > 0:
+        st.progress(min(readiness_score / 100, 1.0))
+
     econ = company.get("economic_situation", {})
     econ_assessment = _nv(econ.get("assessment", "") if isinstance(econ, dict) else "")
     if econ_assessment:
@@ -657,48 +677,88 @@ def _render_quality_tab(L: dict) -> None:
     pipeline_data = st.session_state.pipeline_data
     quality = pipeline_data.get("quality_review", {})
     readiness = pipeline_data.get("research_readiness", {})
+    run_context = st.session_state.run_context
+    answer_matrix = run_context.get("answer_matrix", {})
+    budget = st.session_state.budget
 
-    with st.expander(L["research_quality"]):
-        col1, col2, col3 = st.columns(3)
-        col1.metric(L["readiness_score"], _nv(str(readiness.get("score", "")), "—"))
-        col2.metric(L["evidence_quality"], _nv(quality.get("evidence_health", ""), "—"))
-        col3.metric(L["status"], _nv(st.session_state.status or "", "—"))
-        if readiness.get("reasons"):
-            for r in readiness["reasons"]:
-                rv = _nv(r)
-                if rv:
-                    st.write(f"- {rv}")
-        if quality.get("open_gaps"):
-            st.markdown(f"**{L['open_gaps']}:**")
-            for g in quality["open_gaps"][:10]:
-                gv = _nv(g)
-                if gv:
-                    st.write(f"- {gv}")
+    # ── Dashboard KPI row ─────────────────────────────────────────────────
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric(L["readiness_score"], _nv(str(readiness.get("score", "")), "—"))
+    with k2:
+        st.metric(L["evidence_quality"], _nv(quality.get("evidence_health", ""), "—"))
+    with k3:
+        st.metric(L["status"], _nv(st.session_state.status or "", "—"))
+    with k4:
+        cost = budget.get("estimated_cost_usd", 0)
+        st.metric("Cost", f"${cost:.3f}" if cost else "—")
 
-    with st.expander(L["task_status"]):
+    st.divider()
+
+    # ── Answer Matrix (dashboard-style) ───────────────────────────────────
+    if answer_matrix:
+        st.markdown(f"**{L.get('answer_matrix', 'Meeting Question Coverage')}**")
+        status_colors = {
+            "answered": "🟢", "partially_answered": "🟡",
+            "blocked": "🔴", "pending": "⚪",
+        }
+        cols_per_row = 3
+        items = list(answer_matrix.items())
+        for row_start in range(0, len(items), cols_per_row):
+            row_items = items[row_start:row_start + cols_per_row]
+            cols = st.columns(cols_per_row)
+            for col, (qid, entry) in zip(cols, row_items):
+                status = entry.get("status", "pending")
+                icon = status_colors.get(status, "⚪")
+                label = qid.replace("q_", "").replace("_", " ").title()
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"{icon} **{label}**")
+                        st.caption(status)
+        st.divider()
+
+    # ── Task status ───────────────────────────────────────────────────────
+    with st.expander(L["task_status"], expanded=False):
         status_icons = {"accepted": "✅", "degraded": "🟡", "rejected": "❌", "skipped": "⏭️", "pending": "⏳"}
         for row in _task_rows():
             icon = status_icons.get(row["status"], "·")
             st.write(f"{icon} {row['label']} — `{row['assignee']}` — `{row['status']}`")
 
+    # ── Open gaps ─────────────────────────────────────────────────────────
+    open_gaps = quality.get("open_gaps", [])
+    if open_gaps:
+        with st.expander(f"{L.get('open_gaps', 'Open Gaps')} ({len(open_gaps)})", expanded=False):
+            for g in open_gaps[:12]:
+                gv = _nv(g)
+                if gv:
+                    st.write(f"- {gv}")
+
+    # ── Run metadata ──────────────────────────────────────────────────────
+    with st.expander(L["run_metadata"], expanded=False):
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("LLM Calls", budget.get("llm_calls_used", "—"))
+            st.metric("Search Calls", budget.get("search_calls_used", "—"))
+        with m2:
+            st.metric("Page Fetches", budget.get("page_fetches_used", "—"))
+            st.metric("Pipeline Events", budget.get("total_pipeline_events", "—"))
+        with m3:
+            elapsed = budget.get("elapsed_seconds", 0)
+            st.metric("Duration", f"{elapsed:.0f}s" if elapsed else "—")
+            st.metric("Run ID", st.session_state.run_id or "—")
+        timings = budget.get("department_timings", {})
+        if timings:
+            st.markdown("**Department Timings**")
+            for dept, secs in timings.items():
+                pct = (secs / elapsed * 100) if elapsed else 0
+                st.write(f"- {dept}: {secs:.1f}s ({pct:.0f}%)")
+
     packages = _department_packages()
     if packages:
-        with st.expander(L["department_packages"]):
+        with st.expander(L["department_packages"], expanded=False):
             for dept_name, package in packages.items():
                 st.markdown(f"**{dept_name}**")
                 st.json(package)
-
-    with st.expander(L["run_metadata"]):
-        budget = st.session_state.budget
-        st.json({
-            "run_id": st.session_state.run_id,
-            "llm_calls": budget.get("llm_calls_used"),
-            "search_calls": budget.get("search_calls_used"),
-            "page_fetches": budget.get("page_fetches_used"),
-            "estimated_cost_usd": budget.get("estimated_cost_usd"),
-            "elapsed_seconds": budget.get("elapsed_seconds"),
-            "department_timings": budget.get("department_timings", {}),
-        })
 
 
 def _start_pipeline(company_name: str, web_domain: str) -> None:

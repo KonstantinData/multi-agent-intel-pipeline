@@ -20,15 +20,15 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 
-BRAND_NAVY  = colors.HexColor("#102a43")
-BRAND_BLUE  = colors.HexColor("#1f5aa6")
+BRAND_NAVY  = colors.HexColor("#13485A")  # dashboard primary dark
+BRAND_BLUE  = colors.HexColor("#004E99")  # dashboard deep blue
 BRAND_SKY   = colors.HexColor("#d9e8ff")
-BRAND_TEAL  = colors.HexColor("#0f766e")
-BRAND_GREEN = colors.HexColor("#2f855a")
+BRAND_TEAL  = colors.HexColor("#0D95C5")  # dashboard accent blue
+BRAND_GREEN = colors.HexColor("#16B688")  # dashboard teal-green
 BRAND_AMBER = colors.HexColor("#c47f00")
 BRAND_RED   = colors.HexColor("#b83232")
-TEXT_PRIMARY = colors.HexColor("#1f2933")
-TEXT_MUTED   = colors.HexColor("#52606d")
+TEXT_PRIMARY = colors.HexColor("#1A2B2D")
+TEXT_MUTED   = colors.HexColor("#4A5E60")
 BORDER       = colors.HexColor("#d9e2ec")
 SURFACE      = colors.HexColor("#f7f9fc")
 SURFACE_WARM = colors.HexColor("#fff5f5")

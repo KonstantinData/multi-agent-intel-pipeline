@@ -2,19 +2,20 @@
 from __future__ import annotations
 
 # ── Liquisto brand palette (derived from liquisto.com) ───────────────────────
-TEAL_900 = "#0B3D3F"   # primary dark — nav, headings
+TEAL_900 = "#13485A"   # primary dark — nav, headings (dashboard-aligned)
 TEAL_700 = "#0F5E5F"   # primary mid — active states
-TEAL_500 = "#14807F"   # accent — links, highlights
+TEAL_500 = "#0D95C5"   # accent — links, highlights (dashboard blue)
 TEAL_100 = "#E6F3F3"   # tint — light backgrounds
-TEAL_50  = "#F4F8F7"   # surface — secondary bg (matches config.toml)
+TEAL_50  = "#F4F8F7"   # surface — secondary bg
 SLATE_900 = "#1A2B2D"  # text primary
 SLATE_600 = "#4A5E60"  # text secondary
 SLATE_300 = "#B0C4C5"  # borders
 WHITE = "#FFFFFF"
 SURFACE_WARN = "#FFF8F0"
-GREEN_600 = "#16A34A"
+GREEN_600 = "#16B688"   # dashboard green (teal-green)
 AMBER_600 = "#D97706"
 RED_600 = "#DC2626"
+BLUE_500 = "#004E99"    # dashboard deep blue
 
 BRAND_CSS = f"""
 <style>
@@ -135,10 +136,24 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stV
     background-color: {TEAL_500} !important;
 }}
 
-/* ── Metrics ─────────────────────────────────────────────────────────── */
+/* ── Metrics (dashboard KPI cards) ───────────────────────────────────── */
 [data-testid="stMetricValue"] {{
     color: {TEAL_900} !important;
     font-weight: 700 !important;
+    font-size: 1.6rem !important;
+}}
+[data-testid="stMetricLabel"] {{
+    color: {SLATE_600} !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+}}
+[data-testid="metric-container"] {{
+    background: {WHITE} !important;
+    border: 1px solid {SLATE_300} !important;
+    border-radius: 10px !important;
+    padding: 12px 16px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
 }}
 
 /* ── Pipeline step cards (live run) ──────────────────────────────────── */
