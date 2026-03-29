@@ -286,3 +286,112 @@ def build_standard_scope() -> str:
 def build_standard_backlog() -> list[dict[str, Any]]:
     """Return the canonical supervisor task backlog."""
     return [dict(item) for item in STANDARD_TASK_BACKLOG]
+
+
+# ---------------------------------------------------------------------------
+# Run finalization helpers
+# ---------------------------------------------------------------------------
+
+SUCCESS_RUN_STATUS = "meeting_ready"
+BLOCKED_RUN_STATUS = "blocked_not_meeting_ready"
+SELECTION_REQUIRED_RUN_STATUS = "needs_user_selection"
+
+ALLOWED_SUCCESS_UNRESOLVED_CLASSES = {
+    "customer_confirmation_items",
+    "optional_depth_not_selected",
+}
+
+
+def build_resolution_plan(
+    *,
+    run_id: str,
+    first_round_resolution: dict[str, Any],
+    remaining_public_gaps: list[str],
+) -> dict[str, Any]:
+    """Build a deterministic, persisted resolution plan snapshot for the run."""
+    bucket = str(first_round_resolution.get("bucket", "")).upper()
+    unresolved_contact_gaps = list(first_round_resolution.get("unresolved_contact_gaps", []))
+    unresolved_matrix = list(first_round_resolution.get("unresolved_matrix_questions", []))
+    meeting_critical_public_gaps = list(first_round_resolution.get("meeting_critical_public_gaps", []))
+
+    if bucket == "USER_DECISION_REQUIRED":
+        decision = "request_user_selection"
+        steps = [
+            "Present unresolved meeting-question choices to the user.",
+            "Persist selected priorities and continue from supervisor_resume_after_user_selection.",
+        ]
+    elif bucket == "CUSTOMER_CONFIRMATION_REQUIRED":
+        decision = "accept_gap"
+        steps = [
+            "Mark customer confirmation items as externally dependent.",
+            "Continue with available evidence and capture follow-up actions.",
+        ]
+    elif remaining_public_gaps or bucket in {"BLOCKING_FAILURE", "AUTO_CLOSE_REQUIRED"}:
+        decision = "resolve_now"
+        steps = [
+            "Resolve meeting-critical public evidence gaps before export.",
+            "Block final briefing export until meeting readiness is satisfied.",
+        ]
+    else:
+        decision = "defer"
+        steps = ["No additional resolution action required before export."]
+
+    return {
+        "plan_id": f"{run_id}:final_resolution",
+        "decision": {
+            "decision": decision,
+            "rationale": str(first_round_resolution.get("rationale", "n/v")),
+            "selected_gap_ids": unresolved_matrix,
+        },
+        "steps": steps,
+        "owner": "Supervisor",
+        "bucket": bucket,
+        "unresolved": {
+            "meeting_critical_public_gaps": meeting_critical_public_gaps,
+            "remaining_public_gaps_after_auto_close": list(remaining_public_gaps),
+            "customer_confirmation_items": unresolved_contact_gaps,
+            "optional_depth_not_selected": unresolved_matrix,
+        },
+    }
+
+
+def build_dashboard_state(
+    *,
+    status: str,
+    run_id: str,
+    resolution_plan: dict[str, Any],
+    resume_entrypoint: str,
+) -> dict[str, Any]:
+    """Return persisted dashboard state used by UI + deterministic resume."""
+    return {
+        "run_id": run_id,
+        "status": status,
+        "resolution_plan_id": resolution_plan.get("plan_id", "n/v"),
+        "resume_entrypoint": resume_entrypoint,
+        "pending_user_selection": status == SELECTION_REQUIRED_RUN_STATUS,
+    }
+
+
+def determine_final_status(
+    *,
+    readiness_usable: bool,
+    first_round_resolution: dict[str, Any],
+    remaining_public_gaps: list[str],
+) -> str:
+    """Final readiness gate status before export."""
+    if not readiness_usable or remaining_public_gaps:
+        return BLOCKED_RUN_STATUS
+    if str(first_round_resolution.get("bucket", "")).upper() == "USER_DECISION_REQUIRED":
+        return SELECTION_REQUIRED_RUN_STATUS
+    return SUCCESS_RUN_STATUS
+
+
+def sanitize_success_unresolved(unresolved: dict[str, Any]) -> dict[str, list[str]]:
+    """Keep only allowed unresolved classes on successful exports."""
+    cleaned: dict[str, list[str]] = {}
+    for key, value in (unresolved or {}).items():
+        if key not in ALLOWED_SUCCESS_UNRESOLVED_CLASSES:
+            continue
+        if isinstance(value, list):
+            cleaned[key] = [str(item).strip() for item in value if str(item).strip()]
+    return cleaned

@@ -6,6 +6,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.app.use_cases import SUCCESS_RUN_STATUS, sanitize_success_unresolved
+
+
+def _sanitize_pipeline_data_for_status(*, status: str, pipeline_data: dict[str, Any]) -> dict[str, Any]:
+    data = dict(pipeline_data)
+    if status != SUCCESS_RUN_STATUS:
+        return data
+    synthesis = dict(data.get("synthesis", {}) or {})
+    synthesis.pop("open_questions", None)
+    data["synthesis"] = synthesis
+    return data
+
+
+def _extract_export_unresolved(*, status: str, run_context: dict[str, Any]) -> dict[str, list[str]]:
+    if status != SUCCESS_RUN_STATUS:
+        return {}
+    resolution_plan = (
+        (run_context or {}).get("resolution_state", {}).get("resolution_plan", {})
+        if isinstance(run_context, dict)
+        else {}
+    )
+    unresolved = resolution_plan.get("unresolved", {}) if isinstance(resolution_plan, dict) else {}
+    return sanitize_success_unresolved(unresolved)
+
 
 def export_run(
     *,
@@ -34,13 +58,18 @@ def export_run(
         "usage": usage or {},
         "budget": budget or {},
         "error": error,
+        "unresolved": _extract_export_unresolved(status=status, run_context=run_context),
     }
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
 
     (path / "run_meta.json").write_text(json.dumps(run_meta, indent=2, ensure_ascii=False), encoding="utf-8")
     (path / "chat_history.json").write_text(json.dumps(chat_history, indent=2, ensure_ascii=False), encoding="utf-8")
-    (path / "pipeline_data.json").write_text(json.dumps(pipeline_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    sanitized_pipeline_data = _sanitize_pipeline_data_for_status(status=status, pipeline_data=pipeline_data)
+    (path / "pipeline_data.json").write_text(
+        json.dumps(sanitized_pipeline_data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     (path / "run_context.json").write_text(json.dumps(run_context, indent=2, ensure_ascii=False), encoding="utf-8")
     (path / "memory_snapshot.json").write_text(
         json.dumps(run_context.get("short_term_memory", {}), indent=2, ensure_ascii=False),

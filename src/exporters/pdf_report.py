@@ -7,6 +7,8 @@ from datetime import datetime
 from io import BytesIO
 from typing import Any
 
+from src.app.use_cases import sanitize_success_unresolved
+
 from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
@@ -719,6 +721,14 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     # Translate all narrative content when a non-English output is requested
     if lang != "en":
         pipeline_data = _translate_content(pipeline_data, lang)
+
+    pipeline_data = copy.deepcopy(pipeline_data)
+    synthesis_payload = dict(pipeline_data.get("synthesis", {}) or {})
+    synthesis_payload.pop("open_questions", None)
+    pipeline_data["synthesis"] = synthesis_payload
+    unresolved_payload = sanitize_success_unresolved(pipeline_data.get("unresolved", {}) or {})
+    if unresolved_payload:
+        pipeline_data["unresolved"] = unresolved_payload
 
     profile   = pipeline_data.get("company_profile", {}) or {}
     industry  = pipeline_data.get("industry_analysis", {}) or {}
