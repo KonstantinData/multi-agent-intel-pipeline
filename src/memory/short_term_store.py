@@ -25,6 +25,15 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.models.meeting_ready import (
+    AnswerMatrixUpdate,
+    FinalBriefing,
+    GapCandidate,
+    MeetingAction,
+    MeetingReadinessAssessment,
+    ResolutionDecision,
+    ResolutionPlan,
+)
 from src.utils import dedup_safe as _dedup_safe
 
 
@@ -35,6 +44,7 @@ class ShortTermMemoryStore:
     market_signals: list[str] = field(default_factory=list)
     buyer_hypotheses: list[str] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
+    gap_candidates: list[GapCandidate] = field(default_factory=list)
     next_actions: list[str] = field(default_factory=list)
     rejected_claims: list[str] = field(default_factory=list)
     task_outputs: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -53,6 +63,12 @@ class ShortTermMemoryStore:
     # Keyed by department name. Stored by DepartmentLeadAgent after each run.
     department_run_states: dict[str, dict[str, Any]] = field(default_factory=dict)
     follow_up_sessions: list[dict[str, Any]] = field(default_factory=list)
+    answer_matrix_updates: list[AnswerMatrixUpdate] = field(default_factory=list)
+    resolution_decisions: list[ResolutionDecision] = field(default_factory=list)
+    resolution_plans: list[ResolutionPlan] = field(default_factory=list)
+    meeting_readiness_assessment: MeetingReadinessAssessment = field(default_factory=MeetingReadinessAssessment)
+    meeting_actions: list[MeetingAction] = field(default_factory=list)
+    final_briefing: FinalBriefing | None = None
     usage_totals: dict[str, int] = field(
         default_factory=lambda: {
             "llm_calls": 0,
@@ -63,6 +79,24 @@ class ShortTermMemoryStore:
             "page_fetches": 0,
         }
     )
+
+    # TEMP_COMPAT: bridge legacy `open_questions` into structured gap candidates.
+    @staticmethod
+    def _legacy_open_questions_to_gap_candidates(open_questions: list[str]) -> list[GapCandidate]:
+        gaps: list[GapCandidate] = []
+        for idx, question in enumerate(open_questions, start=1):
+            q = str(question).strip()
+            if not q:
+                continue
+            gaps.append(
+                GapCandidate(
+                    gap_id=f"legacy-gap-{idx}",
+                    question=q,
+                    severity="medium",
+                    legacy_origin="legacy_open_questions",
+                )
+            )
+        return gaps
 
     def open_department_workspace(self, department: str) -> None:
         """Reserve an isolated namespace for a department run."""
@@ -93,7 +127,9 @@ class ShortTermMemoryStore:
         self.facts.extend(report.get("facts", []))
         self.market_signals.extend(report.get("market_signals", []))
         self.buyer_hypotheses.extend(report.get("buyer_hypotheses", []))
-        self.open_questions.extend(report.get("open_questions", []))
+        report_open_questions = list(report.get("open_questions", []))
+        self.open_questions.extend(report_open_questions)
+        self.gap_candidates.extend(self._legacy_open_questions_to_gap_candidates(report_open_questions))
         self.next_actions.extend(report.get("next_actions", []))
         self.sources.extend(report.get("sources", []))
         for key, value in report.get("usage", {}).items():
@@ -119,6 +155,7 @@ class ShortTermMemoryStore:
             self.revision_history.setdefault(task_key, []).append(review)
         if issues and not approved:
             self.open_questions.extend(issues)
+            self.gap_candidates.extend(self._legacy_open_questions_to_gap_candidates(issues))
         if department and department in self.department_workspaces:
             ws = self.department_workspaces[department]
             ws["critic_approvals"][task_key] = approved
@@ -163,6 +200,7 @@ class ShortTermMemoryStore:
         ws.market_signals = list(self.market_signals)
         ws.buyer_hypotheses = list(self.buyer_hypotheses)
         ws.open_questions = list(self.open_questions)
+        ws.gap_candidates = [GapCandidate.model_validate(g.model_dump(mode="json")) for g in self.gap_candidates]
         ws.next_actions = list(self.next_actions)
         ws.task_statuses = dict(self.task_statuses)
         ws.section_outputs = {k: dict(v) for k, v in self.section_outputs.items()}
@@ -187,6 +225,8 @@ class ShortTermMemoryStore:
         delta.buyer_hypotheses = [h for h in self.buyer_hypotheses if h not in baseline_hypotheses]
         baseline_questions = set(baseline.open_questions)
         delta.open_questions = [q for q in self.open_questions if q not in baseline_questions]
+        baseline_gap_ids = {g.gap_id for g in baseline.gap_candidates}
+        delta.gap_candidates = [g for g in self.gap_candidates if g.gap_id not in baseline_gap_ids]
         baseline_actions = set(baseline.next_actions)
         delta.next_actions = [a for a in self.next_actions if a not in baseline_actions]
         delta.rejected_claims = list(self.rejected_claims)  # typically empty at parallel start
@@ -238,10 +278,18 @@ class ShortTermMemoryStore:
         self.market_signals.extend(other.market_signals)
         self.buyer_hypotheses.extend(other.buyer_hypotheses)
         self.open_questions.extend(other.open_questions)
+        self.gap_candidates.extend(other.gap_candidates)
         self.next_actions.extend(other.next_actions)
         self.rejected_claims.extend(other.rejected_claims)
         self.worker_reports.extend(other.worker_reports)
         self.follow_up_sessions.extend(other.follow_up_sessions)
+        self.answer_matrix_updates.extend(other.answer_matrix_updates)
+        self.resolution_decisions.extend(other.resolution_decisions)
+        self.resolution_plans.extend(other.resolution_plans)
+        self.meeting_actions.extend(other.meeting_actions)
+        if other.final_briefing is not None:
+            self.final_briefing = other.final_briefing
+        self.meeting_readiness_assessment = other.meeting_readiness_assessment
         # Dicts: update with disjointness assertion for task-keyed fields
         _DISJOINT_DICTS = [
             ("task_outputs", self.task_outputs, other.task_outputs),
@@ -291,6 +339,7 @@ class ShortTermMemoryStore:
             "market_signals": _dedup_safe(self.market_signals),
             "buyer_hypotheses": _dedup_safe(self.buyer_hypotheses),
             "open_questions": _dedup_safe(self.open_questions),
+            "gap_candidates": [gap.model_dump(mode="json") for gap in self.gap_candidates],
             "next_actions": _dedup_safe(self.next_actions),
             "rejected_claims": _dedup_safe(self.rejected_claims),
             "task_outputs": self.task_outputs,
@@ -308,5 +357,71 @@ class ShortTermMemoryStore:
             # CHG-02: full artifact history — reloadable for follow-up rehydration
             "department_run_states": self.department_run_states,
             "follow_up_sessions": self.follow_up_sessions,
+            "answer_matrix_updates": [item.model_dump(mode="json") for item in self.answer_matrix_updates],
+            "resolution_decisions": [item.model_dump(mode="json") for item in self.resolution_decisions],
+            "resolution_plans": [item.model_dump(mode="json") for item in self.resolution_plans],
+            "meeting_readiness_assessment": self.meeting_readiness_assessment.model_dump(mode="json"),
+            "meeting_actions": [item.model_dump(mode="json") for item in self.meeting_actions],
+            "final_briefing": self.final_briefing.model_dump(mode="json") if self.final_briefing else None,
             "usage_totals": self.usage_totals,
         }
+
+
+    @classmethod
+    def from_snapshot(cls, payload: dict[str, Any]) -> "ShortTermMemoryStore":
+        data = dict(payload or {})
+        legacy_open_questions = list(data.get("open_questions", []))
+        gap_payload = data.get("gap_candidates")
+        gap_candidates = (
+            [GapCandidate.model_validate(item) for item in gap_payload]
+            if isinstance(gap_payload, list)
+            else cls._legacy_open_questions_to_gap_candidates(legacy_open_questions)
+        )
+        return cls(
+            facts=list(data.get("facts", [])),
+            sources=list(data.get("sources", [])),
+            market_signals=list(data.get("market_signals", [])),
+            buyer_hypotheses=list(data.get("buyer_hypotheses", [])),
+            open_questions=legacy_open_questions,
+            gap_candidates=gap_candidates,
+            next_actions=list(data.get("next_actions", [])),
+            rejected_claims=list(data.get("rejected_claims", [])),
+            task_outputs=dict(data.get("task_outputs", {})),
+            task_statuses=dict(data.get("task_statuses", {})),
+            section_outputs=dict(data.get("section_outputs", {})),
+            critic_approvals=dict(data.get("critic_approvals", {})),
+            critic_reviews=dict(data.get("critic_reviews", {})),
+            accepted_points=dict(data.get("accepted_points", {})),
+            open_points=dict(data.get("open_points", {})),
+            revision_history=dict(data.get("revision_history", {})),
+            worker_reports=list(data.get("worker_reports", [])),
+            department_packages=dict(data.get("department_packages", {})),
+            department_conversations=dict(data.get("department_conversations", {})),
+            department_workspaces=dict(data.get("department_workspaces", {})),
+            department_run_states=dict(data.get("department_run_states", {})),
+            follow_up_sessions=list(data.get("follow_up_sessions", [])),
+            answer_matrix_updates=[
+                AnswerMatrixUpdate.model_validate(item)
+                for item in data.get("answer_matrix_updates", [])
+            ],
+            resolution_decisions=[
+                ResolutionDecision.model_validate(item)
+                for item in data.get("resolution_decisions", [])
+            ],
+            resolution_plans=[
+                ResolutionPlan.model_validate(item)
+                for item in data.get("resolution_plans", [])
+            ],
+            meeting_readiness_assessment=MeetingReadinessAssessment.model_validate(
+                data.get("meeting_readiness_assessment", {})
+            ),
+            meeting_actions=[
+                MeetingAction.model_validate(item) for item in data.get("meeting_actions", [])
+            ],
+            final_briefing=(
+                FinalBriefing.model_validate(data.get("final_briefing"))
+                if data.get("final_briefing")
+                else None
+            ),
+            usage_totals=dict(data.get("usage_totals", {})),
+        )

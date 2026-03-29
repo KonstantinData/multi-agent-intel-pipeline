@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.memory.short_term_store import ShortTermMemoryStore
+from src.models.meeting_ready import FinalBriefing, MeetingReadinessAssessment, RunStatus
 
 
 @dataclass
@@ -17,7 +18,9 @@ class RunContext:
     retrieved_role_strategies: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     active_tasks: list[dict[str, Any]] = field(default_factory=list)
     report_package: dict[str, Any] = field(default_factory=dict)
-    status: str = "running"
+    meeting_readiness_assessment: MeetingReadinessAssessment = field(default_factory=MeetingReadinessAssessment)
+    final_briefing: FinalBriefing | None = None
+    status: RunStatus = "running"
 
     def record_task(
         self,
@@ -53,6 +56,31 @@ class RunContext:
             "retrieved_role_strategies": self.retrieved_role_strategies,
             "active_tasks": self.active_tasks,
             "report_package": self.report_package,
+            "meeting_readiness_assessment": self.meeting_readiness_assessment.model_dump(mode="json"),
+            "final_briefing": self.final_briefing.model_dump(mode="json") if self.final_briefing else None,
             "short_term_memory": self.short_term_memory.snapshot(),
             "status": self.status,
         }
+
+
+    @classmethod
+    def from_snapshot(cls, payload: dict[str, Any]) -> "RunContext":
+        return cls(
+            run_id=str(payload.get("run_id", "")),
+            intake=dict(payload.get("intake", {})),
+            short_term_memory=ShortTermMemoryStore.from_snapshot(payload.get("short_term_memory", {})),
+            supervisor_brief=dict(payload.get("supervisor_brief", {})),
+            retrieved_strategies=list(payload.get("retrieved_strategies", [])),
+            retrieved_role_strategies=dict(payload.get("retrieved_role_strategies", {})),
+            active_tasks=list(payload.get("active_tasks", [])),
+            report_package=dict(payload.get("report_package", {})),
+            meeting_readiness_assessment=MeetingReadinessAssessment.model_validate(
+                payload.get("meeting_readiness_assessment", {})
+            ),
+            final_briefing=(
+                FinalBriefing.model_validate(payload.get("final_briefing"))
+                if payload.get("final_briefing")
+                else None
+            ),
+            status=payload.get("status", "running"),
+        )

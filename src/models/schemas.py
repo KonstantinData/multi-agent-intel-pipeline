@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
+from src.models.meeting_ready import FinalBriefing, MeetingReadinessAssessment
+
 # ---------------------------------------------------------------------------
 # Canonical vocabulary — single source of truth for status/confidence/mode
 # ---------------------------------------------------------------------------
@@ -268,6 +270,8 @@ class PipelineData(BaseModel):
     synthesis: Synthesis = Field(default_factory=Synthesis)
     research_readiness: ResearchReadiness = Field(default_factory=ResearchReadiness)
     validation_errors: list[ValidationErrorRecord] = Field(default_factory=list)
+    meeting_readiness_assessment: MeetingReadinessAssessment = Field(default_factory=MeetingReadinessAssessment)
+    final_briefing: FinalBriefing = Field(default_factory=FinalBriefing)
 
 
 def validate_pipeline_data(payload: dict[str, Any]) -> dict[str, Any]:
