@@ -86,3 +86,55 @@ def test_runtime_path_run_context_snapshot_roundtrip_with_resolution_state(tmp_p
         run_context=restored.snapshot(),
     )
     assert (run_dir / "run_context.json").exists()
+
+
+def test_resume_pipeline_applies_user_selections_and_re_evaluates(tmp_path, monkeypatch):
+    """RA-05: resume_pipeline loads paused run, applies selections, re-evaluates gate."""
+    import src.pipeline_runner as pr
+
+    run_id = "resume_test_run"
+    run_dir = tmp_path / run_id
+
+    ctx = RunContext(
+        run_id=run_id,
+        intake={"company_name": "ResumeCo", "web_domain": "resume.example"},
+    )
+    ctx.status = "needs_user_selection"
+    ctx.answer_matrix = {
+        "q_company_fundamentals": {"status": "answered", "answer": "ok", "notes": "", "source_tasks": []},
+        "q_market_situation": {"status": "pending", "answer": "", "notes": "", "source_tasks": []},
+    }
+    ctx.resolution_state = {
+        "first_round_resolution": {"bucket": "USER_DECISION_REQUIRED"},
+        "auto_close": {"remaining_public_gaps": []},
+        "dashboard_state": {"pending_user_selection": True, "resume_entrypoint": "supervisor_resume_after_user_selection"},
+        "resolution_plan": {"unresolved": {"optional_depth_not_selected": ["q_market_situation"]}},
+    }
+
+    export_run(
+        run_dir=run_dir,
+        run_id=run_id,
+        company_name="ResumeCo",
+        web_domain="resume.example",
+        status="needs_user_selection",
+        messages=[],
+        pipeline_data={"research_readiness": {"usable": True}},
+        run_context=ctx.snapshot(),
+    )
+
+    monkeypatch.setattr(pr, "RUNS_DIR", tmp_path)
+
+    result = pr.resume_pipeline(
+        run_id=run_id,
+        user_selections={
+            "selected_questions": ["q_market_situation"],
+            "skipped_questions": [],
+        },
+    )
+
+    assert result["error"] is None
+    assert result["status"] == "meeting_ready"
+    restored_ctx = result["run_context"]
+    assert restored_ctx["answer_matrix"]["q_market_situation"]["status"] == "partially_answered"
+    assert restored_ctx["resolution_state"]["dashboard_state"]["pending_user_selection"] is False
+    assert restored_ctx["resolution_state"]["user_selections"]["selected_questions"] == ["q_market_situation"]

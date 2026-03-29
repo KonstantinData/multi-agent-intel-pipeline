@@ -21,7 +21,7 @@ from src.app.use_cases import build_standard_backlog
 from src.config import summarize_runtime_models
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
-from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline
+from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
 from ui.i18n import (
     confidence_badge,
     get_labels,
@@ -809,10 +809,68 @@ if st.session_state.done and st.session_state.run_id:
         st.session_state.pipeline_data.get("company_profile", {}).get("company_name", ""),
         st.session_state.run_id,
     )
-    if status == "completed":
+
+    # ── Resolution Dashboard (needs_user_selection) ───────────────────────
+    if status == "needs_user_selection":
+        st.warning(f"{L.get('needs_selection', 'User selection required')} — {company_label}")
+        resolution_state = st.session_state.run_context.get("resolution_state", {})
+        dashboard = resolution_state.get("dashboard_state", {})
+        plan = resolution_state.get("resolution_plan", {})
+        unresolved = plan.get("unresolved", {})
+        optional_qs = unresolved.get("optional_depth_not_selected", [])
+        confirmation_items = unresolved.get("customer_confirmation_items", [])
+        answer_matrix = st.session_state.run_context.get("answer_matrix", {})
+
+        with st.container(border=True):
+            st.markdown(f"### {L.get('resolution_dashboard', 'Resolution Dashboard')}")
+
+            # Answered core questions
+            answered = [qid for qid, e in answer_matrix.items() if e.get("status") == "answered"]
+            if answered:
+                st.markdown(f"**{L.get('answered_questions', 'Answered')}** ({len(answered)})")
+                for qid in answered:
+                    st.write(f"✅ {qid}")
+
+            # Optional depth areas
+            if optional_qs:
+                st.markdown(f"**{L.get('optional_depth', 'Optional depth areas')}**")
+                selected = []
+                for qid in optional_qs:
+                    label = answer_matrix.get(qid, {}).get("notes", qid)
+                    if st.checkbox(f"{qid}: {label}", key=f"sel_{qid}"):
+                        selected.append(qid)
+
+            # Customer confirmation items
+            if confirmation_items:
+                st.markdown(f"**{L.get('customer_confirmation', 'Customer confirmation required')}**")
+                for item in confirmation_items:
+                    st.write(f"🔒 {item}")
+
+            # Resume button
+            skipped = [q for q in optional_qs if q not in (selected if optional_qs else [])]
+            if st.button(L.get("resume_run", "Resume run with selections"), use_container_width=True):
+                with st.spinner(L.get("resuming", "Resuming...")):
+                    result = resume_pipeline(
+                        run_id=st.session_state.run_id,
+                        user_selections={
+                            "selected_questions": selected if optional_qs else [],
+                            "skipped_questions": skipped,
+                        },
+                    )
+                    if result.get("error"):
+                        st.error(result["error"])
+                    else:
+                        st.session_state.status = result["status"]
+                        st.session_state.run_context = result.get("run_context", {})
+                        st.session_state.pipeline_data = result.get("pipeline_data", {})
+                        st.rerun()
+
+    elif status == "completed" or status == "meeting_ready":
         st.success(f"{L['briefing_ready']} — {company_label}")
     elif status == "completed_partial":
         st.warning(f"{L['briefing_partial']} — {company_label}")
+    elif status == "blocked_not_meeting_ready":
+        st.error(f"{L.get('briefing_blocked', 'Briefing blocked — not meeting ready')} ({company_label})")
     elif status == "completed_but_not_usable":
         st.error(f"{L['briefing_unusable']} ({company_label})")
     elif st.session_state.loaded_notice == st.session_state.run_id:

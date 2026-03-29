@@ -93,6 +93,108 @@ def _extract_pipeline_data(messages: list[dict[str, Any]]) -> dict[str, Any]:
     return validate_pipeline_data(pipeline_data)
 
 
+def resume_pipeline(
+    *,
+    run_id: str,
+    user_selections: dict[str, Any],
+    on_message: MessageHook = None,
+) -> dict[str, Any]:
+    """Resume a paused run after user depth selections.
+
+    Loads the persisted run state, applies user decisions to the resolution
+    plan and answer matrix, then re-evaluates the finalization gate.
+    """
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.exists():
+        raise FileNotFoundError(f"Run '{run_id}' not found.")
+
+    run_context = RunContext.from_snapshot(
+        json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
+    )
+    pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
+
+    if run_context.status != SELECTION_REQUIRED_RUN_STATUS:
+        return {
+            "run_id": run_id,
+            "status": run_context.status,
+            "error": f"Run is not paused for user selection (status={run_context.status}).",
+        }
+
+    # Apply user depth selections to answer matrix
+    selected_questions = list(user_selections.get("selected_questions", []))
+    skipped_questions = list(user_selections.get("skipped_questions", []))
+
+    for qid in selected_questions:
+        entry = run_context.answer_matrix.get(qid)
+        if entry:
+            entry["status"] = "partially_answered"
+            entry["notes"] = "User selected for optional depth."
+
+    for qid in skipped_questions:
+        entry = run_context.answer_matrix.get(qid)
+        if entry:
+            entry["status"] = "blocked"
+            entry["notes"] = "User skipped optional depth."
+
+    # Persist user selections in resolution state
+    run_context.resolution_state["user_selections"] = {
+        "selected_questions": selected_questions,
+        "skipped_questions": skipped_questions,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    dashboard = run_context.resolution_state.get("dashboard_state", {})
+    dashboard["pending_user_selection"] = False
+    dashboard["resume_entrypoint"] = "supervisor_finalization_entrypoint"
+    run_context.resolution_state["dashboard_state"] = dashboard
+    run_context.resolution_state["resume_entrypoint"] = "supervisor_finalization_entrypoint"
+
+    # Re-evaluate finalization gate — user resolved the selection requirement,
+    # so override the bucket to prevent re-triggering needs_user_selection.
+    first_round_resolution = dict(run_context.resolution_state.get("first_round_resolution", {}))
+    first_round_resolution["bucket"] = "NOT_MEETING_CRITICAL"  # user decision applied
+    run_context.resolution_state["first_round_resolution"] = first_round_resolution
+    readiness = pipeline_data.get("research_readiness", {})
+    status = determine_final_status(
+        readiness_usable=bool(readiness.get("usable")),
+        first_round_resolution=first_round_resolution,
+        remaining_public_gaps=[],  # user resolved the selection requirement
+    )
+    run_context.status = status
+
+    # Re-export
+    run_context_snapshot = run_context.snapshot()
+    export_run(
+        run_dir=run_dir,
+        run_id=run_id,
+        company_name=run_context.intake.get("company_name", ""),
+        web_domain=run_context.intake.get("web_domain", ""),
+        status=status,
+        messages=[],
+        pipeline_data=pipeline_data,
+        run_context=run_context_snapshot,
+    )
+
+    if on_message:
+        on_message({
+            "agent": "Supervisor",
+            "content": json.dumps({
+                "status": "resumed_after_user_selection",
+                "final_status": status,
+                "selected_questions": selected_questions,
+                "skipped_questions": skipped_questions,
+            }, ensure_ascii=False),
+            "type": "agent_message",
+        })
+
+    return {
+        "run_id": run_id,
+        "status": status,
+        "run_context": run_context_snapshot,
+        "pipeline_data": pipeline_data,
+        "error": None,
+    }
+
+
 def run_pipeline(
     *,
     company_name: str,
