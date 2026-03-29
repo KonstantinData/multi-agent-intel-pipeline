@@ -1,4 +1,11 @@
-"""Evidence-driven research worker with optional LLM synthesis."""
+"""Evidence-driven research worker with optional LLM synthesis.
+
+The worker is a **question-coverage contributor**: its primary outputs are
+structured evidence packets (one per collected fact) and open-question gaps,
+not narrative section reports.  The payload_updates feed the section schema
+for backward compatibility, but evidence_packages are the authoritative
+runtime artifacts consumed by the resolution controller and answer matrix.
+"""
 from __future__ import annotations
 
 import json

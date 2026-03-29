@@ -19,6 +19,26 @@ def test_resolution_controller_auto_close_required_for_public_gaps():
     assert result["meeting_critical_public_gaps"] == ["Public revenue signal?"]
 
 
+def test_resolution_controller_uses_typed_gap_candidates_as_primary():
+    controller = ResolutionController()
+    result = controller.classify(
+        sections={"company_profile": {}},
+        department_packages={
+            "CompanyDepartment": {
+                "admission": {"decision": "accepted"},
+                "raw_package": {
+                    "open_questions": [],
+                    "gap_candidates": [{"question": "Revenue trend unclear", "severity": "high"}],
+                },
+            },
+        },
+        answer_matrix={},
+        task_statuses={},
+    )
+    assert result["bucket"] == "AUTO_CLOSE_REQUIRED"
+    assert "Revenue trend unclear" in result["meeting_critical_public_gaps"]
+
+
 def test_resolution_controller_blocking_failure_on_rejected_department():
     controller = ResolutionController()
     result = controller.classify(

@@ -1,5 +1,10 @@
 """Department Lead / Analyst — contract-driven, execution-autonomous AG2 GroupChat.
 
+Departments are **question-coverage contributors**, not final-briefing owners.
+Their primary outputs are evidence packets, gap candidates, and answer-matrix
+updates for mapped meeting questions.  Narrative summaries exist for human
+readability but do not drive closure or readiness logic.
+
 CHG-03 / CHG-05 / CHG-06 / CHG-07 — Runtime refactor.
 
 Architecture changes from previous version:

@@ -1,6 +1,10 @@
 """Run-level resolution controller after the first department round.
 
-The controller assigns exactly one bucket:
+The controller classifies the run state into exactly one resolution bucket
+based on **typed runtime artifacts** (gap_candidates, answer_matrix) as
+primary sources, with legacy open_questions as a fallback.
+
+Buckets:
 - AUTO_CLOSE_REQUIRED
 - USER_DECISION_REQUIRED
 - CUSTOMER_CONFIRMATION_REQUIRED
@@ -28,6 +32,19 @@ def _resolve_raw_package(package_envelope: dict[str, Any]) -> dict[str, Any]:
     return package_envelope
 
 
+def _extract_typed_gaps(package_envelope: dict[str, Any]) -> list[str]:
+    """Extract gap questions from typed gap_candidates (primary) or legacy open_questions (fallback)."""
+    raw = _resolve_raw_package(package_envelope)
+    typed_gaps = [
+        str(g.get("question", "")).strip()
+        for g in raw.get("gap_candidates", [])
+        if isinstance(g, dict) and str(g.get("question", "")).strip()
+    ]
+    if typed_gaps:
+        return typed_gaps
+    return [str(q).strip() for q in raw.get("open_questions", []) if str(q).strip()]
+
+
 class ResolutionController:
     """Classify first-round run state into exactly one resolution bucket."""
 
@@ -50,10 +67,9 @@ class ResolutionController:
 
         unresolved_by_department: dict[str, list[str]] = {}
         for dept, envelope in department_packages.items():
-            raw = _resolve_raw_package(envelope)
-            open_questions = [str(item).strip() for item in raw.get("open_questions", []) if str(item).strip()]
-            if open_questions:
-                unresolved_by_department[dept] = open_questions
+            gaps = _extract_typed_gaps(envelope)
+            if gaps:
+                unresolved_by_department[dept] = gaps
 
         meeting_critical_public_gaps = [
             q
