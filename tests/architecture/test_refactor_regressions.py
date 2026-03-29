@@ -144,3 +144,42 @@ def test_golden_quality_reference_files_are_valid_json():
 
     assert answer_matrix_ref["q_company_fundamentals"] == "answered"
     assert resolution_ref["auto_close_required"] == "AUTO_CLOSE_REQUIRED"
+
+
+def test_golden_quality_rubric_and_excerpt_exist():
+    from pathlib import Path
+
+    ref_dir = Path("tests/golden/quality_reference")
+    excerpt = ref_dir / "deep_research_quality_excerpt.md"
+    rubric = ref_dir / "deep_research_quality_rubric.md"
+    assert excerpt.exists(), "deep_research_quality_excerpt.md missing"
+    assert rubric.exists(), "deep_research_quality_rubric.md missing"
+    assert len(excerpt.read_text(encoding="utf-8")) > 200, "excerpt is too short to be meaningful"
+    assert len(rubric.read_text(encoding="utf-8")) > 200, "rubric is too short to be meaningful"
+
+
+def test_baseline_run_export_contract_stability():
+    """Detect uncontrolled top-level export key drift in golden baseline."""
+    baseline_meta = json.loads(
+        open("tests/golden/runs/baseline_run_20260329/run_meta.json", encoding="utf-8").read()
+    )
+    baseline_context = json.loads(
+        open("tests/golden/runs/baseline_run_20260329/run_context.json", encoding="utf-8").read()
+    )
+    baseline_pipeline = json.loads(
+        open("tests/golden/runs/baseline_run_20260329/pipeline_data.json", encoding="utf-8").read()
+    )
+
+    # run_meta must have these keys
+    assert "run_id" in baseline_meta
+    assert "status" in baseline_meta
+
+    # run_context must have answer_matrix and resolution_state
+    assert "answer_matrix" in baseline_context
+    assert "resolution_state" in baseline_context
+
+    # pipeline_data must have all core sections
+    for section in ("company_profile", "industry_analysis", "market_network",
+                    "contact_intelligence", "quality_review", "synthesis",
+                    "research_readiness"):
+        assert section in baseline_pipeline, f"pipeline_data missing section: {section}"
