@@ -1,0 +1,196 @@
+{
+  "run_id": "20260329T200529Z",
+  "timestamp": "2026-03-29T20:11:19.288601+00:00",
+  "company_name": "ZF Friedrichshafen",
+  "web_domain": "zf.com",
+  "status": "meeting_ready",
+  "usage": {
+    "total": {
+      "total_cost": 0.0176872,
+      "prompt_tokens": 19910,
+      "completion_tokens": 6077,
+      "total_tokens": 25987,
+      "models": {
+        "gpt-4.1-mini": {
+          "cost": 0.0176872,
+          "prompt_tokens": 19910,
+          "completion_tokens": 6077,
+          "total_tokens": 25987
+        }
+      }
+    },
+    "actual": {
+      "total_cost": 0.0176872,
+      "prompt_tokens": 19910,
+      "completion_tokens": 6077,
+      "total_tokens": 25987,
+      "models": {
+        "gpt-4.1-mini": {
+          "cost": 0.0176872,
+          "prompt_tokens": 19910,
+          "completion_tokens": 6077,
+          "total_tokens": 25987
+        }
+      }
+    },
+    "agents": {
+      "companyresearcher": {
+        "actual": {
+          "total_cost": 0.0053308,
+          "prompt_tokens": 6931,
+          "completion_tokens": 1599,
+          "total_tokens": 8530,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0053308,
+              "prompt_tokens": 6931,
+              "completion_tokens": 1599,
+              "total_tokens": 8530
+            }
+          }
+        },
+        "total": {
+          "total_cost": 0.0053308,
+          "prompt_tokens": 6931,
+          "completion_tokens": 1599,
+          "total_tokens": 8530,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0053308,
+              "prompt_tokens": 6931,
+              "completion_tokens": 1599,
+              "total_tokens": 8530
+            }
+          }
+        }
+      },
+      "marketresearcher": {
+        "actual": {
+          "total_cost": 0.0057676,
+          "prompt_tokens": 6519,
+          "completion_tokens": 1975,
+          "total_tokens": 8494,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0057676,
+              "prompt_tokens": 6519,
+              "completion_tokens": 1975,
+              "total_tokens": 8494
+            }
+          }
+        },
+        "total": {
+          "total_cost": 0.0057676,
+          "prompt_tokens": 6519,
+          "completion_tokens": 1975,
+          "total_tokens": 8494,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0057676,
+              "prompt_tokens": 6519,
+              "completion_tokens": 1975,
+              "total_tokens": 8494
+            }
+          }
+        }
+      },
+      "buyerresearcher": {
+        "actual": {
+          "total_cost": 0.0042644,
+          "prompt_tokens": 4597,
+          "completion_tokens": 1516,
+          "total_tokens": 6113,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0042644,
+              "prompt_tokens": 4597,
+              "completion_tokens": 1516,
+              "total_tokens": 6113
+            }
+          }
+        },
+        "total": {
+          "total_cost": 0.0042644,
+          "prompt_tokens": 4597,
+          "completion_tokens": 1516,
+          "total_tokens": 6113,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0042644,
+              "prompt_tokens": 4597,
+              "completion_tokens": 1516,
+              "total_tokens": 6113
+            }
+          }
+        }
+      },
+      "contactresearcher": {
+        "actual": {
+          "total_cost": 0.0023244,
+          "prompt_tokens": 1863,
+          "completion_tokens": 987,
+          "total_tokens": 2850,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0023244,
+              "prompt_tokens": 1863,
+              "completion_tokens": 987,
+              "total_tokens": 2850
+            }
+          }
+        },
+        "total": {
+          "total_cost": 0.0023244,
+          "prompt_tokens": 1863,
+          "completion_tokens": 987,
+          "total_tokens": 2850,
+          "models": {
+            "gpt-4.1-mini": {
+              "cost": 0.0023244,
+              "prompt_tokens": 1863,
+              "completion_tokens": 987,
+              "total_tokens": 2850
+            }
+          }
+        }
+      }
+    }
+  },
+  "budget": {
+    "total_pipeline_events": 74,
+    "tool_calls_used": 47,
+    "max_tool_calls": 140,
+    "max_department_attempts": 3,
+    "resume_entrypoint": "supervisor_finalization_entrypoint",
+    "llm_calls_used": 9,
+    "search_calls_used": 26,
+    "page_fetches_used": 12,
+    "estimated_cost_usd": 0.0176872,
+    "elapsed_seconds": 350.094,
+    "department_timings": {
+      "CompanyDepartment": 78.556,
+      "MarketDepartment": 95.903,
+      "BuyerDepartment": 125.661,
+      "ContactDepartment": 52.162
+    }
+  },
+  "error": null,
+  "unresolved": {
+    "customer_confirmation_items": [
+      "Who holds the direct procurement head or supply chain director roles at BMW Group currently beyond the known executives?",
+      "Are there additional contacts at Robert Bosch GmbH specifically responsible for asset management or operations beyond the senior supply chain leadership?",
+      "Is there a Chief Operations Officer or VP Operations role at BMW Group or Robert Bosch GmbH relevant to ZF Friedrichshafen AG's target buyer functions?"
+    ],
+    "optional_depth_not_selected": [
+      "q_liquisto_opportunity_assessment",
+      "q_negotiation_relevance"
+    ]
+  },
+  "meeting_readiness": {
+    "run_status": "meeting_ready",
+    "meeting_ready": true,
+    "blocked_reasons": [],
+    "unresolved_gaps": [],
+    "confidence": "medium"
+  }
+}
