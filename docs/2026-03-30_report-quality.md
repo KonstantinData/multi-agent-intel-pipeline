@@ -107,9 +107,9 @@ einer führt.
 
 | Problem | Detail |
 |---------|--------|
-| **Zu wenige Queries pro Task** | Worker führt 4 Queries à 3 Ergebnisse aus. Deep Research durchsucht 30+ Quellen. |
+| **Zu wenige Queries pro Task** | Vor dem Fix lag das Default-Limit effektiv bei nur 4 Queries und maximal 5 eindeutigen Ergebnissen insgesamt. Deep Research durchsucht 30+ Quellen. |
 | **Keine Geschäftsbericht-Extraktion** | Kein Query zielt auf "annual report", "Geschäftsbericht", "Konzernanhang", "Vorräte", "inventory". |
-| **Keine PDF-/Dokument-Analyse** | Der Page-Fetcher holt nur HTML-Seiten. Geschäftsberichte sind PDFs. |
+| **Keine PDF-/Dokument-Analyse** | Vor dem Fix holte der Page-Fetcher nur HTML-Seiten und nur die ersten 2 Result-URLs. Geschäftsberichte sind PDFs. |
 | **Kein gezieltes Suchen nach Events** | Keine Queries für M&A, Carve-outs, JVs, regulatorische Meldungen. |
 | **Search-Cache teilt Ergebnisse** | Mehrere Tasks teilen denselben Search-Cache → spätere Tasks bekommen keine neuen Ergebnisse. |
 
@@ -131,6 +131,8 @@ einer führt.
 | **Kein "Target Company Contacts" Task** | Contact-Department sucht nur Buyer-Kontakte, nicht Zielunternehmen-Kontakte. |
 | **Kein "Transaction/Event Intelligence" Task** | Kein Task für M&A, Carve-outs, JVs, regulatorische Events. |
 | **Kein PDF-Fetcher** | Geschäftsberichte, Konzernanhänge, Investor-Presentations sind PDFs — der Fetcher kann sie nicht lesen. |
+| **Kontextfluss zu eng** | Departments bekamen nur ihre aktuelle Section, nicht den bisher aufgebauten admitted Kontext anderer Sections. |
+| **Peer-/Buyer-Vermischung im Contact-Input** | Contact-Queries wurden aus `peer_competitors` und `downstream_buyers` gespeist; damit wurden Wettbewerber fälschlich als Buyer-Kandidaten behandelt. |
 | **Keine iterative Vertiefung** | Deep Research vertieft bei starken Signalen. Der Run macht einen Durchlauf pro Task. |
 | **Synthesis ohne Bilanz-Grounding** | Opportunity Assessment hat keinen Zugang zu Vorrats-/Finanzdaten. |
 
@@ -141,6 +143,16 @@ einer führt.
 | **Keine Confidence-Differenzierung pro Claim** | Deep Research trennt "Fakt: Hoch / Inferenz: Mittel". Der Run hat nur packet-level Confidence. |
 | **Keine Fakt-vs-Inferenz-Trennung** | Alle Facts werden gleich behandelt — keine Markierung von Inferenzen. |
 | **Keine Quellenqualität-Bewertung** | Wikipedia und Pressemitteilungen werden gleich gewichtet. |
+
+### U5. Zusätzliche repo-validierte Erkenntnisse aus der Codeprüfung
+
+| Befund | Detail |
+|--------|--------|
+| **Result-Cap war härter als im Report angenommen** | Nicht 12 Resultate pro Task, sondern im Default nur 5 eindeutige Treffer insgesamt. |
+| **Page-Fetch war doppelt limitiert** | Selbst wenn die Suche mehr fand, wurden nur 2 Seiten weiterverarbeitet. |
+| **Contact-Department hatte keinen Zielunternehmen-Pfad** | Es gab keinen eigenen Task und kein eigenes Schema für Kontakte beim Zielunternehmen. |
+| **Synthesis war strukturell auf "medium/unclear" ausgerichtet** | Ohne Finanz-Grounding entstanden Pfade eher als unpriorisierte Service-Relevanz statt als evidenzbasierte Rangfolge. |
+| **EvidencePacket war für Claim-Level-Qualität zu flach** | Es fehlten explizite Felder für `claim_type` und `source_quality`. |
 
 ---
 
@@ -162,6 +174,7 @@ einer führt.
 | Geschäftsbericht-Queries hinzufügen | `"ZF Friedrichshafen" Geschäftsbericht 2025 Vorräte inventory` |
 | Event-Queries hinzufügen | `"ZF Friedrichshafen" M&A acquisition divestiture carve-out 2024 2025` |
 | Zielunternehmen-Kontakt-Queries | `"ZF Friedrichshafen" Vorstand CPO procurement officer site:linkedin.com` |
+| Mehr Seiten nach Search weiterverarbeiten | Nicht nur 2 HTML-Seiten, sondern auch PDFs/Dokumente berücksichtigen |
 
 ### P3 — Prompt-Qualität (Worker LLM)
 
@@ -197,7 +210,18 @@ einer führt.
 
 ---
 
-## 5. Erwartete Wirkung
+## 5. Umsetzungs-Checkliste im Repo
+
+- [x] Neue Tasks ergänzt: `financial_deep_dive`, `transaction_event_intelligence`, `target_company_contacts`
+- [x] Section-/Task-Schemas ergänzt für Finanzdaten, Event-Intelligence und Zielunternehmen-Kontakte
+- [x] Worker-Queries und LLM-Prompts für Financial-, Event- und Target-Contact-Research vertieft
+- [x] Query-/Fetch-Tiefe erhöht und PDF-Fetching mit Text-Extraktion ergänzt
+- [x] Department-Kontextfluss erweitert und Peer-/Buyer-Vermischung im Contact-Input behoben
+- [x] `EvidencePacket` um `claim_type` und `source_quality` erweitert
+- [x] Synthesis-Grounding verbessert: Finanzsignale beeinflussen Pfad-Ranking und Opportunity-Summary
+- [x] Architektur-/Smoke-Tests auf den neuen Vertragsstand angepasst und ausgeführt
+
+## 6. Erwartete Wirkung
 
 Wenn P1–P6 umgesetzt sind, sollte ein Run für ZF Friedrichshafen liefern:
 

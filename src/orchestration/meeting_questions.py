@@ -18,6 +18,10 @@ MEETING_QUESTION_REGISTRY: dict[str, dict[str, Any]] = {
         "question": "What public signals show economic or commercial pressure, growth, contraction, or strategic change?",
         "focus_area": "company_profile",
     },
+    "q_financial_deep_dive": {
+        "question": "Which balance-sheet, inventory, debt, and working-capital facts are supported by primary financial evidence?",
+        "focus_area": "company_profile",
+    },
     "q_market_situation": {
         "question": "How does the market currently evolve (demand, supply pressure, overcapacity, growth/decline) and why?",
         "focus_area": "industry_analysis",
@@ -28,6 +32,10 @@ MEETING_QUESTION_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "q_product_asset_scope": {
         "question": "Which products/assets/materials are in scope and most relevant for buyer or redeployment analysis?",
+        "focus_area": "company_profile",
+    },
+    "q_transaction_event_intelligence": {
+        "question": "Which strategic events, carve-outs, restructurings, or regulatory disclosures materially change the opportunity picture?",
         "focus_area": "company_profile",
     },
     "q_monetization_redeployment": {
@@ -54,19 +62,26 @@ MEETING_QUESTION_REGISTRY: dict[str, dict[str, Any]] = {
         "question": "Which target contacts are discoverable/qualified at prioritized buyer firms, and what outreach angles are plausible?",
         "focus_area": "contact_intelligence",
     },
+    "q_target_company_contacts": {
+        "question": "Which stakeholders at the target company itself are the best entry points for an inventory-to-cash discussion?",
+        "focus_area": "contact_intelligence",
+    },
 }
 
 
 TASK_TO_QUESTION_IDS: dict[str, tuple[str, ...]] = {
     "company_fundamentals": ("q_company_fundamentals",),
     "economic_commercial_situation": ("q_economic_commercial_situation",),
+    "financial_deep_dive": ("q_financial_deep_dive",),
     "market_situation": ("q_market_situation",),
     "peer_companies": ("q_peer_companies",),
     "product_asset_scope": ("q_product_asset_scope",),
+    "transaction_event_intelligence": ("q_transaction_event_intelligence",),
     "monetization_redeployment": ("q_monetization_redeployment",),
     "repurposing_circularity": ("q_repurposing_circularity",),
     "analytics_operational_improvement": ("q_analytics_operational_improvement",),
     "contact_discovery": ("q_contact_intelligence",),
+    "target_company_contacts": ("q_target_company_contacts",),
     "contact_qualification": ("q_contact_intelligence",),
     "liquisto_opportunity_assessment": ("q_liquisto_opportunity_assessment",),
     "negotiation_relevance": ("q_negotiation_relevance",),
@@ -106,4 +121,3 @@ def matrix_status_for_task_status(task_status: str) -> str:
     if task_status == "skipped":
         return "blocked"
     return "pending"
-

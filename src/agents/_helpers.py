@@ -214,6 +214,23 @@ def sanitize_for_section(section: str, payload: dict[str, Any]) -> dict[str, Any
             economic["recent_events"] = coerce_string_list(economic.get("recent_events", []))
             economic["inventory_signals"] = coerce_string_list(economic.get("inventory_signals", []))
             cleaned["economic_situation"] = economic
+        financial = cleaned.get("financial_deep_dive", {})
+        if isinstance(financial, dict):
+            for key in ("latest_fiscal_year", "assessment"):
+                if key in financial:
+                    financial[key] = coerce_to_string(financial[key])
+            for key in ("key_financials", "inventory_positions", "inventory_risks", "balance_sheet_signals"):
+                financial[key] = coerce_string_list(financial.get(key, []))
+            financial["sources"] = coerce_sources(financial.get("sources", []))
+            cleaned["financial_deep_dive"] = financial
+        events = cleaned.get("transaction_event_intelligence", {})
+        if isinstance(events, dict):
+            if "assessment" in events:
+                events["assessment"] = coerce_to_string(events["assessment"])
+            for key in ("strategic_events", "carve_out_signals", "regulatory_signals"):
+                events[key] = coerce_string_list(events.get(key, []))
+            events["sources"] = coerce_sources(events.get("sources", []))
+            cleaned["transaction_event_intelligence"] = events
     elif section == "industry_analysis":
         for key in ("key_trends", "overcapacity_signals", "repurposing_signals", "analytics_signals"):
             cleaned[key] = coerce_string_list(cleaned.get(key, []))
@@ -232,8 +249,14 @@ def sanitize_for_section(section: str, payload: dict[str, Any]) -> dict[str, Any
     elif section == "contact_intelligence":
         cleaned["contacts"] = coerce_contact_records(cleaned.get("contacts", []))
         cleaned["prioritized_contacts"] = coerce_contact_records(cleaned.get("prioritized_contacts", []))
+        cleaned["target_company_contacts"] = coerce_contact_records(cleaned.get("target_company_contacts", []))
+        cleaned["target_company_prioritized_contacts"] = coerce_contact_records(
+            cleaned.get("target_company_prioritized_contacts", [])
+        )
         cleaned["open_questions"] = coerce_string_list(cleaned.get("open_questions", []))
         cleaned["sources"] = coerce_sources(cleaned.get("sources", []))
+        if "target_company_summary" in cleaned:
+            cleaned["target_company_summary"] = coerce_to_string(cleaned.get("target_company_summary"))
     return cleaned
 
 
@@ -296,6 +319,19 @@ def build_memory_context(
                 {k: v for k, v in c.items() if v != "n/v"}
                 for c in contacts_section.get("contacts", [])[:10]
             ]
+            ctx["discovered_target_contacts"] = [
+                {k: v for k, v in c.items() if v != "n/v"}
+                for c in contacts_section.get("target_company_contacts", [])[:10]
+            ]
+
+    if task_key == "target_company_contacts":
+        company = current_sections.get("company_profile", {})
+        if company:
+            ctx["known_key_people"] = company.get("key_people", [])[:10]
+            ctx["known_financial_assessment"] = company.get("financial_deep_dive", {}).get("assessment", "n/v")
+            ctx["known_transaction_events"] = company.get(
+                "transaction_event_intelligence", {}
+            ).get("strategic_events", [])[:5]
 
     if task_key == "market_situation":
         industry = current_sections.get("industry_analysis", {})

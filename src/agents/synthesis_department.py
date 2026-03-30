@@ -293,6 +293,7 @@ class SynthesisDepartmentAgent:
             ctx_summary = {
                 "service_relevance": synthesis_context.get("liquisto_service_relevance", []),
                 "recommended_paths": synthesis_context.get("recommended_engagement_paths", []),
+                "opportunity_summary": synthesis_context.get("opportunity_assessment_summary", "n/v"),
                 "key_risks": synthesis_context.get("key_risks", []),
                 "buyer_market_summary": synthesis_context.get("buyer_market_summary", "n/v"),
             }

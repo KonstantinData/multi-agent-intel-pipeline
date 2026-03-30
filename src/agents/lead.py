@@ -169,8 +169,9 @@ _DEPARTMENT_PREFIX = {
 _VISUAL_FOCUS = {
     "CompanyDepartment": [
         "Verified company identity and visible business model",
+        "Primary-source financial and working-capital facts",
         "Made vs distributed vs held-in-stock classification",
-        "Economic pressure or inventory stress signals",
+        "Economic pressure, inventory stress, and strategic event signals",
     ],
     "MarketDepartment": [
         "Demand and supply pressure summary",
@@ -183,7 +184,7 @@ _VISUAL_FOCUS = {
         "Redeployment and aftermarket fit",
     ],
     "ContactDepartment": [
-        "Decision-maker map at prioritized buyer firms",
+        "Decision-maker map at the target company and prioritized buyer firms",
         "Seniority and function of identified contacts",
         "Outreach angles per contact",
     ],
@@ -199,8 +200,9 @@ _CLASSIFICATION_FRAME = {
 _INVESTIGATION_FOCUS = {
     "CompanyDepartment": [
         "Classify the company as manufacturer, distributor, or mixed model",
+        "Extract primary-source balance-sheet, inventory, and working-capital facts",
         "Identify visible goods, materials, spare parts, and inventory positions",
-        "Assess economic pressure and commercial situation signals",
+        "Assess economic pressure, commercial situation signals, and strategic events",
     ],
     "MarketDepartment": [
         "Define market hypotheses and assess demand / supply pressure",
@@ -213,6 +215,7 @@ _INVESTIGATION_FOCUS = {
         "Assess monetization and redeployment options",
     ],
     "ContactDepartment": [
+        "Identify publicly visible decision-makers at the target company",
         "Identify publicly visible decision-makers at prioritized buyer firms",
         "Classify contacts by function (procurement, operations, asset management) and seniority",
         "Derive a concrete outreach angle per contact based on Liquisto's business model",
@@ -224,6 +227,11 @@ _TASK_GUIDANCE_TEMPLATES: dict[str, str] = {
         "Search for publicly visible decision-makers at buyer firms relevant to {company}. "
         "Focus on: Head of Procurement, Head of Asset Management, COO, VP Operations, "
         "Supply Chain Director. Use LinkedIn, company websites, press releases."
+    ),
+    "target_company_contacts": (
+        "Search for publicly visible leaders at {company} itself. Focus on CEO/CFO, procurement, "
+        "operations, aftermarket, divisional leads, and roles tied to inventory, working capital, "
+        "restructuring, or portfolio changes."
     ),
     "contact_qualification": (
         "For each identified contact at buyer firms for {company}, assess: "
@@ -239,9 +247,18 @@ _TASK_GUIDANCE_TEMPLATES: dict[str, str] = {
         "Surface economic pressure signals for {company}: revenue trends, inventory stress, "
         "restructuring signals. Focus on public-web evidence."
     ),
+    "financial_deep_dive": (
+        "Extract primary-source financial facts for {company}: latest annual-report figures, inventory positions, "
+        "write-downs, working capital, debt, and one-off effects. Prefer annual reports, investor presentations, "
+        "and audited statements."
+    ),
     "product_asset_scope": (
         "Classify the visible product and asset scope: made vs distributed vs held-in-stock. "
         "Keywords to anchor on: {keywords}. Identify which are commercially movable."
+    ),
+    "transaction_event_intelligence": (
+        "Identify strategic events for {company}: divestitures, carve-outs, JVs, restructurings, program terminations, "
+        "and regulatory/accounting disclosures that could change inventory urgency or meeting angle."
     ),
     "market_situation": (
         "Assess demand/supply dynamics for {industry}. Surface key trends, capacity signals, "
@@ -356,6 +373,7 @@ class DepartmentLeadAgent:
         brief: SupervisorBrief,
         assignments: list[Assignment],
         current_section: dict[str, Any] | None,
+        current_sections: dict[str, Any] | None = None,
         memory_store=None,
         role_memory: dict[str, list[dict[str, Any]]] | None = None,
         on_message: MessageHook = None,
@@ -530,7 +548,10 @@ class DepartmentLeadAgent:
                     task_key=task_key,
                     target_section=assignment.target_section,
                     objective=assignment.objective,
-                    current_sections={assignment.target_section: run_state.current_payload},
+                    current_sections={
+                        **(current_sections or {}),
+                        assignment.target_section: run_state.current_payload,
+                    },
                     query_overrides=run_state.query_overrides.get(task_key),
                     allowed_tools=list(assignment.allowed_tools),
                     model_name=assignment.model_name,

@@ -185,10 +185,16 @@ _PHASE_CONFIG = {
 }
 
 _DEPARTMENT_TASK_OWNERSHIP = {
-    "CompanyDepartment": {"company_fundamentals", "economic_commercial_situation", "product_asset_scope"},
+    "CompanyDepartment": {
+        "company_fundamentals",
+        "economic_commercial_situation",
+        "financial_deep_dive",
+        "product_asset_scope",
+        "transaction_event_intelligence",
+    },
     "MarketDepartment": {"market_situation", "repurposing_circularity", "analytics_operational_improvement"},
     "BuyerDepartment": {"peer_companies", "monetization_redeployment"},
-    "ContactDepartment": {"contact_discovery", "contact_qualification"},
+    "ContactDepartment": {"contact_discovery", "target_company_contacts", "contact_qualification"},
     "SynthesisDepartment": {"liquisto_opportunity_assessment", "negotiation_relevance"},
 }
 

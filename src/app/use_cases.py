@@ -94,6 +94,22 @@ STANDARD_TASK_BACKLOG: list[dict[str, Any]] = [
         ],
     },
     {
+        "task_key": "financial_deep_dive",
+        "label": "Financial deep dive",
+        "assignee": "CompanyDepartment",
+        "target_section": "company_profile",
+        "objective_template": "Extract balance-sheet, inventory, debt, and working-capital signals for {company_name} from the latest annual reports, investor documents, and primary financial disclosures.",
+        "depends_on": ["company_fundamentals"],
+        "run_condition": None,
+        "output_schema_key": "FinancialDeepDiveResult",
+        "validation_rules": [
+            {"check": "non_placeholder", "field": "financial_deep_dive.assessment", "class": "core", "message": "Financial deep-dive assessment is missing"},
+            {"check": "min_items", "field": "financial_deep_dive.key_financials", "value": 2, "class": "core", "message": "Too few financial datapoints extracted"},
+            {"check": "min_items", "field": "financial_deep_dive.inventory_positions", "value": 1, "class": "supporting", "message": "No inventory positions extracted"},
+            {"check": "min_items", "field": "financial_deep_dive.balance_sheet_signals", "value": 1, "class": "supporting", "message": "No balance-sheet signals extracted"},
+        ],
+    },
+    {
         "task_key": "market_situation",
         "label": "Market situation",
         "assignee": "MarketDepartment",
@@ -140,6 +156,20 @@ STANDARD_TASK_BACKLOG: list[dict[str, Any]] = [
         "validation_rules": [
             {"check": "min_items", "field": "product_asset_scope", "value": 2, "class": "core", "message": "Fewer than 2 product or asset scope items identified"},
             {"check": "non_placeholder", "field": "goods_classification", "class": "core", "message": "Goods classification is missing"},
+        ],
+    },
+    {
+        "task_key": "transaction_event_intelligence",
+        "label": "Transaction and event intelligence",
+        "assignee": "CompanyDepartment",
+        "target_section": "company_profile",
+        "objective_template": "Identify strategic events for {company_name}, including M&A, carve-outs, joint ventures, program terminations, restructurings, and regulatory disclosures that may affect inventory or commercial urgency.",
+        "depends_on": ["company_fundamentals"],
+        "run_condition": None,
+        "output_schema_key": "TransactionEventIntelligenceResult",
+        "validation_rules": [
+            {"check": "non_placeholder", "field": "transaction_event_intelligence.assessment", "class": "core", "message": "Transaction/event assessment is missing"},
+            {"check": "min_items", "field": "transaction_event_intelligence.strategic_events", "value": 1, "class": "supporting", "message": "No strategic events captured"},
         ],
     },
     {
@@ -199,6 +229,21 @@ STANDARD_TASK_BACKLOG: list[dict[str, Any]] = [
             {"check": "min_items", "field": "contacts", "value": 3, "class": "core", "message": "Fewer than 3 contacts identified at buyer firms"},
             {"check": "non_placeholder", "field": "coverage_quality", "class": "core", "message": "Coverage quality not assessed"},
             {"check": "nested_field_non_placeholder", "field": "contacts", "sub_field": "firma", "value": 2, "class": "core", "message": "Fewer than 2 contacts have a verified company name"},
+        ],
+    },
+    {
+        "task_key": "target_company_contacts",
+        "label": "Target-company contacts",
+        "assignee": "ContactDepartment",
+        "target_section": "contact_intelligence",
+        "objective_template": "Identify publicly visible decision-makers and likely meeting stakeholders at {company_name} itself. Focus on board, finance, procurement, operations, aftermarket, and divisional leadership roles relevant to inventory, working capital, and restructuring topics.",
+        "depends_on": ["company_fundamentals"],
+        "run_condition": None,
+        "output_schema_key": "TargetCompanyContactsResult",
+        "validation_rules": [
+            {"check": "min_items", "field": "target_company_contacts", "value": 2, "class": "core", "message": "Too few target-company contacts identified"},
+            {"check": "non_placeholder", "field": "target_company_summary", "class": "core", "message": "No target-company contact summary provided"},
+            {"check": "nested_field_non_placeholder", "field": "target_company_contacts", "sub_field": "rolle_titel", "value": 1, "class": "supporting", "message": "No target-company contact has a role title"},
         ],
     },
     {

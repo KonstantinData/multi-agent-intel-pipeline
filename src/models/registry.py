@@ -24,10 +24,12 @@ from src.models.schemas import (
     ContactIntelligenceSection,
     ContactPerson,
     EconomicSituation,
+    FinancialDeepDive,
     IndustryAnalysis,
     MarketNetwork,
     MarketTier,
     SourceRecord,
+    TransactionEventIntelligence,
 )
 
 
@@ -59,6 +61,16 @@ class ProductAssetScope(BaseModel):
 
 # EconomicSituation is already defined in schemas.py — reused directly.
 # output_schema_key "EconomicSituation" resolves to that class.
+
+
+class FinancialDeepDiveResult(BaseModel):
+    """Balance-sheet and working-capital extraction from primary financial sources."""
+    financial_deep_dive: FinancialDeepDive = Field(default_factory=FinancialDeepDive)
+
+
+class TransactionEventIntelligenceResult(BaseModel):
+    """Strategic events such as M&A, carve-outs, JVs, and regulatory disclosures."""
+    transaction_event_intelligence: TransactionEventIntelligence = Field(default_factory=TransactionEventIntelligence)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +148,15 @@ class ContactQualificationResult(BaseModel):
     sources: list[SourceRecord] = Field(default_factory=list)
 
 
+class TargetCompanyContactsResult(BaseModel):
+    """Decision-makers at the target company itself."""
+    target_company_contacts: list[ContactPerson] = Field(default_factory=list)
+    target_company_prioritized_contacts: list[ContactPerson] = Field(default_factory=list)
+    target_company_summary: str = "n/v"
+    open_questions: list[str] = Field(default_factory=list)
+    sources: list[SourceRecord] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Synthesis department sub-schemas
 # ---------------------------------------------------------------------------
@@ -160,7 +181,9 @@ class NegotiationRelevance(BaseModel):
 SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "CompanyFundamentals": CompanyFundamentals,
     "EconomicSituation": EconomicSituation,
+    "FinancialDeepDiveResult": FinancialDeepDiveResult,
     "ProductAssetScope": ProductAssetScope,
+    "TransactionEventIntelligenceResult": TransactionEventIntelligenceResult,
     "MarketSituation": MarketSituation,
     "RepurposingCircularity": RepurposingCircularity,
     "AnalyticsSignals": AnalyticsSignals,
@@ -168,6 +191,7 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "MonetizationRedeployment": MonetizationRedeployment,
     "ContactDiscoveryResult": ContactDiscoveryResult,
     "ContactQualificationResult": ContactQualificationResult,
+    "TargetCompanyContactsResult": TargetCompanyContactsResult,
     "OpportunityAssessment": OpportunityAssessment,
     "NegotiationRelevance": NegotiationRelevance,
 }

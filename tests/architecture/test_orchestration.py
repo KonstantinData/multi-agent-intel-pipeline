@@ -122,7 +122,7 @@ class TestTaskBacklogContracts:
             assert not missing, f"Task '{task['task_key']}' is missing fields: {missing}"
 
     def test_all_tasks_have_12_entries(self):
-        assert len(STANDARD_TASK_BACKLOG) == 12
+        assert len(STANDARD_TASK_BACKLOG) == 15
 
     def test_output_schema_key_resolves_in_registry(self):
         for task in STANDARD_TASK_BACKLOG:
@@ -384,6 +384,34 @@ class TestSynthesisContext:
         )
         assert synthesis["recommended_engagement_paths"] == ["further_validation_required"]
         assert all(item["relevance"] == "unclear" for item in synthesis["liquisto_service_relevance"])
+
+    def test_financial_signals_rank_excess_inventory_first(self):
+        synthesis = build_synthesis_context(
+            company_profile={
+                "company_name": "Example GmbH",
+                "industry": "Mechanical Engineering",
+                "financial_deep_dive": {
+                    "inventory_positions": ["Inventories: EUR 5.0bn"],
+                    "inventory_risks": ["Inventory write-down: EUR 324m"],
+                    "balance_sheet_signals": ["Net debt: EUR 10.2bn"],
+                    "key_financials": ["Revenue 2025: EUR 38.8bn"],
+                },
+            },
+            industry_analysis={"analytics_signals": ["planning complexity"], "key_trends": []},
+            market_network={
+                "peer_competitors": {"companies": []},
+                "downstream_buyers": {"companies": [{"name": "Buyer1"}], "assessment": "active"},
+                "service_providers": {"companies": []},
+                "cross_industry_buyers": {"companies": []},
+                "monetization_paths": ["aftermarket resale"],
+                "redeployment_paths": [],
+            },
+            contact_intelligence={"target_company_contacts": [{"name": "Jane Doe"}]},
+            quality_review={"open_gaps": [], "evidence_health": "high"},
+            memory_snapshot={"sources": [], "next_actions": []},
+        )
+        assert synthesis["recommended_engagement_paths"][0] == "excess_inventory"
+        assert "inventory-to-cash" in synthesis["opportunity_assessment_summary"].lower()
 
 
 # ===========================================================================

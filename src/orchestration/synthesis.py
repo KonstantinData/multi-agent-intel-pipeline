@@ -124,6 +124,12 @@ def _service_relevance(
     redeployment = _positive_signals(market.get("redeployment_paths", []))
     analytics = _positive_signals(industry.get("analytics_signals", []))
     downstream_buyers = market.get("downstream_buyers", {}).get("companies", [])
+    financial = (company_profile or {}).get("financial_deep_dive", {})
+    event_intel = (company_profile or {}).get("transaction_event_intelligence", {})
+    inventory_positions = _positive_signals(financial.get("inventory_positions", []))
+    inventory_risks = _positive_signals(financial.get("inventory_risks", []))
+    balance_sheet_signals = _positive_signals(financial.get("balance_sheet_signals", []))
+    carve_out_signals = _positive_signals(event_intel.get("carve_out_signals", []))
 
     # Check economic_situation for restructuring / inventory pressure signals
     eco = (company_profile or {}).get("economic_situation", {})
@@ -136,44 +142,77 @@ def _service_relevance(
     ).lower()
     has_eco_pressure = any(kw in eco_text for kw in _ECO_PRESSURE_KEYWORDS)
 
-    items: list[dict[str, str]] = []
-    excess_positive = (monetization and downstream_buyers) or has_eco_pressure
-    items.append(
-        {
-            "service_area": "excess_inventory",
-            "relevance": "medium" if excess_positive else "unclear",
-            "reasoning": (
-                "Economic pressure signals (restructuring, layoffs, or inventory stress) indicate potential excess asset disposition needs."
-                if has_eco_pressure and not (monetization and downstream_buyers)
-                else "Indicative resale or buyer routes were identified with at least one buyer signal."
-                if monetization and downstream_buyers
-                else "No validated monetization route with buyer evidence is available yet."
-            ),
-        }
+    scored_items: list[tuple[int, dict[str, str]]] = []
+
+    excess_score = 0
+    if monetization and downstream_buyers:
+        excess_score += 2
+    if has_eco_pressure:
+        excess_score += 2
+    if inventory_positions:
+        excess_score += 3
+    if inventory_risks or balance_sheet_signals:
+        excess_score += 2
+    if carve_out_signals:
+        excess_score += 1
+    scored_items.append(
+        (
+            excess_score,
+            {
+                "service_area": "excess_inventory",
+                "relevance": "high" if excess_score >= 5 else "medium" if excess_score >= 2 else "unclear",
+                "reasoning": (
+                    "Primary-source inventory and balance-sheet signals support an inventory-to-cash angle."
+                    if inventory_positions or inventory_risks or balance_sheet_signals
+                    else "Economic pressure signals and buyer-path evidence indicate potential excess asset disposition needs."
+                    if (monetization and downstream_buyers) or has_eco_pressure
+                    else "No validated monetization route with buyer or financial evidence is available yet."
+                ),
+            },
+        )
     )
-    items.append(
-        {
-            "service_area": "repurposing",
-            "relevance": "medium" if redeployment else "unclear",
-            "reasoning": (
-                "At least one redeployment or repurposing hypothesis exists."
-                if redeployment
-                else "No validated repurposing path is available yet."
-            ),
-        }
+
+    repurposing_score = 0
+    if redeployment:
+        repurposing_score += 2
+    if carve_out_signals:
+        repurposing_score += 2
+    scored_items.append(
+        (
+            repurposing_score,
+            {
+                "service_area": "repurposing",
+                "relevance": "medium" if repurposing_score >= 2 else "unclear",
+                "reasoning": (
+                    "Redeployment pathways and portfolio-change signals suggest staged repurposing options."
+                    if redeployment or carve_out_signals
+                    else "No validated repurposing path is available yet."
+                ),
+            },
+        )
     )
-    items.append(
-        {
-            "service_area": "analytics",
-            "relevance": "medium" if analytics else "unclear",
-            "reasoning": (
-                "Operational visibility or decision-support leverage is indicated."
-                if analytics
-                else "No concrete analytics pain point is available yet."
-            ),
-        }
+
+    analytics_score = 0
+    if analytics:
+        analytics_score += 2
+    if balance_sheet_signals:
+        analytics_score += 1
+    scored_items.append(
+        (
+            analytics_score,
+            {
+                "service_area": "analytics",
+                "relevance": "medium" if analytics_score >= 2 else "unclear",
+                "reasoning": (
+                    "Operational visibility, planning, or balance-sheet complexity indicates analytics leverage."
+                    if analytics or balance_sheet_signals
+                    else "No concrete analytics pain point is available yet."
+                ),
+            },
+        )
     )
-    return items
+    scored_items.sort(key=lambda item: item[0], reverse=True)
+    return [item for _, item in scored_items]
 
 
 def build_synthesis_context(
@@ -206,6 +245,8 @@ def build_synthesis_context(
         ]
     positive_service_areas = [item["service_area"] for item in service_relevance if item["relevance"] != "unclear"]
     recommended_paths = positive_service_areas or ["further_validation_required"]
+    financial = company_profile.get("financial_deep_dive", {})
+    event_intel = company_profile.get("transaction_event_intelligence", {})
 
     peer_competitors = market_network.get("peer_competitors", {}).get("companies", [])
     downstream_buyers = market_network.get("downstream_buyers", {}).get("companies", [])
@@ -273,8 +314,29 @@ def build_synthesis_context(
         "Validate buyer paths and inventory pressure directly with the prospect."
     ]
 
-    verified_contacts = contact_intelligence.get("contacts", [])
+    verified_contacts = (
+        contact_intelligence.get("target_company_contacts", [])
+        or contact_intelligence.get("target_company_prioritized_contacts", [])
+        or contact_intelligence.get("contacts", [])
+    )
     contact_coverage = contact_intelligence.get("coverage_quality", "n/v")
+    top_path = recommended_paths[0]
+    inventory_positions = _positive_signals(financial.get("inventory_positions", []))
+    inventory_risks = _positive_signals(financial.get("inventory_risks", []))
+    key_financials = _positive_signals(financial.get("key_financials", []))
+    event_signals = _positive_signals(event_intel.get("strategic_events", []))
+    if top_path == "excess_inventory":
+        opportunity_summary = (
+            "Excess inventory / inventory-to-cash is the leading path because primary financial signals indicate inventory or balance-sheet pressure."
+            if inventory_positions or inventory_risks
+            else "Excess inventory is the leading path because buyer routes and pressure signals align."
+        )
+    elif top_path == "repurposing":
+        opportunity_summary = "Repurposing is the leading path because portfolio-change signals and redeployment routes align."
+    elif top_path == "analytics":
+        opportunity_summary = "Analytics is the leading path because operational and planning signals are stronger than liquidation evidence."
+    else:
+        opportunity_summary = "Current evidence supports further validation before a primary Liquisto path is chosen."
 
     return {
         "target_company": company_profile.get("company_name", "n/v"),
@@ -286,9 +348,7 @@ def build_synthesis_context(
         "contact_coverage": contact_coverage,
         "total_verified_contacts": len(verified_contacts),
         "liquisto_service_relevance": service_relevance,
-        "opportunity_assessment_summary": (
-            "The most plausible Liquisto path was derived after cross-domain review of the approved department packages."
-        ),
+        "opportunity_assessment_summary": opportunity_summary,
         "recommended_engagement_paths": recommended_paths,
         "case_assessments": case_assessments,
         "buyer_market_summary": market_network.get("downstream_buyers", {}).get("assessment", "n/v"),
@@ -296,8 +356,20 @@ def build_synthesis_context(
         "total_downstream_buyers": len(downstream_buyers),
         "total_service_providers": len(service_providers),
         "total_cross_industry_buyers": len(cross_industry_buyers),
-        "key_risks": key_risks,
-        "next_steps": next_steps,
+        "key_risks": key_risks + (
+            ["Primary financial evidence is still thin — confirm annual-report inventory and debt figures."]
+            if not (inventory_positions or key_financials)
+            else []
+        ),
+        "next_steps": next_steps + (
+            ["Open the meeting with an inventory-to-cash validation angle grounded in current financial pressure."]
+            if top_path == "excess_inventory" and (inventory_positions or inventory_risks)
+            else []
+        ) + (
+            ["Validate the strategic event timeline and decision-maker ownership before outreach."]
+            if event_signals
+            else []
+        ),
         "sources": memory_snapshot.get("sources", []),
         # Confidence derived from input package quality (orthogonal to generation_mode)
         "confidence": quality_review.get("evidence_health", "low"),

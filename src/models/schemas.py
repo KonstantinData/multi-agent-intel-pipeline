@@ -67,9 +67,12 @@ class ContactPerson(BaseModel):
 class ContactIntelligenceSection(BaseModel):
     contacts: list[ContactPerson] = Field(default_factory=list)
     prioritized_contacts: list[ContactPerson] = Field(default_factory=list)
+    target_company_contacts: list[ContactPerson] = Field(default_factory=list)
+    target_company_prioritized_contacts: list[ContactPerson] = Field(default_factory=list)
     firms_searched: int = 0
     contacts_found: int = 0
     coverage_quality: str = "n/v"
+    target_company_summary: str = "n/v"
     narrative_summary: str = "n/v"
     open_questions: list[str] = Field(default_factory=list)
     sources: list[SourceRecord] = Field(default_factory=list)
@@ -100,6 +103,24 @@ class EconomicSituation(BaseModel):
     assessment: str = "n/v"
 
 
+class FinancialDeepDive(BaseModel):
+    latest_fiscal_year: str = "n/v"
+    key_financials: list[str] = Field(default_factory=list)
+    inventory_positions: list[str] = Field(default_factory=list)
+    inventory_risks: list[str] = Field(default_factory=list)
+    balance_sheet_signals: list[str] = Field(default_factory=list)
+    assessment: str = "n/v"
+    sources: list[SourceRecord] = Field(default_factory=list)
+
+
+class TransactionEventIntelligence(BaseModel):
+    strategic_events: list[str] = Field(default_factory=list)
+    carve_out_signals: list[str] = Field(default_factory=list)
+    regulatory_signals: list[str] = Field(default_factory=list)
+    assessment: str = "n/v"
+    sources: list[SourceRecord] = Field(default_factory=list)
+
+
 class CompanyProfile(BaseModel):
     company_name: str = "n/v"
     legal_form: str = "n/v"
@@ -118,6 +139,8 @@ class CompanyProfile(BaseModel):
     key_people: list[KeyPerson] = Field(default_factory=list)
     description: str = "n/v"
     economic_situation: EconomicSituation = Field(default_factory=EconomicSituation)
+    financial_deep_dive: FinancialDeepDive = Field(default_factory=FinancialDeepDive)
+    transaction_event_intelligence: TransactionEventIntelligence = Field(default_factory=TransactionEventIntelligence)
     sources: list[SourceRecord] = Field(default_factory=list)
 
 

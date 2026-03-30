@@ -22,6 +22,8 @@ class EvidencePacket(BaseModel):
     packet_id: str = "n/v"
     claim: str = "n/v"
     confidence: Literal["high", "medium", "low"] = "low"
+    claim_type: Literal["fact", "inference", "hypothesis", "gap"] = "fact"
+    source_quality: Literal["high", "medium", "low"] = "low"
     source_urls: list[str] = Field(default_factory=list)
     source_notes: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

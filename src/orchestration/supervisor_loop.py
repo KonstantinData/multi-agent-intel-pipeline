@@ -238,7 +238,7 @@ def run_supervisor_loop(
     _PARALLEL_BATCH = {"CompanyDepartment", "MarketDepartment"}
     _SEQUENTIAL_AFTER = ["BuyerDepartment", "ContactDepartment"]
 
-    def _run_single_department(dept_name, dept_assignment, current_sec, memory_store):
+    def _run_single_department(dept_name, dept_assignment, current_sec, current_sections, memory_store):
         """Execute one department and return its results with timing."""
         t0 = perf_counter()
         runtime = agents["departments"][dept_name]
@@ -246,6 +246,7 @@ def run_supervisor_loop(
             brief=brief,
             assignments=list(dept_assignment.assignments),
             current_section=current_sec,
+            current_sections=current_sections,
             memory_store=memory_store,
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,
@@ -290,7 +291,7 @@ def run_supervisor_loop(
                 baseline = run_context.short_term_memory.create_working_set()
                 working_sets[dept_name] = ws
                 baselines[dept_name] = baseline
-                futures[pool.submit(_run_single_department, dept_name, da, current_section, ws)] = dept_name
+                futures[pool.submit(_run_single_department, dept_name, da, current_section, dict(sections), ws)] = dept_name
 
             for future in as_completed(futures):
                 dept_name = futures[future]
@@ -338,7 +339,13 @@ def run_supervisor_loop(
             messages.append(
                 emit_message(on_message, agent="Supervisor", content=json.dumps({"department": da.department, "status": "department_assigned", "target_section": da.target_section, "tasks": [{"task_key": a.task_key, "label": a.label, "objective": a.objective} for a in da.assignments]}, ensure_ascii=False))
             )
-            section_payload, department_messages, package = _run_single_department(dept_name, da, sections.get(da.target_section, {}), run_context.short_term_memory)
+            section_payload, department_messages, package = _run_single_department(
+                dept_name,
+                da,
+                sections.get(da.target_section, {}),
+                dict(sections),
+                run_context.short_term_memory,
+            )
             messages.extend(department_messages)
             acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
             _apply_structured_runtime_artifacts(run_context, package)
@@ -420,7 +427,7 @@ def run_supervisor_loop(
             market_payload = sections.get("market_network", {})
             # Extract real company names from typed company lists (peer + downstream)
             buyer_candidates: list[str] = []
-            for tier_key in ("peer_competitors", "downstream_buyers"):
+            for tier_key in ("downstream_buyers", "service_providers", "cross_industry_buyers"):
                 for company in market_payload.get(tier_key, {}).get("companies", []):
                     name = ""
                     if isinstance(company, dict):
@@ -438,6 +445,7 @@ def run_supervisor_loop(
             brief=brief,
             assignments=runnable,
             current_section=current_section,
+            current_sections=dict(sections),
             memory_store=run_context.short_term_memory,
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,

@@ -53,6 +53,10 @@ class TestSanitizeForSection:
             "headquarters": {"city": "Friedrichshafen", "country": "Germany"},
             "founded": 1915,
             "employees": 153000,
+            "financial_deep_dive": {
+                "latest_fiscal_year": 2025,
+                "key_financials": [{"value": "EUR 38.8bn"}],
+            },
         }
         result = sanitize_for_section("company_profile", payload)
         assert isinstance(result["headquarters"], str)
@@ -60,6 +64,20 @@ class TestSanitizeForSection:
         assert isinstance(result["founded"], str)
         assert result["founded"] == "1915"
         assert isinstance(result["employees"], str)
+        assert result["financial_deep_dive"]["latest_fiscal_year"] == "2025"
+        assert "EUR 38.8bn" in result["financial_deep_dive"]["key_financials"][0]
+
+    def test_coerces_target_company_contacts(self):
+        payload = {
+            "target_company_contacts": [
+                {"name": "Jane Doe", "company": "ZF Group", "title": "CFO"}
+            ],
+            "target_company_summary": {"summary": "Finance entry point"},
+        }
+        result = sanitize_for_section("contact_intelligence", payload)
+        assert result["target_company_contacts"][0]["firma"] == "ZF Group"
+        assert result["target_company_contacts"][0]["rolle_titel"] == "CFO"
+        assert result["target_company_summary"] == "Finance entry point"
 
 
 # ---------------------------------------------------------------------------

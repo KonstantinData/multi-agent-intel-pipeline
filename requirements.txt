@@ -2,6 +2,7 @@ ag2>=0.11.4,<0.12
 filelock>=3.16.0,<4
 openai>=2.29.0,<3
 pydantic>=2.12.5,<3
+pypdf>=5.4.0,<6
 python-dotenv>=1.2.2,<2
 streamlit>=1.55.0,<2
 reportlab>=4.4.10,<5
