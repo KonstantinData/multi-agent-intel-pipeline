@@ -28,6 +28,7 @@ from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
 from src.orchestration.follow_up import run_bounded_follow_up
+from src.orchestration.dashboard_composer import compose_dashboard
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
 from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
 from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
@@ -510,6 +511,16 @@ def run_pipeline(
             "department_timings": department_timings,
         }
         run_context_snapshot = run_context.snapshot()
+
+        # ── Dashboard bundle (shared visualization layer) ─────────────────
+        dashboard_bundle = compose_dashboard(
+            run_id=run_id,
+            status=status,
+            pipeline_data=pipeline_data,
+            run_context=run_context_snapshot,
+            budget=budget,
+        )
+        pipeline_data["dashboard_bundle"] = dashboard_bundle.model_dump(mode="json")
 
         role_patterns = consolidate_role_patterns(
             run_context=run_context_snapshot,

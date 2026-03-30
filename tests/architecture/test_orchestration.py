@@ -111,7 +111,7 @@ REQUIRED_FIELDS = {
     "depends_on", "run_condition", "output_schema_key",
     "validation_rules",
 }
-VALID_RULE_CHECKS = {"non_placeholder", "min_items", "min_length"}
+VALID_RULE_CHECKS = {"non_placeholder", "min_items", "min_length", "nested_field_non_placeholder"}
 VALID_RULE_CLASSES = {"core", "supporting"}
 
 
@@ -139,8 +139,10 @@ class TestTaskBacklogContracts:
                 assert "message" in rule
                 assert rule["check"] in VALID_RULE_CHECKS
                 assert rule["class"] in VALID_RULE_CLASSES
-                if rule["check"] in {"min_items", "min_length"}:
+                if rule["check"] in {"min_items", "min_length", "nested_field_non_placeholder"}:
                     assert "value" in rule
+                if rule["check"] == "nested_field_non_placeholder":
+                    assert "sub_field" in rule
 
     def test_contact_tasks_have_run_conditions(self):
         discovery = get_task_contract("contact_discovery")

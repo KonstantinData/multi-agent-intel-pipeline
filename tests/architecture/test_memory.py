@@ -146,6 +146,7 @@ class TestConsolidationProcessSafety:
             "short_term_memory": {
                 "worker_reports": [],
                 "sources": [],
+                "task_statuses": {"company_fundamentals": "accepted"},
                 "critic_reviews": {
                     "company_fundamentals": {
                         "core_passed": 2,

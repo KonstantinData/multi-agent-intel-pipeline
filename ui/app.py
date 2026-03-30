@@ -22,6 +22,7 @@ from src.config import summarize_runtime_models
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
 from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
+from ui.components.dashboard_renderer import render_dashboard
 from ui.i18n import (
     confidence_badge,
     get_labels,
@@ -224,6 +225,25 @@ def _render_pdf_downloads(L: dict) -> None:
             mime="application/pdf",
             use_container_width=True,
         )
+
+
+def _render_dashboard_tab() -> None:
+    """Render the shared DashboardBundle from pipeline_data."""
+    bundle_data = st.session_state.pipeline_data.get("dashboard_bundle")
+    if not bundle_data:
+        # Compose on-the-fly from current session state if not persisted
+        from src.orchestration.dashboard_composer import compose_dashboard
+        bundle = compose_dashboard(
+            run_id=st.session_state.run_id or "",
+            status=st.session_state.status or "",
+            pipeline_data=st.session_state.pipeline_data,
+            run_context=st.session_state.run_context,
+            budget=st.session_state.budget,
+        )
+    else:
+        from src.models.visualization import DashboardBundle
+        bundle = DashboardBundle.model_validate(bundle_data)
+    render_dashboard(bundle)
 
 
 def _render_briefing_tab(L: dict) -> None:
@@ -949,13 +969,17 @@ if st.session_state.done and st.session_state.run_id:
     elif st.session_state.loaded_notice == st.session_state.run_id:
         st.info(f"{L['run_loaded']} — {company_label}")
 
-    tab_briefing, tab_research, tab_followup, tab_quality, tab_log = st.tabs([
+    tab_dashboard, tab_briefing, tab_research, tab_followup, tab_quality, tab_log = st.tabs([
+        L.get("tab_dashboard", "📊 Dashboard"),
         L["tab_briefing"],
         L["tab_research"],
         L["tab_followup"],
         L["tab_quality"],
         L["tab_log"],
     ])
+
+    with tab_dashboard:
+        _render_dashboard_tab()
 
     with tab_briefing:
         _render_briefing_tab(L)

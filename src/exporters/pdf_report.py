@@ -8,6 +8,7 @@ from io import BytesIO
 from typing import Any
 
 from src.app.use_cases import sanitize_success_unresolved
+from src.models.visualization import ChartSpec, DashboardBundle, DashboardSection, InsightCallout, TableBlock
 
 from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib import colors
@@ -218,6 +219,200 @@ def _styles() -> dict[str, ParagraphStyle]:
         "table_cell": ParagraphStyle("TableCell", parent=sample["BodyText"],
             fontName="Helvetica", fontSize=8.5, leading=11, textColor=TEXT_PRIMARY),
     }
+
+
+# ── Bundle-driven PDF rendering helpers ────────────────────────────────────────
+
+def _pdf_donut_drawing(chart: ChartSpec) -> Drawing | None:
+    """Render a donut/pie chart as a ReportLab Drawing."""
+    if not chart.series or not chart.series[0].values:
+        return None
+    labels = chart.labels
+    raw_values = chart.series[0].values
+    values = [v if isinstance(v, (int, float)) else 0 for v in raw_values]
+    total = sum(values) or 1
+
+    w, h = 170 * mm, 22 * mm
+    d = Drawing(w, h)
+    _colors_map = {
+        "answered": BRAND_GREEN, "partially_answered": BRAND_AMBER,
+        "pending": BRAND_SKY, "blocked": BRAND_RED,
+    }
+    x_cursor = 0.0
+    bar_h = 10
+    bar_y = 4
+    for label, val in zip(labels, values):
+        seg_w = (val / total) * (w - 20 * mm)
+        color = _colors_map.get(label, BRAND_TEAL)
+        d.add(Rect(x_cursor, bar_y, seg_w, bar_h, fillColor=color, strokeColor=None))
+        x_cursor += seg_w
+    # Legend below
+    x_legend = 0.0
+    for label, val in zip(labels, values):
+        color = _colors_map.get(label, BRAND_TEAL)
+        d.add(Rect(x_legend, bar_y + bar_h + 4, 6, 6, fillColor=color, strokeColor=None))
+        d.add(String(x_legend + 8, bar_y + bar_h + 4, f"{label}: {val}",
+                     fontName="Helvetica", fontSize=7, fillColor=TEXT_MUTED))
+        x_legend += 42 * mm
+    return d
+
+
+def _pdf_bar_drawing(chart: ChartSpec) -> Drawing | None:
+    """Render a horizontal bar chart as a ReportLab Drawing."""
+    if not chart.series or not chart.labels:
+        return None
+    values = [v if isinstance(v, (int, float)) else 0 for v in chart.series[0].values]
+    max_val = max(values) or 1
+    n = len(chart.labels)
+    bar_h = 10
+    gap = 4
+    h = n * (bar_h + gap) + 12
+    w = 170 * mm
+    d = Drawing(w, h)
+    bar_max_w = 100 * mm
+    for i, (label, val) in enumerate(zip(chart.labels, values)):
+        y = h - (i + 1) * (bar_h + gap)
+        seg_w = (val / max_val) * bar_max_w if max_val else 0
+        d.add(Rect(40 * mm, y, seg_w, bar_h, fillColor=BRAND_TEAL, strokeColor=None, radius=2))
+        d.add(String(0, y + 2, label[:25], fontName="Helvetica", fontSize=7, fillColor=TEXT_PRIMARY))
+        d.add(String(40 * mm + seg_w + 2, y + 2, str(val), fontName="Helvetica-Bold", fontSize=7, fillColor=TEXT_PRIMARY))
+    return d
+
+
+def _pdf_treemap_drawing(chart: ChartSpec) -> Drawing | None:
+    """Render a treemap as proportional rectangles in a single row."""
+    if not chart.series or not chart.series[0].values:
+        return None
+    labels = chart.labels
+    raw_values = chart.series[0].values
+    values = [v if isinstance(v, (int, float)) else 0 for v in raw_values]
+    total = sum(values) or 1
+
+    w, h = 170 * mm, 28 * mm
+    d = Drawing(w, h)
+    _palette = [BRAND_TEAL, BRAND_GREEN, BRAND_BLUE, BRAND_AMBER, BRAND_NAVY,
+                colors.HexColor("#7c3aed"), colors.HexColor("#db2777")]
+    x_cursor = 0.0
+    rect_h = 18
+    rect_y = 8
+    for i, (label, val) in enumerate(zip(labels, values)):
+        seg_w = max((val / total) * w, 8)  # min visible width
+        color = _palette[i % len(_palette)]
+        d.add(Rect(x_cursor, rect_y, seg_w - 1, rect_h, fillColor=color, strokeColor=WHITE, strokeWidth=1, radius=2))
+        if seg_w > 20 * mm:
+            d.add(String(x_cursor + 3, rect_y + rect_h - 8, f"{label[:18]}",
+                         fontName="Helvetica-Bold", fontSize=6.5, fillColor=WHITE))
+            d.add(String(x_cursor + 3, rect_y + 2, str(val),
+                         fontName="Helvetica", fontSize=6, fillColor=WHITE))
+        x_cursor += seg_w
+    return d
+
+
+def _pdf_map_drawing(chart: ChartSpec) -> Drawing | None:
+    """Render a geographic distribution as horizontal bars (same as bar)."""
+    return _pdf_bar_drawing(chart)
+
+
+def _pdf_bundle_table(table: TableBlock, styles: dict[str, ParagraphStyle]) -> Table | None:
+    """Render a TableBlock as a ReportLab Table."""
+    if not table.rows:
+        return None
+    header = [
+        [Paragraph(f"<b>{col}</b>", styles["table_header"]) for col in table.columns]
+    ] if table.columns else []
+    body = [
+        [Paragraph(cell, styles["table_cell"]) for cell in row]
+        for row in table.rows[:12]
+    ]
+    data = header + body
+    n_cols = len(table.columns) if table.columns else (len(table.rows[0]) if table.rows else 1)
+    col_w = 170 * mm / n_cols
+    t = Table(data, colWidths=[col_w] * n_cols, repeatRows=1 if header else 0)
+    style_cmds = [
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]
+    if header:
+        style_cmds.append(("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY))
+        style_cmds.append(("TEXTCOLOR", (0, 0), (-1, 0), WHITE))
+    for i in range(len(body)):
+        bg = WHITE if i % 2 == 0 else SURFACE
+        style_cmds.append(("BACKGROUND", (0, i + len(header)), (-1, i + len(header)), bg))
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
+def _pdf_callout_block(callout: InsightCallout, styles: dict[str, ParagraphStyle]) -> Table:
+    """Render an InsightCallout as a colored left-border block."""
+    _severity_colors = {"success": BRAND_GREEN, "warning": BRAND_AMBER, "error": BRAND_RED, "info": BRAND_BLUE}
+    accent = _severity_colors.get(callout.severity, BRAND_BLUE)
+    title_text = f"{callout.icon} <b>{callout.title}</b>" if callout.title else ""
+    body_text = callout.body or ""
+    content = title_text
+    if body_text:
+        content += f"<br/>{body_text}" if content else body_text
+    t = Table([[Paragraph(content, styles["body"])]], colWidths=[170 * mm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+        ("LINEBEFORE", (0, 0), (0, -1), 3, accent),
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return t
+
+
+def _render_bundle_section_to_pdf(
+    section: DashboardSection,
+    styles: dict[str, ParagraphStyle],
+    story: list,
+) -> None:
+    """Render a full DashboardSection into the PDF story."""
+    # KPIs as a KPI bar
+    if section.kpis:
+        kpi_tuples = [(k.title, k.value) for k in section.kpis[:6] if k.value and k.value != "—"]
+        if kpi_tuples:
+            story.append(_kpi_bar(kpi_tuples, styles))
+            story.append(Spacer(1, 3 * mm))
+
+    # Charts
+    _chart_renderers = {
+        "donut": _pdf_donut_drawing,
+        "bar": _pdf_bar_drawing,
+        "stacked_bar": _pdf_bar_drawing,
+        "treemap": _pdf_treemap_drawing,
+        "map": _pdf_map_drawing,
+    }
+    for chart in section.charts:
+        story.append(Paragraph(f"<b>{chart.title}</b>", styles["body"]))
+        if chart.subtitle:
+            story.append(Paragraph(chart.subtitle, styles["small"]))
+        renderer = _chart_renderers.get(chart.chart_type)
+        if renderer:
+            drawing = renderer(chart)
+            if drawing:
+                story.append(drawing)
+        story.append(Spacer(1, 3 * mm))
+
+    # Tables
+    for table in section.tables:
+        story.append(Paragraph(f"<b>{table.title}</b>", styles["body"]))
+        t = _pdf_bundle_table(table, styles)
+        if t:
+            story.append(t)
+        story.append(Spacer(1, 3 * mm))
+
+    # Callouts
+    for callout in section.callouts:
+        story.append(_pdf_callout_block(callout, styles))
+        story.append(Spacer(1, 2 * mm))
 
 
 # ── page chrome ───────────────────────────────────────────────────────────────
@@ -826,8 +1021,46 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
 
     # KPI bar
     story.append(Paragraph(labels["snapshot"], styles["section"]))
-    story.append(_kpi_bar(kpis, styles))
-    story.append(Spacer(1, 3 * mm))
+    # ── Dashboard-derived visuals (shared visualization layer) ────────────────
+    bundle_data = pipeline_data.get("dashboard_bundle")
+    if bundle_data:
+        try:
+            bundle = DashboardBundle.model_validate(bundle_data)
+            # Render executive KPIs from bundle
+            exec_section = next((s for s in bundle.sections if s.section_id == "executive_kpis"), None)
+            if exec_section and exec_section.kpis:
+                bundle_kpis = [
+                    (k.title, k.value)
+                    for k in exec_section.kpis[:4]
+                    if k.value and k.value != "—"
+                ]
+                if bundle_kpis:
+                    story.append(_kpi_bar(bundle_kpis, styles))
+                    story.append(Spacer(1, 3 * mm))
+
+            # Render coverage donut from bundle
+            coverage_section = next((s for s in bundle.sections if s.section_id == "coverage"), None)
+            if coverage_section:
+                _render_bundle_section_to_pdf(coverage_section, styles, story)
+
+            # Render evidence treemap from bundle
+            treemap_section = next((s for s in bundle.sections if s.section_id == "evidence_treemap"), None)
+            if treemap_section and treemap_section.charts:
+                _render_bundle_section_to_pdf(treemap_section, styles, story)
+
+            # Render geo map from bundle
+            geo_section = next((s for s in bundle.sections if s.section_id == "geo_map"), None)
+            if geo_section and geo_section.charts:
+                story.append(Paragraph("Geographic Distribution", styles["section"]))
+                _render_bundle_section_to_pdf(geo_section, styles, story)
+
+        except Exception:
+            pass  # fallback to legacy KPI bar below
+
+    # KPI bar (legacy fallback if bundle not available)
+    if not bundle_data:
+        story.append(_kpi_bar(kpis, styles))
+        story.append(Spacer(1, 3 * mm))
 
     # Research readiness bar
     if rs_score > 0:
@@ -955,26 +1188,41 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
 
     # Next steps / Meeting Actions
     story.append(Paragraph(labels["action_section"], styles["section"]))
-    # RA-06: meeting_actions are the primary action output
-    meeting_actions_raw = pipeline_data.get("meeting_actions", [])
-    if not meeting_actions_raw:
-        # Fallback: extract from run_context short_term_memory if available
-        meeting_actions_raw = (
-            pipeline_data.get("run_context", {})
-            .get("short_term_memory", {})
-            .get("meeting_actions", [])
-        )
-    if meeting_actions_raw:
-        _action_icons = {"prepare_meeting": "\u25b8", "collect_missing_evidence": "\u25b8",
-                         "ask_user_selection": "\u25b8", "hold": "\u25b8"}
-        action_items = [
-            f"{_action_icons.get(a.get('action_type',''), '\u25b8')}  {_safe_text(a.get('title',''))}"
-            + (f" \u2014 {_safe_text(a.get('description',''))[:120]}" if a.get('description') else "")
-            for a in meeting_actions_raw[:6]
-        ]
-        story.append(_steps_table(action_items, styles))
-    else:
-        story.append(_steps_table(next_steps, styles))
+    # Render actions from bundle if available
+    if bundle_data:
+        try:
+            bundle = DashboardBundle.model_validate(bundle_data)
+            actions_section = next((s for s in bundle.sections if s.section_id == "actions"), None)
+            if actions_section and actions_section.callouts:
+                for callout in actions_section.callouts:
+                    story.append(_pdf_callout_block(callout, styles))
+                    story.append(Spacer(1, 2 * mm))
+            else:
+                raise ValueError("no actions in bundle")
+        except Exception:
+            # Fall through to legacy rendering
+            bundle_data = None  # type: ignore[assignment]
+    if not bundle_data:
+        # RA-06: meeting_actions are the primary action output
+        meeting_actions_raw = pipeline_data.get("meeting_actions", [])
+        if not meeting_actions_raw:
+            # Fallback: extract from run_context short_term_memory if available
+            meeting_actions_raw = (
+                pipeline_data.get("run_context", {})
+                .get("short_term_memory", {})
+                .get("meeting_actions", [])
+            )
+        if meeting_actions_raw:
+            _action_icons = {"prepare_meeting": "\u25b8", "collect_missing_evidence": "\u25b8",
+                             "ask_user_selection": "\u25b8", "hold": "\u25b8"}
+            action_items = [
+                f"{_action_icons.get(a.get('action_type',''), '\u25b8')}  {_safe_text(a.get('title',''))}"
+                + (f" \u2014 {_safe_text(a.get('description',''))[:120]}" if a.get('description') else "")
+                for a in meeting_actions_raw[:6]
+            ]
+            story.append(_steps_table(action_items, styles))
+        else:
+            story.append(_steps_table(next_steps, styles))
     story.append(Spacer(1, 7 * mm))
 
     # Evidence appendix
