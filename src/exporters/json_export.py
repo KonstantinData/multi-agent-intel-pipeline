@@ -9,8 +9,20 @@ from typing import Any
 from src.app.use_cases import SUCCESS_RUN_STATUS, sanitize_success_unresolved
 
 
-def _sanitize_pipeline_data_for_status(*, status: str, pipeline_data: dict[str, Any]) -> dict[str, Any]:
+def _sanitize_pipeline_data_for_status(
+    *,
+    status: str,
+    pipeline_data: dict[str, Any],
+    run_context: dict[str, Any],
+) -> dict[str, Any]:
     data = dict(pipeline_data)
+    if isinstance(run_context, dict):
+        meeting_readiness = run_context.get("meeting_readiness_assessment")
+        if isinstance(meeting_readiness, dict) and meeting_readiness:
+            data["meeting_readiness_assessment"] = meeting_readiness
+        final_briefing = run_context.get("final_briefing")
+        if isinstance(final_briefing, dict) and final_briefing:
+            data["final_briefing"] = final_briefing
     if status != SUCCESS_RUN_STATUS:
         return data
     synthesis = dict(data.get("synthesis", {}) or {})
@@ -66,7 +78,11 @@ def export_run(
 
     (path / "run_meta.json").write_text(json.dumps(run_meta, indent=2, ensure_ascii=False), encoding="utf-8")
     (path / "chat_history.json").write_text(json.dumps(chat_history, indent=2, ensure_ascii=False), encoding="utf-8")
-    sanitized_pipeline_data = _sanitize_pipeline_data_for_status(status=status, pipeline_data=pipeline_data)
+    sanitized_pipeline_data = _sanitize_pipeline_data_for_status(
+        status=status,
+        pipeline_data=pipeline_data,
+        run_context=run_context,
+    )
     (path / "pipeline_data.json").write_text(
         json.dumps(sanitized_pipeline_data, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -87,3 +103,17 @@ def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> N
         history = json.loads(target.read_text(encoding="utf-8"))
     history.append(follow_up_answer)
     target.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def export_binary_artifact(
+    *,
+    run_dir: str | Path,
+    relative_path: str,
+    content: bytes,
+) -> Path:
+    """Persist a generated binary export under the run artifact directory."""
+    path = Path(run_dir)
+    target = path / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+    return target

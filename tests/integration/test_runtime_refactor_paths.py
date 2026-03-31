@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.models.meeting_ready import MeetingReadinessAssessment
 from src.exporters.json_export import export_run
 from src.orchestration.run_context import RunContext
 
@@ -59,6 +60,51 @@ def test_runtime_path_pause_resume_and_export_contracts(tmp_path):
     assert "short_term_memory" not in memory_snapshot
 
 
+def test_export_run_syncs_finalization_fields_into_pipeline_data(tmp_path):
+    run_dir = tmp_path / "finalization_sync"
+
+    export_run(
+        run_dir=run_dir,
+        run_id="finalization_sync",
+        company_name="SyncCo",
+        web_domain="sync.example",
+        status="meeting_ready",
+        messages=[],
+        pipeline_data={"synthesis": {"executive_summary": "summary"}},
+        run_context={
+            "meeting_readiness_assessment": {
+                "run_status": "meeting_ready",
+                "meeting_ready": True,
+                "blocked_reasons": [],
+                "unresolved_gaps": [],
+                "confidence": "medium",
+            },
+            "final_briefing": {
+                "run_id": "finalization_sync",
+                "company_name": "SyncCo",
+                "status": "meeting_ready",
+                "executive_summary": "summary",
+                "evidence_packets": [],
+                "answer_matrix_updates": [],
+                "readiness": {
+                    "run_status": "meeting_ready",
+                    "meeting_ready": True,
+                    "blocked_reasons": [],
+                    "unresolved_gaps": [],
+                    "confidence": "medium",
+                },
+                "recommended_actions": [],
+                "metadata": {},
+            },
+            "short_term_memory": {},
+        },
+    )
+
+    pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
+    assert pipeline_data["meeting_readiness_assessment"]["run_status"] == "meeting_ready"
+    assert pipeline_data["final_briefing"]["status"] == "meeting_ready"
+
+
 def test_runtime_path_run_context_snapshot_roundtrip_with_resolution_state(tmp_path):
     ctx = RunContext(
         run_id="integration-roundtrip",
@@ -102,6 +148,9 @@ def test_resume_pipeline_applies_user_selections_and_re_evaluates(tmp_path, monk
     ctx.status = "needs_user_selection"
     ctx.answer_matrix = {
         "q_company_fundamentals": {"status": "answered", "answer": "ok", "notes": "", "source_tasks": []},
+        "q_product_asset_scope": {"status": "answered", "answer": "ok", "notes": "", "source_tasks": []},
+        "q_peer_companies": {"status": "answered", "answer": "ok", "notes": "", "source_tasks": []},
+        "q_monetization_redeployment": {"status": "answered", "answer": "ok", "notes": "", "source_tasks": []},
         "q_market_situation": {"status": "pending", "answer": "", "notes": "", "source_tasks": []},
     }
     ctx.resolution_state = {
@@ -118,7 +167,10 @@ def test_resume_pipeline_applies_user_selections_and_re_evaluates(tmp_path, monk
         web_domain="resume.example",
         status="needs_user_selection",
         messages=[],
-        pipeline_data={"research_readiness": {"usable": True}},
+        pipeline_data={
+            "research_readiness": {"usable": True},
+            "quality_review": {"evidence_health": "high"},
+        },
         run_context=ctx.snapshot(),
     )
 
@@ -138,3 +190,49 @@ def test_resume_pipeline_applies_user_selections_and_re_evaluates(tmp_path, monk
     assert restored_ctx["answer_matrix"]["q_market_situation"]["status"] == "partially_answered"
     assert restored_ctx["resolution_state"]["dashboard_state"]["pending_user_selection"] is False
     assert restored_ctx["resolution_state"]["user_selections"]["selected_questions"] == ["q_market_situation"]
+    assert result["pipeline_data"]["meeting_readiness_assessment"]["run_status"] == "meeting_ready"
+    assert result["pipeline_data"]["final_briefing"]["status"] == "meeting_ready"
+
+
+def test_sync_finalization_artifacts_backfills_blocked_reasons():
+    import src.pipeline_runner as pr
+
+    ctx = RunContext(
+        run_id="blocked_sync",
+        intake={"company_name": "BlockedCo", "web_domain": "blocked.example"},
+    )
+    ctx.meeting_readiness_assessment = MeetingReadinessAssessment(
+        run_status="blocked_not_meeting_ready",
+        meeting_ready=False,
+        blocked_reasons=[],
+        confidence="medium",
+    )
+    ctx.resolution_state = {"finalization_blocked": {"reason": "meeting_not_ready", "open_gaps": []}}
+
+    pipeline_data = {
+        "synthesis": {"executive_summary": "blocked"},
+        "research_readiness": {
+            "usable": False,
+            "score": 38,
+            "reasons": [
+                "Company profile is still incomplete.",
+                "Buyer landscape is incomplete.",
+            ],
+        },
+        "quality_review": {"evidence_health": "medium"},
+    }
+
+    pr._sync_finalization_artifacts(
+        run_context=ctx,
+        pipeline_data=pipeline_data,
+        run_id="blocked_sync",
+        company_name="BlockedCo",
+        status="blocked_not_meeting_ready",
+        meeting_actions=[],
+    )
+
+    assert pipeline_data["meeting_readiness_assessment"]["blocked_reasons"] == [
+        "Company profile is still incomplete.",
+        "Buyer landscape is incomplete.",
+    ]
+    assert pipeline_data["meeting_readiness_assessment"]["confidence"] == "low"

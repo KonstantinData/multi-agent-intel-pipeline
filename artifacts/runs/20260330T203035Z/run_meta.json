@@ -1,0 +1,53 @@
+{
+  "run_id": "20260330T203035Z",
+  "timestamp": "2026-03-30T20:34:00.461375+00:00",
+  "company_name": "ACME GmbH",
+  "web_domain": "acme.example",
+  "status": "blocked_not_meeting_ready",
+  "usage": {
+    "total": {
+      "total_cost": 0.0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "models": {}
+    },
+    "actual": {
+      "total_cost": 0.0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "models": {}
+    },
+    "agents": {}
+  },
+  "budget": {
+    "total_pipeline_events": 65,
+    "tool_calls_used": 54,
+    "max_tool_calls": 140,
+    "max_department_attempts": 3,
+    "resume_entrypoint": "supervisor_finalization_entrypoint",
+    "llm_calls_used": 0,
+    "search_calls_used": 54,
+    "page_fetches_used": 0,
+    "estimated_cost_usd": 0.0,
+    "elapsed_seconds": 121.653,
+    "department_timings": {
+      "MarketDepartment": 5.541,
+      "CompanyDepartment": 17.104,
+      "BuyerDepartment": 12.855,
+      "ContactDepartment": 10.785
+    }
+  },
+  "error": null,
+  "unresolved": {},
+  "meeting_readiness": {
+    "run_status": "blocked_not_meeting_ready",
+    "meeting_ready": false,
+    "blocked_reasons": [
+      "2 meeting-critical public gap(s) remain after closure."
+    ],
+    "unresolved_gaps": [],
+    "confidence": "low"
+  }
+}

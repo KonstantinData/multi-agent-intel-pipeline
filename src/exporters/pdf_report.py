@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from src.app.use_cases import sanitize_success_unresolved
@@ -16,23 +18,26 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOGO_PATH = PROJECT_ROOT / "assets" / "image" / "liquisto_logo.png"
 
-BRAND_NAVY  = colors.HexColor("#13485A")  # dashboard primary dark
-BRAND_BLUE  = colors.HexColor("#004E99")  # dashboard deep blue
-BRAND_SKY   = colors.HexColor("#d9e8ff")
-BRAND_TEAL  = colors.HexColor("#0D95C5")  # dashboard accent blue
-BRAND_GREEN = colors.HexColor("#16B688")  # dashboard teal-green
-BRAND_AMBER = colors.HexColor("#c47f00")
-BRAND_RED   = colors.HexColor("#b83232")
+BRAND_NAVY  = colors.HexColor("#13485A")
+BRAND_MID   = colors.HexColor("#0F5E5F")
+BRAND_BLUE  = colors.HexColor("#004E99")
+BRAND_SKY   = colors.HexColor("#E6F3F3")
+BRAND_TEAL  = colors.HexColor("#0D95C5")
+BRAND_GREEN = colors.HexColor("#16B688")
+BRAND_AMBER = colors.HexColor("#D97706")
+BRAND_RED   = colors.HexColor("#DC2626")
 TEXT_PRIMARY = colors.HexColor("#1A2B2D")
 TEXT_MUTED   = colors.HexColor("#4A5E60")
-BORDER       = colors.HexColor("#d9e2ec")
-SURFACE      = colors.HexColor("#f7f9fc")
-SURFACE_WARM = colors.HexColor("#fff5f5")
+BORDER       = colors.HexColor("#B0C4C5")
+SURFACE      = colors.HexColor("#F4F8F7")
+SURFACE_WARM = colors.HexColor("#FFF8F0")
 WHITE        = colors.white
 
 
@@ -74,16 +79,17 @@ def _relevance_to_score(label: str) -> tuple[int, colors.Color]:
 def _translation(lang: str) -> dict[str, str]:
     if lang == "en":
         return {
+            "report_title": "Liquisto Briefing",
             "report_subtitle": "Target company assessment for commercial preparation",
             "prepared_for": "Prepared for Liquisto",
             "date_label": "Report date",
-            "snapshot": "Key Facts",
+            "snapshot": "Executive Dashboard",
             "summary": "Executive Summary",
-            "service_fit": "Liquisto Opportunity",
+            "service_fit": "Opportunity Thesis",
             "company_profile": "Company Profile",
             "market_section": "Market & Demand Context",
             "buyer_section": "Buyer & Redeployment Landscape",
-            "risk_section": "Key Risks",
+            "risk_section": "Critical Risks",
             "action_section": "Recommended Next Steps",
             "sources_section": "Evidence Appendix",
             "readiness": "Research Readiness",
@@ -124,17 +130,62 @@ def _translation(lang: str) -> dict[str, str]:
             "profitability": "Profitability",
             "financial_pressure": "Financial Pressure",
             "assessment": "Assessment",
+            "primary_recommendation": "Primary Recommendation",
+            "meeting_focus": "Meeting Focus",
+            "opportunity_rank": "Priority",
+            "opportunity_path": "Path",
+            "opportunity_fit": "Fit",
+            "why_now": "Why now",
+            "key_triggers": "Key triggers",
+            "finance_section": "Financial & Inventory Signals",
+            "financial_snapshot": "Financial Snapshot",
+            "portfolio_events": "Portfolio and restructuring events",
+            "stakeholder_section": "Stakeholder Map",
+            "target_contacts": "Target company contacts",
+            "buyer_contacts": "Buyer and partner contacts",
+            "contact_role": "Role",
+            "contact_company": "Company",
+            "contact_angle": "Outreach angle",
+            "confidence": "Confidence",
+            "primary_path": "Primary Path",
+            "research_score": "Research Score",
+            "top_actions": "Immediate Actions",
+            "narrative_overview": "Commercial Angle",
+            "financial_signals": "Balance-sheet and inventory signals",
+            "products_scope": "Product and asset scope",
+            "run_status": "Run Status",
+            "top_risks": "Top Risks",
+            "next_recommended_step": "Next Step",
+            "why_liquisto": "Why Liquisto",
+            "leading_path": "Leading path",
+            "business_model": "Business model",
+            "divisions": "Divisions",
+            "financial_position": "Financial position",
+            "trigger_events": "Trigger events",
+            "validation_section": "Open Questions & Validation Plan",
+            "open_questions": "Critical open questions",
+            "validation_plan": "Validation plan",
+            "contact_relevance": "Relevance",
+            "inventory": "Inventory",
+            "ebit": "EBIT",
+            "net_loss": "Net Loss",
+            "write_downs": "Write-downs",
+            "net_debt": "Net Debt",
+            "working_capital": "Working Capital",
+            "open_value": "Open",
+            "coverage": "Coverage",
         }
     return {
+        "report_title": "Liquisto Bericht",
         "report_subtitle": "Zielkundenanalyse für die kommerzielle Vorbereitung",
-        "prepared_for": "Vorbereitet für Liquisto",
+        "prepared_for": "Erstellt für Liquisto",
         "date_label": "Berichtsdatum",
-        "snapshot": "Key Facts",
-        "summary": "Executive Summary",
-        "service_fit": "Liquisto-Empfehlung",
+        "snapshot": "Management-Dashboard",
+        "summary": "Management-Zusammenfassung",
+        "service_fit": "Chancen-These",
         "company_profile": "Unternehmensprofil",
-        "market_section": "Markt- & Nachfragekontext",
-        "buyer_section": "Käufer- & Redeployment-Landschaft",
+        "market_section": "Markt- und Nachfragekontext",
+        "buyer_section": "Käufer- und Weiterverwendungslandschaft",
         "risk_section": "Zentrale Risiken",
         "action_section": "Nächste Schritte",
         "sources_section": "Evidenz-Anhang",
@@ -144,7 +195,7 @@ def _translation(lang: str) -> dict[str, str]:
         "industry": "Branche",
         "website": "Webseite",
         "products": "Produkte & Leistungen",
-        "material_relevance": "Produkt- & Asset-Scope",
+        "material_relevance": "Produkt- und Bestandsumfang",
         "economic_view": "Wirtschaftliche Lage",
         "market_trend": "Trendrichtung",
         "demand_outlook": "Nachfrageausblick",
@@ -176,6 +227,50 @@ def _translation(lang: str) -> dict[str, str]:
         "profitability": "Profitabilität",
         "financial_pressure": "Finanzdruck",
         "assessment": "Einschätzung",
+        "primary_recommendation": "Primäre Empfehlung",
+        "meeting_focus": "Gesprächsfokus",
+        "opportunity_rank": "Priorität",
+        "opportunity_path": "Pfad",
+        "opportunity_fit": "Passung",
+        "why_now": "Warum jetzt",
+        "key_triggers": "Wichtige Auslöser",
+        "finance_section": "Finanz- & Inventarsignale",
+        "financial_snapshot": "Finanzüberblick",
+        "portfolio_events": "Portfolio- und Restrukturierungsereignisse",
+        "stakeholder_section": "Stakeholder-Übersicht",
+        "target_contacts": "Kontakte im Zielunternehmen",
+        "buyer_contacts": "Käufer- und Partnerkontakte",
+        "contact_role": "Rolle",
+        "contact_company": "Firma",
+        "contact_angle": "Gesprächseinstieg",
+        "confidence": "Sicherheit",
+        "primary_path": "Hauptpfad",
+        "research_score": "Recherchewert",
+        "top_actions": "Prioritäre Aktionen",
+        "narrative_overview": "Gesprächsansatz",
+        "financial_signals": "Bilanz- und Inventarsignale",
+        "products_scope": "Produkt- und Bestandsumfang",
+        "run_status": "Run-Status",
+        "top_risks": "Top-Risiken",
+        "next_recommended_step": "Nächster Schritt",
+        "why_liquisto": "Warum Liquisto",
+        "leading_path": "Führender Pfad",
+        "business_model": "Geschäftsmodell",
+        "divisions": "Divisionen",
+        "financial_position": "Finanzlage",
+        "trigger_events": "Auslösende Ereignisse",
+        "validation_section": "Offene Fragen & Validierungsplan",
+        "open_questions": "Kritische offene Fragen",
+        "validation_plan": "Validierungsplan",
+        "contact_relevance": "Relevanz",
+        "inventory": "Inventar",
+        "ebit": "EBIT",
+        "net_loss": "Nettoverlust",
+        "write_downs": "Wertberichtigungen",
+        "net_debt": "Nettoverschuldung",
+        "working_capital": "Nettoumlaufvermögen",
+        "open_value": "Offen",
+        "coverage": "Abdeckung",
     }
 
 
@@ -183,14 +278,14 @@ def _styles() -> dict[str, ParagraphStyle]:
     sample = getSampleStyleSheet()
     return {
         "title": ParagraphStyle("ReportTitle", parent=sample["Title"],
-            fontName="Helvetica-Bold", fontSize=26, leading=30,
-            textColor=WHITE, alignment=TA_LEFT, spaceAfter=4),
+            fontName="Helvetica-Bold", fontSize=24, leading=28,
+            textColor=BRAND_NAVY, alignment=TA_LEFT, spaceAfter=4),
         "subtitle": ParagraphStyle("ReportSubtitle", parent=sample["BodyText"],
             fontName="Helvetica", fontSize=10, leading=13,
-            textColor=WHITE, alignment=TA_LEFT),
+            textColor=TEXT_MUTED, alignment=TA_LEFT),
         "cover_meta": ParagraphStyle("CoverMeta", parent=sample["BodyText"],
             fontName="Helvetica", fontSize=9, leading=12,
-            textColor=colors.HexColor("#90aac7"), alignment=TA_LEFT),
+            textColor=TEXT_MUTED, alignment=TA_LEFT),
         "section": ParagraphStyle("SectionTitle", parent=sample["Heading2"],
             fontName="Helvetica-Bold", fontSize=13, leading=16,
             textColor=BRAND_NAVY, spaceAfter=6, spaceBefore=4),
@@ -221,6 +316,56 @@ def _styles() -> dict[str, ParagraphStyle]:
     }
 
 
+def _display_confidence(value: str, lang: str) -> str:
+    mapping = {
+        "en": {"high": "High", "medium": "Medium", "low": "Low"},
+        "de": {"high": "Hoch", "medium": "Mittel", "low": "Niedrig"},
+    }
+    lookup = mapping.get(lang, mapping["en"])
+    return lookup.get((value or "").strip().lower(), _safe_text(value, "n/v"))
+
+
+def _display_run_status(value: str, lang: str) -> str:
+    mapping = {
+        "en": {
+            "meeting_ready": "Meeting ready",
+            "blocked_not_meeting_ready": "Blocked",
+            "needs_user_selection": "User selection required",
+            "running": "Running",
+            "failed": "Failed",
+        },
+        "de": {
+            "meeting_ready": "Gesprächsbereit",
+            "blocked_not_meeting_ready": "Blockiert",
+            "needs_user_selection": "Nutzerauswahl erforderlich",
+            "running": "Läuft",
+            "failed": "Fehlgeschlagen",
+        },
+    }
+    lookup = mapping.get(lang, mapping["en"])
+    return lookup.get((value or "").strip().lower(), _safe_text(value, "n/v"))
+
+
+def _accent_surface(accent: colors.Color) -> colors.Color:
+    if accent == BRAND_AMBER:
+        return SURFACE_WARM
+    if accent == BRAND_BLUE:
+        return colors.HexColor("#F5F9FF")
+    if accent == BRAND_TEAL:
+        return BRAND_SKY
+    if accent == BRAND_RED:
+        return colors.HexColor("#FFF4F4")
+    return SURFACE
+
+
+def _logo_flowable(width_mm: float = 42) -> Image | Spacer:
+    if not LOGO_PATH.exists():
+        return Spacer(1, 1)
+    width = width_mm * mm
+    height = width * (113 / 500)
+    return Image(str(LOGO_PATH), width=width, height=height, mask="auto")
+
+
 # ── Bundle-driven PDF rendering helpers ────────────────────────────────────────
 
 def _pdf_donut_drawing(chart: ChartSpec) -> Drawing | None:
@@ -235,7 +380,7 @@ def _pdf_donut_drawing(chart: ChartSpec) -> Drawing | None:
     w, h = 170 * mm, 22 * mm
     d = Drawing(w, h)
     _colors_map = {
-        "answered": BRAND_GREEN, "partially_answered": BRAND_AMBER,
+        "answered": BRAND_BLUE, "partially_answered": BRAND_AMBER,
         "pending": BRAND_SKY, "blocked": BRAND_RED,
     }
     x_cursor = 0.0
@@ -270,10 +415,11 @@ def _pdf_bar_drawing(chart: ChartSpec) -> Drawing | None:
     w = 170 * mm
     d = Drawing(w, h)
     bar_max_w = 100 * mm
+    palette = [BRAND_BLUE, BRAND_AMBER, BRAND_TEAL, BRAND_MID]
     for i, (label, val) in enumerate(zip(chart.labels, values)):
         y = h - (i + 1) * (bar_h + gap)
         seg_w = (val / max_val) * bar_max_w if max_val else 0
-        d.add(Rect(40 * mm, y, seg_w, bar_h, fillColor=BRAND_TEAL, strokeColor=None, radius=2))
+        d.add(Rect(40 * mm, y, seg_w, bar_h, fillColor=palette[i % len(palette)], strokeColor=None, radius=2))
         d.add(String(0, y + 2, label[:25], fontName="Helvetica", fontSize=7, fillColor=TEXT_PRIMARY))
         d.add(String(40 * mm + seg_w + 2, y + 2, str(val), fontName="Helvetica-Bold", fontSize=7, fillColor=TEXT_PRIMARY))
     return d
@@ -290,8 +436,8 @@ def _pdf_treemap_drawing(chart: ChartSpec) -> Drawing | None:
 
     w, h = 170 * mm, 28 * mm
     d = Drawing(w, h)
-    _palette = [BRAND_TEAL, BRAND_GREEN, BRAND_BLUE, BRAND_AMBER, BRAND_NAVY,
-                colors.HexColor("#7c3aed"), colors.HexColor("#db2777")]
+    _palette = [BRAND_BLUE, BRAND_AMBER, BRAND_TEAL, BRAND_MID, BRAND_NAVY,
+                colors.HexColor("#2A7CB8"), colors.HexColor("#F59E0B")]
     x_cursor = 0.0
     rect_h = 18
     rect_y = 8
@@ -417,19 +563,33 @@ def _render_bundle_section_to_pdf(
 
 # ── page chrome ───────────────────────────────────────────────────────────────
 
-def _make_header_footer(page_label: str):  # noqa: ANN001
+def _make_header_footer(page_label: str, report_title: str):  # noqa: ANN001
     def _header_footer(canvas, doc) -> None:  # noqa: ANN001
         canvas.saveState()
         canvas.setFillColor(WHITE)
         canvas.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT, fill=1, stroke=0)
         canvas.setFillColor(BRAND_NAVY)
-        canvas.rect(0, PAGE_HEIGHT - 14 * mm, PAGE_WIDTH, 14 * mm, fill=1, stroke=0)
-        canvas.setFillColor(WHITE)
-        canvas.setFont("Helvetica-Bold", 8.5)
-        canvas.drawString(doc.leftMargin, PAGE_HEIGHT - 9 * mm, "Liquisto Research Briefing")
+        canvas.rect(0, PAGE_HEIGHT - 3 * mm, PAGE_WIDTH, 3 * mm, fill=1, stroke=0)
+        if LOGO_PATH.exists():
+            canvas.drawImage(
+                str(LOGO_PATH),
+                doc.leftMargin,
+                PAGE_HEIGHT - 13 * mm,
+                width=22 * mm,
+                height=(22 * 113 / 500) * mm,
+                mask="auto",
+                preserveAspectRatio=True,
+                anchor="sw",
+            )
+        canvas.setFillColor(BRAND_NAVY)
+        canvas.setFont("Helvetica-Bold", 8)
+        canvas.drawString(doc.leftMargin + 26 * mm, PAGE_HEIGHT - 9 * mm, report_title)
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont("Helvetica", 8)
-        canvas.drawRightString(PAGE_WIDTH - doc.rightMargin, 9 * mm, f"{page_label} {doc.page}")
+        canvas.drawRightString(PAGE_WIDTH - doc.rightMargin, PAGE_HEIGHT - 9 * mm, f"{page_label} {doc.page}")
+        canvas.setStrokeColor(BORDER)
+        canvas.setLineWidth(0.6)
+        canvas.line(doc.leftMargin, 11 * mm, PAGE_WIDTH - doc.rightMargin, 11 * mm)
         canvas.restoreState()
     return _header_footer
 
@@ -439,20 +599,37 @@ def _make_header_footer(page_label: str):  # noqa: ANN001
 def _cover_block(company_name: str, subtitle: str, prepared_for: str,
                  date_label: str, styles: dict[str, ParagraphStyle]) -> Table:
     date_str = datetime.now().strftime("%Y-%m-%d")
-    content = [
-        [Paragraph(f"<b>{company_name}</b>", styles["title"])],
-        [Spacer(1, 2)],
-        [Paragraph(subtitle, styles["subtitle"])],
-        [Spacer(1, 8)],
-        [Paragraph(f"{prepared_for}    ·    {date_label}: {date_str}", styles["cover_meta"])],
-    ]
-    table = Table(content, colWidths=[170 * mm])
+    accent_strip = Table([["", "", ""]], colWidths=[90 * mm, 50 * mm, 30 * mm], rowHeights=[2.5 * mm])
+    accent_strip.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), BRAND_NAVY),
+        ("BACKGROUND", (1, 0), (1, 0), BRAND_TEAL),
+        ("BACKGROUND", (2, 0), (2, 0), BRAND_AMBER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    content = [[
+        _logo_flowable(46),
+        Paragraph(
+            f"<b>{company_name}</b><br/>{subtitle}<br/><font size='9' color='#4A5E60'>{prepared_for} · {date_label}: {date_str}</font>",
+            styles["title"],
+        ),
+    ], [accent_strip, ""]]
+    table = Table(content, colWidths=[48 * mm, 122 * mm])
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), BRAND_NAVY),
-        ("LEFTPADDING", (0, 0), (-1, -1), 16),
+        ("SPAN", (0, 1), (1, 1)),
+        ("BACKGROUND", (0, 0), (-1, 0), WHITE),
+        ("BOX", (0, 0), (-1, 0), 0.8, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
         ("RIGHTPADDING", (0, 0), (-1, -1), 16),
-        ("TOPPADDING", (0, 0), (-1, -1), 14),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, 0), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+        ("LEFTPADDING", (0, 1), (-1, 1), 0),
+        ("RIGHTPADDING", (0, 1), (-1, 1), 0),
+        ("TOPPADDING", (0, 1), (-1, 1), 0),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return table
 
@@ -460,13 +637,16 @@ def _cover_block(company_name: str, subtitle: str, prepared_for: str,
 # ── KPI bar ───────────────────────────────────────────────────────────────────
 
 def _kpi_bar(kpis: list[tuple[str, str]], styles: dict[str, ParagraphStyle]) -> Table:
-    """4 fact cards: Revenue | Employees | HQ | Founded."""
+    """Fact card row sized dynamically to available width."""
     cells = []
+    count = max(len(kpis), 1)
+    outer_width = 170 * mm
+    inner_width = (outer_width / count) - 12
     for label, value in kpis:
         val_style = styles["kpi_value_small"] if len(value) > 20 else styles["kpi_value"]
         inner = Table(
             [[Paragraph(label, styles["kpi_label"])], [Paragraph(value, val_style)]],
-            colWidths=[39 * mm],
+            colWidths=[inner_width],
         )
         inner.setStyle(TableStyle([
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -475,9 +655,9 @@ def _kpi_bar(kpis: list[tuple[str, str]], styles: dict[str, ParagraphStyle]) -> 
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         cells.append(inner)
-    table = Table([cells], colWidths=[42.5 * mm] * len(cells))
+    table = Table([cells], colWidths=[outer_width / count] * len(cells))
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), SURFACE),
+        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
         ("BOX", (0, 0), (-1, -1), 0.7, BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.7, BORDER),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -596,6 +776,385 @@ def _info_table(rows: list[tuple[str, str]], styles: dict[str, ParagraphStyle],
     return table
 
 
+def _truncate(text: Any, limit: int = 180, default: str = "n/v") -> str:
+    rendered = _safe_text(text, default)
+    if rendered == default:
+        return rendered
+    if len(rendered) <= limit:
+        return rendered
+    return f"{rendered[: limit - 1].rstrip()}…"
+
+
+def _dedupe_items(values: list[str], limit: int = 5) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        rendered = _safe_text(value, "").strip()
+        if not rendered:
+            continue
+        key = rendered.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(rendered)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _compact_event(value: Any, limit: int = 135) -> str:
+    rendered = _safe_text(value, "")
+    if not rendered:
+        return ""
+    parts = [part.strip() for part in rendered.split("|") if part.strip()]
+    if len(parts) >= 4:
+        summary = " | ".join(parts[:4])
+        return _truncate(summary, limit, "")
+    return _truncate(rendered, limit, "")
+
+
+def _service_area_label(value: str, lang: str) -> str:
+    mapping = {
+        "excess_inventory": "Excess Inventory" if lang == "en" else "Bestandsabbau",
+        "repurposing": "Repurposing" if lang == "en" else "Weiterverwendung",
+        "analytics": "Analytics" if lang == "en" else "Analytik",
+        "further_validation_required": "Further validation required" if lang == "en" else "Weitere Validierung nötig",
+    }
+    key = (value or "").strip().lower()
+    if key in mapping:
+        return mapping[key]
+    return _safe_text(value).replace("_", " ").title()
+
+
+def _section_band(title: str, subtitle: str, styles: dict[str, ParagraphStyle],
+                  *, accent: colors.Color = BRAND_BLUE) -> Table:
+    content = [
+        [Paragraph(f"<b>{title}</b>", styles["section"])],
+        [Paragraph(subtitle, styles["small"])],
+    ]
+    table = Table(content, colWidths=[170 * mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _accent_surface(accent)),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, accent),
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    return table
+
+
+def _summary_callout(title: str, body: str, styles: dict[str, ParagraphStyle],
+                     *, accent: colors.Color = BRAND_GREEN,
+                     background: colors.Color = WHITE) -> Table:
+    table = Table(
+        [[Paragraph(f"<b>{title}</b>", styles["body"])],
+         [Paragraph(body, styles["body"])]],
+        colWidths=[170 * mm],
+    )
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), background if background != WHITE else _accent_surface(accent)),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, accent),
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return table
+
+
+def _kpi_grid(kpis: list[tuple[str, str]], styles: dict[str, ParagraphStyle],
+              *, columns: int = 3) -> Table:
+    usable = [(label, value) for label, value in kpis if value and value != "n/v"]
+    if not usable:
+        usable = [("n/v", "n/v")]
+    rows: list[list[Any]] = []
+    row: list[Any] = []
+    cell_width = (170 * mm) / columns
+    for index, (label, value) in enumerate(usable):
+        val_style = styles["kpi_value_small"] if len(value) > 18 else styles["kpi_value"]
+        card = Table(
+            [[Paragraph(label, styles["kpi_label"])], [Paragraph(value, val_style)]],
+            colWidths=[cell_width - 16],
+        )
+        card.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        row.append(card)
+        if (index + 1) % columns == 0:
+            rows.append(row)
+            row = []
+    if row:
+        while len(row) < columns:
+            row.append(Spacer(1, 1))
+        rows.append(row)
+    table = Table(rows, colWidths=[cell_width] * columns)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+        ("BOX", (0, 0), (-1, -1), 0.7, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.7, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+    ]))
+    return table
+
+
+def _extract_revenue_display(profile: dict[str, Any], industry: dict[str, Any]) -> str:
+    current = _safe_text(profile.get("revenue"))
+    econ = profile.get("economic_situation", {}) or {}
+    deep_dive = profile.get("financial_deep_dive", {}) or {}
+    recent_events = [str(item) for item in (econ.get("recent_events") or [])]
+    searchable = " ".join(
+        [
+            _safe_text(industry.get("demand_outlook"), ""),
+            _safe_text(econ.get("assessment"), ""),
+            _safe_text(deep_dive.get("assessment"), ""),
+            *recent_events,
+            *[str(item) for item in (deep_dive.get("key_financials") or [])],
+        ]
+    )
+    matches = re.findall(r"(?:sales|revenue)[^€]{0,40}(€\s?\d+(?:\.\d+)?\s?(?:billion|million|bn|m))", searchable, flags=re.IGNORECASE)
+    normalized_matches = _dedupe_items(matches, limit=3)
+    current_flagged = any(
+        current != "n/v"
+        and current.lower() in event.lower()
+        and any(keyword in event.lower() for keyword in ("impact", "deconsolidation", "product line"))
+        for event in recent_events
+    )
+    if current_flagged:
+        for candidate in normalized_matches:
+            if candidate.lower() != current.lower():
+                return candidate
+    if current != "n/v":
+        return current
+    return normalized_matches[0] if normalized_matches else "n/v"
+
+
+def _run_status_from_pipeline(pipeline_data: dict[str, Any]) -> str:
+    bundle = pipeline_data.get("dashboard_bundle") or {}
+    if isinstance(bundle, dict):
+        status = _safe_text(bundle.get("status"), "")
+        if status:
+            return status
+    readiness = pipeline_data.get("meeting_readiness_assessment") or {}
+    if isinstance(readiness, dict):
+        status = _safe_text(readiness.get("run_status"), "")
+        if status and status != "running":
+            return status
+    final_briefing = pipeline_data.get("final_briefing") or {}
+    if isinstance(final_briefing, dict):
+        status = _safe_text(final_briefing.get("status"), "")
+        if status and status != "running":
+            return status
+    return "meeting_ready"
+
+
+def _sentence_candidates(texts: list[str]) -> list[str]:
+    combined = " ".join(texts)
+    chunks = re.split(r"(?<=[.!?])\s+|\n+", combined)
+    return [chunk.strip(" -") for chunk in chunks if chunk.strip()]
+
+
+def _first_matching_sentence(texts: list[str], patterns: list[str], default: str = "Open") -> str:
+    sentences = _sentence_candidates(texts)
+    for sentence in sentences:
+        lower = sentence.lower()
+        if any(re.search(pattern, lower) for pattern in patterns):
+            return _truncate(sentence, 86, default)
+    return default
+
+
+def _extract_financial_cards(profile: dict[str, Any], industry: dict[str, Any], synthesis: dict[str, Any],
+                             labels: dict[str, str]) -> list[tuple[str, str]]:
+    econ = profile.get("economic_situation", {}) or {}
+    deep_dive = profile.get("financial_deep_dive", {}) or {}
+    texts = [
+        _safe_text(industry.get("demand_outlook"), ""),
+        _safe_text(industry.get("assessment"), ""),
+        _safe_text(econ.get("revenue_trend"), ""),
+        _safe_text(econ.get("profitability"), ""),
+        _safe_text(econ.get("assessment"), ""),
+        _safe_text(deep_dive.get("assessment"), ""),
+        _safe_text(synthesis.get("executive_summary"), ""),
+        *[str(item) for item in (econ.get("recent_events") or [])],
+        *[str(item) for item in (deep_dive.get("key_financials") or [])],
+        *[str(item) for item in (deep_dive.get("balance_sheet_signals") or [])],
+        *[str(item) for item in (deep_dive.get("inventory_positions") or [])],
+        *[str(item) for item in (deep_dive.get("inventory_risks") or [])],
+    ]
+    open_value = labels.get("open_value", "Open")
+    return [
+        (labels["revenue_trend"], _truncate(econ.get("revenue_trend"), 72, open_value)),
+        (labels["ebit"], _first_matching_sentence(texts, [r"\bebit\b"], open_value)),
+        (labels["net_loss"], _first_matching_sentence(texts, [r"net loss", r"jahresfehlbetrag"], open_value)),
+        (labels["write_downs"], _first_matching_sentence(texts, [r"write[- ]down", r"impair", r"wertberichtigung"], open_value)),
+        (labels["net_debt"], _first_matching_sentence(texts, [r"net debt", r"leverage", r"nettoverschuld"], open_value)),
+        (labels["working_capital"], _first_matching_sentence(texts, [r"working capital", r"net working capital"], open_value)),
+        (labels["inventory"], _first_matching_sentence(texts, [r"\binventor", r"vorr"], open_value)),
+    ]
+
+
+def _extract_divisions(profile: dict[str, Any], contacts_section: dict[str, Any]) -> list[str]:
+    texts = [
+        _safe_text(profile.get("description"), ""),
+        _safe_text(contacts_section.get("target_company_summary"), ""),
+    ]
+    for contact in (contacts_section.get("target_company_contacts") or [])[:8]:
+        if isinstance(contact, dict):
+            texts.extend([
+                _safe_text(contact.get("rolle_titel"), ""),
+                _safe_text(contact.get("funktion"), ""),
+            ])
+    divisions: list[str] = []
+    for text in texts:
+        if not text:
+            continue
+        for match in re.findall(r"([A-Z][A-Za-z/&,\- ]+?) division", text):
+            divisions.extend([item.strip() for item in re.split(r",| and ", match) if item.strip()])
+        for match in re.findall(r"for ([A-Z][A-Za-z/&,\- ]+?) divisions", text):
+            divisions.extend([item.strip() for item in re.split(r",| and ", match) if item.strip()])
+    cleaned = _dedupe_items(divisions, limit=4)
+    return cleaned or _top_items(profile.get("products_and_services"), 3)
+
+
+def _validation_pairs(risks: list[str], actions: list[str], labels: dict[str, str]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for index, risk in enumerate(risks[:4]):
+        action = (
+            actions[index]
+            if index < len(actions)
+            else actions[-1]
+            if actions
+            else ("Validate directly in the meeting." if labels.get("date_label") == "Report date" else "Direkt im Gespräch validieren.")
+        )
+        pairs.append((_truncate(risk, 88), _truncate(action, 100)))
+    return pairs
+
+
+def _primary_recommendation(synthesis: dict[str, Any], lang: str) -> tuple[str, str, str]:
+    service_relevance = synthesis.get("liquisto_service_relevance", []) or []
+    recommended = synthesis.get("recommended_engagement_paths", []) or []
+    primary_key = recommended[0] if recommended else ""
+    primary_item = next(
+        (item for item in service_relevance if _safe_text(item.get("service_area"), "").lower() == primary_key.lower()),
+        service_relevance[0] if service_relevance else {},
+    )
+    label = _service_area_label(primary_key or _safe_text(primary_item.get("service_area"), ""), lang)
+    relevance = _safe_text(primary_item.get("relevance"), synthesis.get("confidence") or "medium")
+    reasoning = _truncate(
+        primary_item.get("reasoning")
+        or synthesis.get("opportunity_assessment_summary")
+        or synthesis.get("executive_summary"),
+        220,
+    )
+    return label, relevance, reasoning
+
+
+def _opportunity_table(recommended_paths: list[str], service_relevance: list[dict[str, Any]],
+                       labels: dict[str, str], styles: dict[str, ParagraphStyle], lang: str) -> Table:
+    items_by_key = {
+        _safe_text(item.get("service_area"), "").lower(): item
+        for item in service_relevance
+        if isinstance(item, dict)
+    }
+    ranked_paths = recommended_paths or list(items_by_key)
+    data: list[list[Any]] = [[
+        Paragraph(f"<b>{labels['opportunity_rank']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['opportunity_path']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['opportunity_fit']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['why_now']}</b>", styles["table_header"]),
+    ]]
+    for rank, path in enumerate(ranked_paths[:3], start=1):
+        item = items_by_key.get(path.lower(), {})
+        data.append([
+            Paragraph(str(rank), styles["table_cell"]),
+            Paragraph(_service_area_label(path, lang), styles["table_cell"]),
+            Paragraph(_safe_text(item.get("relevance"), "n/v").title(), styles["table_cell"]),
+            Paragraph(_truncate(item.get("reasoning") or item.get("summary"), 180), styles["table_cell"]),
+        ])
+    if len(data) == 1:
+        data.append([
+            Paragraph("1", styles["table_cell"]),
+            Paragraph("n/v", styles["table_cell"]),
+            Paragraph("n/v", styles["table_cell"]),
+            Paragraph("n/v", styles["table_cell"]),
+        ])
+    table = Table(data, colWidths=[14 * mm, 38 * mm, 24 * mm, 94 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, SURFACE]),
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
+def _contact_table(contacts: list[dict[str, Any]], labels: dict[str, str],
+                   styles: dict[str, ParagraphStyle]) -> Table:
+    data = [[
+        Paragraph("<b>Name</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['contact_role']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['contact_relevance']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['contact_angle']}</b>", styles["table_header"]),
+    ]]
+    for contact in contacts:
+        company = _truncate(contact.get("firma"), 30, "")
+        name = _safe_text(contact.get("name"), "—")
+        if company:
+            name = f"{name}<br/><font size='7' color='#4A5E60'>{company}</font>"
+        relevance = _truncate(
+            contact.get("relevance_reason") or contact.get("confidence"),
+            88,
+            "—",
+        )
+        angle = _truncate(
+            contact.get("suggested_outreach_angle") or contact.get("relevance_reason"),
+            120,
+            "—",
+        )
+        data.append([
+            Paragraph(name, styles["table_cell"]),
+            Paragraph(_truncate(contact.get("rolle_titel") or contact.get("funktion"), 72, "—"), styles["table_cell"]),
+            Paragraph(relevance, styles["table_cell"]),
+            Paragraph(angle, styles["table_cell"]),
+        ])
+    if len(data) == 1:
+        data.append([
+            Paragraph("—", styles["table_cell"]),
+            Paragraph("—", styles["table_cell"]),
+            Paragraph("—", styles["table_cell"]),
+            Paragraph("—", styles["table_cell"]),
+        ])
+    table = Table(data, colWidths=[34 * mm, 40 * mm, 44 * mm, 52 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, SURFACE]),
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
 # ── two-column bullets ────────────────────────────────────────────────────────
 
 def _bullet_col(title: str, items: list[str], styles: dict[str, ParagraphStyle],
@@ -658,7 +1217,7 @@ def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
     flowables: list[Any] = []
 
     for tier_label, payload in tiers:
-        companies = (payload.get("companies", []) if isinstance(payload, dict) else [])
+        companies = (payload.get("companies", []) if isinstance(payload, dict) else [])[:2]
         if not companies:
             continue
 
@@ -670,10 +1229,10 @@ def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
         ]]
 
         for i, c in enumerate(companies):
-            name    = _safe_text(c.get("company_name") or c.get("name") if isinstance(c, dict) else str(c))
+            name    = _truncate(c.get("company_name") or c.get("name") if isinstance(c, dict) else str(c), 42)
             country = _safe_text(c.get("country", "") if isinstance(c, dict) else "")
             rel_raw = _safe_text(c.get("relevance", "") if isinstance(c, dict) else "")
-            rel_txt = _fmt_relevance(rel_raw)
+            rel_txt = _truncate(_fmt_relevance(rel_raw), 44, "—")
             rel_color = _relevance_color(rel_raw)
 
             bg = WHITE if i % 2 == 0 else SURFACE
@@ -792,7 +1351,7 @@ def _source_table(sources: list[dict[str, Any]], labels: dict[str, str],
 
 # ── main entry ────────────────────────────────────────────────────────────────
 
-_LANG_NAMES = {"de": "German", "fr": "French", "es": "Spanish"}
+_LANG_NAMES = {"en": "English", "de": "German", "fr": "French", "es": "Spanish"}
 
 
 def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[str, Any]:
@@ -840,16 +1399,69 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
             _add(f"ind_ktrend_{i}", t)
 
         # Company profile
+        _add("prof_desc", prof.get("description", ""))
+        _add("prof_revenue", prof.get("revenue", ""))
+        _add("prof_employees", prof.get("employees", ""))
         for i, t in enumerate(prof.get("products_and_services", []) or []):
             _add(f"prod_{i}", t)
         for i, t in enumerate(prof.get("product_asset_scope", []) or []):
             _add(f"scope_{i}", t)
+        econ = prof.get("economic_situation", {}) or {}
+        _add("econ_revenue_trend", econ.get("revenue_trend", ""))
+        _add("econ_profitability", econ.get("profitability", ""))
+        _add("econ_fin_pressure", econ.get("financial_pressure", ""))
+        _add("econ_assessment", econ.get("assessment", ""))
+        for i, t in enumerate(econ.get("recent_events", []) or []):
+            _add(f"econ_event_{i}", t)
+        for i, t in enumerate(econ.get("inventory_signals", []) or []):
+            _add(f"econ_inventory_{i}", t)
+        deep = prof.get("financial_deep_dive", {}) or {}
+        _add("deep_assessment", deep.get("assessment", ""))
+        for i, t in enumerate(deep.get("key_financials", []) or []):
+            _add(f"deep_fin_{i}", t)
+        for i, t in enumerate(deep.get("inventory_positions", []) or []):
+            _add(f"deep_inventory_{i}", t)
+        for i, t in enumerate(deep.get("inventory_risks", []) or []):
+            _add(f"deep_risk_{i}", t)
+        for i, t in enumerate(deep.get("balance_sheet_signals", []) or []):
+            _add(f"deep_balance_{i}", t)
+        event_intel = prof.get("transaction_event_intelligence", {}) or {}
+        _add("event_assessment", event_intel.get("assessment", ""))
+        for i, t in enumerate(event_intel.get("strategic_events", []) or []):
+            _add(f"event_strategic_{i}", t)
+        for i, t in enumerate(event_intel.get("carve_out_signals", []) or []):
+            _add(f"event_carve_{i}", t)
+        for i, t in enumerate(event_intel.get("regulatory_signals", []) or []):
+            _add(f"event_reg_{i}", t)
 
         # Market network assessments
         for tier_key in ("peer_competitors", "downstream_buyers",
                          "service_providers", "cross_industry_buyers"):
             tier = mkt.get(tier_key, {}) or {}
             _add(f"mkt_{tier_key}", (tier.get("assessment", "") if isinstance(tier, dict) else ""))
+            if isinstance(tier, dict):
+                for i, company in enumerate(tier.get("companies", []) or []):
+                    if isinstance(company, dict):
+                        _add(f"{tier_key}_rel_{i}", company.get("relevance", ""))
+
+        contacts = data.get("contact_intelligence", {}) or {}
+        _add("contacts_narrative", contacts.get("narrative_summary", ""))
+        _add("contacts_target_summary", contacts.get("target_company_summary", ""))
+        for prefix, records in (
+            ("buyer_contact", contacts.get("prioritized_contacts", []) or contacts.get("contacts", [])),
+            ("target_contact", contacts.get("target_company_prioritized_contacts", []) or contacts.get("target_company_contacts", [])),
+        ):
+            for i, contact in enumerate(records[:8]):
+                if isinstance(contact, dict):
+                    _add(f"{prefix}_role_{i}", contact.get("rolle_titel", ""))
+                    _add(f"{prefix}_function_{i}", contact.get("funktion", ""))
+                    _add(f"{prefix}_relevance_{i}", contact.get("relevance_reason", ""))
+                    _add(f"{prefix}_angle_{i}", contact.get("suggested_outreach_angle", ""))
+
+        for i, action in enumerate(data.get("meeting_actions", []) or []):
+            if isinstance(action, dict):
+                _add(f"meeting_action_title_{i}", action.get("title", ""))
+                _add(f"meeting_action_desc_{i}", action.get("description", ""))
 
         if not batch:
             return data
@@ -865,7 +1477,8 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
                     "role": "system",
                     "content": (
                         f"You are a professional business translator. "
-                        f"Translate all JSON values from English to {lang_name}. "
+                        f"Translate all JSON values to {lang_name}. "
+                        f"The input may contain mixed-language content. "
                         f"Rules: keep company names, brand names, proper nouns, "
                         f"abbreviations, URLs, and numeric values unchanged. "
                         f"Return ONLY a valid JSON object with the exact same keys."
@@ -894,14 +1507,53 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
         ind["trend_direction"] = _get("ind_trend",   ind.get("trend_direction", ""))
         ind["key_trends"] = [_get(f"ind_ktrend_{i}", t) for i, t in enumerate(ind.get("key_trends", []) or [])]
 
+        prof["description"] = _get("prof_desc", prof.get("description", ""))
+        prof["revenue"] = _get("prof_revenue", prof.get("revenue", ""))
+        prof["employees"] = _get("prof_employees", prof.get("employees", ""))
         prof["products_and_services"] = [_get(f"prod_{i}", t)  for i, t in enumerate(prof.get("products_and_services", []) or [])]
         prof["product_asset_scope"]   = [_get(f"scope_{i}", t) for i, t in enumerate(prof.get("product_asset_scope",   []) or [])]
+        econ["revenue_trend"] = _get("econ_revenue_trend", econ.get("revenue_trend", ""))
+        econ["profitability"] = _get("econ_profitability", econ.get("profitability", ""))
+        econ["financial_pressure"] = _get("econ_fin_pressure", econ.get("financial_pressure", ""))
+        econ["assessment"] = _get("econ_assessment", econ.get("assessment", ""))
+        econ["recent_events"] = [_get(f"econ_event_{i}", t) for i, t in enumerate(econ.get("recent_events", []) or [])]
+        econ["inventory_signals"] = [_get(f"econ_inventory_{i}", t) for i, t in enumerate(econ.get("inventory_signals", []) or [])]
+        deep["assessment"] = _get("deep_assessment", deep.get("assessment", ""))
+        deep["key_financials"] = [_get(f"deep_fin_{i}", t) for i, t in enumerate(deep.get("key_financials", []) or [])]
+        deep["inventory_positions"] = [_get(f"deep_inventory_{i}", t) for i, t in enumerate(deep.get("inventory_positions", []) or [])]
+        deep["inventory_risks"] = [_get(f"deep_risk_{i}", t) for i, t in enumerate(deep.get("inventory_risks", []) or [])]
+        deep["balance_sheet_signals"] = [_get(f"deep_balance_{i}", t) for i, t in enumerate(deep.get("balance_sheet_signals", []) or [])]
+        event_intel["assessment"] = _get("event_assessment", event_intel.get("assessment", ""))
+        event_intel["strategic_events"] = [_get(f"event_strategic_{i}", t) for i, t in enumerate(event_intel.get("strategic_events", []) or [])]
+        event_intel["carve_out_signals"] = [_get(f"event_carve_{i}", t) for i, t in enumerate(event_intel.get("carve_out_signals", []) or [])]
+        event_intel["regulatory_signals"] = [_get(f"event_reg_{i}", t) for i, t in enumerate(event_intel.get("regulatory_signals", []) or [])]
 
         for tier_key in ("peer_competitors", "downstream_buyers",
                          "service_providers", "cross_industry_buyers"):
             tier = mkt.get(tier_key)
             if isinstance(tier, dict):
                 tier["assessment"] = _get(f"mkt_{tier_key}", tier.get("assessment", ""))
+                for i, company in enumerate(tier.get("companies", []) or []):
+                    if isinstance(company, dict):
+                        company["relevance"] = _get(f"{tier_key}_rel_{i}", company.get("relevance", ""))
+
+        contacts["narrative_summary"] = _get("contacts_narrative", contacts.get("narrative_summary", ""))
+        contacts["target_company_summary"] = _get("contacts_target_summary", contacts.get("target_company_summary", ""))
+        for prefix, records in (
+            ("buyer_contact", contacts.get("prioritized_contacts", []) or contacts.get("contacts", [])),
+            ("target_contact", contacts.get("target_company_prioritized_contacts", []) or contacts.get("target_company_contacts", [])),
+        ):
+            for i, contact in enumerate(records[:8]):
+                if isinstance(contact, dict):
+                    contact["rolle_titel"] = _get(f"{prefix}_role_{i}", contact.get("rolle_titel", ""))
+                    contact["funktion"] = _get(f"{prefix}_function_{i}", contact.get("funktion", ""))
+                    contact["relevance_reason"] = _get(f"{prefix}_relevance_{i}", contact.get("relevance_reason", ""))
+                    contact["suggested_outreach_angle"] = _get(f"{prefix}_angle_{i}", contact.get("suggested_outreach_angle", ""))
+
+        for i, action in enumerate(data.get("meeting_actions", []) or []):
+            if isinstance(action, dict):
+                action["title"] = _get(f"meeting_action_title_{i}", action.get("title", ""))
+                action["description"] = _get(f"meeting_action_desc_{i}", action.get("description", ""))
 
         return data
 
@@ -913,8 +1565,8 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     labels  = _translation(lang)
     styles  = _styles()
 
-    # Translate all narrative content when a non-English output is requested
-    if lang != "en":
+    # Translate all narrative content into the requested output language.
+    if lang in _LANG_NAMES:
         pipeline_data = _translate_content(pipeline_data, lang)
 
     pipeline_data = copy.deepcopy(pipeline_data)
@@ -931,8 +1583,15 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     quality   = pipeline_data.get("quality_review", {}) or {}
     synthesis = pipeline_data.get("synthesis", {}) or {}
     readiness = pipeline_data.get("research_readiness", {}) or {}
+    contacts_section = pipeline_data.get("contact_intelligence", {}) or {}
+    econ = profile.get("economic_situation", {}) or {}
+    deep_dive = profile.get("financial_deep_dive", {}) or {}
+    transaction_intel = profile.get("transaction_event_intelligence", {}) or {}
 
-    company_name      = _safe_text(profile.get("company_name") or synthesis.get("target_company"), "Target Company")
+    company_name      = _safe_text(
+        profile.get("company_name") or synthesis.get("target_company"),
+        "Target Company" if lang == "en" else "Zielunternehmen",
+    )
     executive_summary = _safe_text(synthesis.get("executive_summary"))
     industry_name     = _safe_text(profile.get("industry") or industry.get("industry_name"))
     website           = _safe_text(profile.get("website"))
@@ -940,7 +1599,6 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     material_scope    = _top_items(profile.get("product_asset_scope") or profile.get("product_material_relevance"), 5)
     key_trends        = _top_items(industry.get("key_trends"), 5)
     service_relevance = synthesis.get("liquisto_service_relevance", []) or []
-    sources           = synthesis.get("sources") or profile.get("sources") or []
 
     # Filter risks
     _OPEN_STARTS = ("what ", "how ", "who ", "when ", "where ", "why ", "which ",
@@ -956,11 +1614,13 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         return not any(sl.startswith(p) for p in _OPEN_STARTS + _BAD_STARTS)
 
     raw_risks  = synthesis.get("key_risks") or []
-    risks      = _top_items([r for r in raw_risks if _ok_risk(r)], 5)
+    risks      = _top_items([r for r in raw_risks if _ok_risk(r)], 4)
     next_steps = _top_items(synthesis.get("next_steps"), 5)
+    recommended_paths = synthesis.get("recommended_engagement_paths", []) or []
+    primary_label, primary_fit, primary_reasoning = _primary_recommendation(synthesis, lang)
 
     # KPI facts
-    revenue   = _safe_text(profile.get("revenue"))
+    revenue   = _extract_revenue_display(profile, industry)
     employees = _safe_text(profile.get("employees")).replace("Approximately ", "~").replace("approximately ", "~")
     hq        = _safe_text(profile.get("headquarters"))
     if hq != "n/v" and "," in hq:
@@ -968,12 +1628,8 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         parts = [p.strip() for p in hq.split(",")]
         hq = parts[0] if len(parts) >= 2 else hq
     founded   = _safe_text(profile.get("founded"))
-    kpis = [
-        (labels["industry"],    industry_name),
-        (labels["revenue"],     revenue),
-        (labels["employees"],   employees),
-        (labels["hq_short"],    hq),
-    ]
+    confidence = _display_confidence(_safe_text(synthesis.get("confidence"), "medium"), lang)
+    run_status = _display_run_status(_run_status_from_pipeline(pipeline_data), lang)
 
     # Research readiness
     rs_score  = int(readiness.get("score", 0))
@@ -991,24 +1647,97 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         (labels["revenue"],      revenue),
     ]
 
-    market_rows = [
-        (labels["market_trend"],    _safe_text(industry.get("trend_direction"))),
-        (labels["demand_outlook"],  _safe_text(industry.get("demand_outlook"))[:120]),
-        (labels["market_assessment"], _safe_text(industry.get("assessment"))[:300]),
-        (labels["key_trends"],      _safe_join(key_trends)),
+    dashboard_kpis = [
+        (labels["run_status"], run_status),
+        (labels["revenue"], revenue),
+        (labels["employees"], employees),
+        (labels["confidence"], confidence),
+        (labels["hq_short"], hq),
+        (labels["primary_path"], primary_label),
+        (labels["research_score"], f"{rs_score}/100" if rs_score else "n/v"),
     ]
+    opportunity_reasons = _dedupe_items(
+        [
+            primary_reasoning,
+            *[
+                item.get("summary", "")
+                for item in (synthesis.get("case_assessments") or [])
+                if isinstance(item, dict)
+            ],
+            synthesis.get("opportunity_assessment_summary", ""),
+        ],
+        limit=4,
+    )
+    key_trigger_items = _dedupe_items(
+        [
+            *[_compact_event(item, 110) for item in (econ.get("recent_events") or [])],
+            *[_compact_event(item, 110) for item in (transaction_intel.get("strategic_events") or [])],
+            *key_trends,
+        ],
+        limit=4,
+    )
+    finance_rows = [
+        (labels["revenue"], revenue),
+        (labels["revenue_trend"], _truncate(econ.get("revenue_trend"), 110)),
+        (labels["profitability"], _truncate(econ.get("profitability"), 110)),
+        (labels["financial_pressure"], _safe_text(econ.get("financial_pressure"))),
+        ("FY" if lang == "en" else "GJ", _safe_text(deep_dive.get("latest_fiscal_year"))),
+        (labels["confidence"], confidence),
+    ]
+    financial_signals = _dedupe_items(
+        [
+            *[str(item) for item in (deep_dive.get("key_financials") or [])],
+            *[str(item) for item in (deep_dive.get("inventory_positions") or [])],
+            *[str(item) for item in (deep_dive.get("inventory_risks") or [])],
+            *[str(item) for item in (deep_dive.get("balance_sheet_signals") or [])],
+        ],
+        limit=5,
+    )
+    if not financial_signals and _safe_text(deep_dive.get("assessment"), ""):
+        financial_signals = [_truncate(deep_dive.get("assessment"), 180)]
+    portfolio_events = _dedupe_items(
+        [
+            *[_compact_event(item, 118) for item in (transaction_intel.get("strategic_events") or [])],
+            *[_compact_event(item, 118) for item in (econ.get("recent_events") or [])],
+        ],
+        limit=4,
+    )
+    narrative_overview = _truncate(
+        synthesis.get("opportunity_assessment_summary") or synthesis.get("buyer_market_summary"),
+        280,
+    )
+    why_liquisto = _truncate(
+        synthesis.get("opportunity_assessment_summary") or primary_reasoning,
+        220,
+    )
+    business_model = _truncate(profile.get("description"), 260)
+    divisions = _extract_divisions(profile, contacts_section)
+    financial_position = _truncate(econ.get("assessment"), 220)
+    trigger_events = _dedupe_items(
+        [
+            *[_compact_event(item, 96) for item in (econ.get("recent_events") or [])],
+            *[_compact_event(item, 96) for item in (transaction_intel.get("strategic_events") or [])],
+        ],
+        limit=4,
+    )
+    financial_cards = _extract_financial_cards(profile, industry, synthesis, labels)
+    target_contacts = contacts_section.get("target_company_prioritized_contacts") or contacts_section.get("target_company_contacts") or []
+    buyer_contacts = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts") or []
+    top_risks = risks[:3]
 
-    econ = profile.get("economic_situation", {}) or {}
-    econ_items = []
-    for label_key, field in [
-        ("revenue_trend",     "revenue_trend"),
-        ("profitability",     "profitability"),
-        ("financial_pressure","financial_pressure"),
-        ("assessment",        "assessment"),
-    ]:
-        v = _safe_text(econ.get(field))
-        if v != "n/v":
-            econ_items.append(f"{labels[label_key]}: {v}")
+    top_actions = []
+    for action in (pipeline_data.get("meeting_actions") or [])[:3]:
+        if not isinstance(action, dict):
+            continue
+        title = _safe_text(action.get("title"), "")
+        description = _truncate(action.get("description"), 70, "")
+        if title and description:
+            top_actions.append(f"{title} - {description}")
+        elif title:
+            top_actions.append(title)
+    if not top_actions:
+        top_actions = next_steps
+    validation_pairs = _validation_pairs(top_risks or risks, top_actions or next_steps, labels)
 
     # ── build story ──────────────────────────────────────────────────────────
 
@@ -1019,90 +1748,154 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
                               labels["prepared_for"], labels["date_label"], styles))
     story.append(Spacer(1, 5 * mm))
 
-    # KPI bar
-    story.append(Paragraph(labels["snapshot"], styles["section"]))
-    # ── Dashboard-derived visuals (shared visualization layer) ────────────────
-    bundle_data = pipeline_data.get("dashboard_bundle")
-    if bundle_data:
-        try:
-            bundle = DashboardBundle.model_validate(bundle_data)
-            # Render executive KPIs from bundle
-            exec_section = next((s for s in bundle.sections if s.section_id == "executive_kpis"), None)
-            if exec_section and exec_section.kpis:
-                bundle_kpis = [
-                    (k.title, k.value)
-                    for k in exec_section.kpis[:4]
-                    if k.value and k.value != "—"
-                ]
-                if bundle_kpis:
-                    story.append(_kpi_bar(bundle_kpis, styles))
-                    story.append(Spacer(1, 3 * mm))
-
-            # Render coverage donut from bundle
-            coverage_section = next((s for s in bundle.sections if s.section_id == "coverage"), None)
-            if coverage_section:
-                _render_bundle_section_to_pdf(coverage_section, styles, story)
-
-            # Render evidence treemap from bundle
-            treemap_section = next((s for s in bundle.sections if s.section_id == "evidence_treemap"), None)
-            if treemap_section and treemap_section.charts:
-                _render_bundle_section_to_pdf(treemap_section, styles, story)
-
-            # Render geo map from bundle
-            geo_section = next((s for s in bundle.sections if s.section_id == "geo_map"), None)
-            if geo_section and geo_section.charts:
-                story.append(Paragraph("Geographic Distribution", styles["section"]))
-                _render_bundle_section_to_pdf(geo_section, styles, story)
-
-        except Exception:
-            pass  # fallback to legacy KPI bar below
-
-    # KPI bar (legacy fallback if bundle not available)
-    if not bundle_data:
-        story.append(_kpi_bar(kpis, styles))
-        story.append(Spacer(1, 3 * mm))
+    story.append(_section_band(
+        labels["snapshot"],
+        "Decision-oriented overview for the first commercial conversation."
+        if lang == "en" else
+        "Entscheidungsorientierter Überblick für das erste kommerzielle Gespräch.",
+        styles,
+        accent=BRAND_TEAL,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_kpi_grid(dashboard_kpis, styles, columns=3))
+    story.append(Spacer(1, 3 * mm))
 
     # Research readiness bar
     if rs_score > 0:
         story.append(_readiness_bar(rs_score, rs_usable, rs_health, labels))
         story.append(Spacer(1, 4 * mm))
 
-    # Executive summary
+    story.append(_summary_callout(
+        f"{labels['primary_recommendation']}: {primary_label} ({primary_fit.title()})",
+        primary_reasoning,
+        styles,
+        accent=BRAND_GREEN,
+        background=WHITE,
+    ))
+    story.append(Spacer(1, 3 * mm))
+
     story.append(Paragraph(labels["summary"], styles["section"]))
-    story.append(Paragraph(executive_summary, styles["body"]))
-    story.append(Spacer(1, 5 * mm))
+    story.append(Paragraph(_truncate(executive_summary, 240), styles["body"]))
+    story.append(Spacer(1, 2 * mm))
+    story.append(_summary_callout(
+        labels["top_risks"],
+        f"{'; '.join(top_risks)}<br/><br/><b>{labels['next_recommended_step']}:</b> {_truncate(top_actions[0] if top_actions else '', 110, '')}",
+        styles,
+        accent=BRAND_RED,
+        background=WHITE,
+    ))
 
-    # Opportunity tiles
-    story.append(Paragraph(labels["service_fit"], styles["section"]))
-    story.append(_opportunity_tiles(service_relevance, styles))
-    story.append(Spacer(1, 7 * mm))
+    story.append(PageBreak())
 
-    # Company profile
-    story.append(Paragraph(labels["company_profile"], styles["section"]))
+    story.append(_section_band(
+        labels["service_fit"],
+        "Lead with the strongest entry path, then support it with signals and alternatives."
+        if lang == "en" else
+        "Zuerst den stärksten Einstiegspfad führen, dann mit Signalen und Alternativen absichern.",
+        styles,
+        accent=BRAND_GREEN,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_opportunity_table(recommended_paths, service_relevance, labels, styles, lang))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Table(
+        [[
+            _bullet_col(labels["key_triggers"], key_trigger_items, styles, 82 * mm, BRAND_TEAL),
+            _bullet_col(labels["why_now"], opportunity_reasons, styles, 82 * mm, BRAND_GREEN),
+        ]],
+        colWidths=[84 * mm, 84 * mm],
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_summary_callout(
+        labels["why_liquisto"],
+        why_liquisto,
+        styles,
+        accent=BRAND_BLUE,
+        background=WHITE,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_summary_callout(
+        labels["meeting_focus"],
+        _truncate(narrative_overview, 150),
+        styles,
+        accent=BRAND_BLUE,
+        background=SURFACE,
+    ))
+
+    story.append(PageBreak())
+
+    story.append(_section_band(
+        labels["company_profile"],
+        "Compact company facts and asset scope relevant for commercial qualification."
+        if lang == "en" else
+        "Verdichtete Unternehmensdaten und Asset-Scope für die kommerzielle Qualifizierung.",
+        styles,
+        accent=BRAND_NAVY,
+    ))
+    story.append(Spacer(1, 3 * mm))
     prof_table = _info_table(profile_rows, styles, (46 * mm, 124 * mm))
     if prof_table:
         story.append(prof_table)
         story.append(Spacer(1, 4 * mm))
     story.append(Table(
-        [[_bullet_col(labels["products"], products, styles, 82 * mm, BRAND_BLUE),
-          _bullet_col(labels["material_relevance"], material_scope, styles, 82 * mm, BRAND_TEAL)]],
+        [[_bullet_col(labels["business_model"], [business_model], styles, 82 * mm, BRAND_BLUE),
+          _bullet_col(labels["divisions"], divisions, styles, 82 * mm, BRAND_TEAL)]],
         colWidths=[84 * mm, 84 * mm],
     ))
-    story.append(Spacer(1, 6 * mm))
-
-    # Market context
-    story.append(Paragraph(labels["market_section"], styles["section"]))
-    mkt_table = _info_table(market_rows, styles, (46 * mm, 124 * mm))
-    if mkt_table:
-        story.append(mkt_table)
-        story.append(Spacer(1, 3 * mm))
-    if econ_items:
-        story.append(_bullet_col(labels["economic_view"], econ_items, styles, 170 * mm, BRAND_BLUE))
-        story.append(Spacer(1, 3 * mm))
     story.append(Spacer(1, 3 * mm))
+    story.append(Table(
+        [[_bullet_col(labels["products_scope"], material_scope or products, styles, 82 * mm, BRAND_TEAL),
+          _bullet_col(labels["trigger_events"], trigger_events, styles, 82 * mm, BRAND_AMBER)]],
+        colWidths=[84 * mm, 84 * mm],
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_summary_callout(
+        labels["financial_position"],
+        financial_position,
+        styles,
+        accent=BRAND_AMBER,
+        background=WHITE,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_kpi_bar([
+        (labels["revenue"], revenue),
+        (labels["employees"], employees),
+        (labels["hq_short"], hq),
+        (labels["founded"], founded),
+    ], styles))
 
-    # Buyer landscape
-    story.append(Paragraph(labels["buyer_section"], styles["section"]))
+    story.append(PageBreak())
+
+    story.append(_section_band(
+        labels["finance_section"],
+        "Place the strongest financial pressure and inventory signals on one page."
+        if lang == "en" else
+        "Die stärksten Finanzdruck- und Inventarsignale auf einer Seite bündeln.",
+        styles,
+        accent=BRAND_AMBER,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(_kpi_grid(financial_cards, styles, columns=2))
+    story.append(Spacer(1, 3 * mm))
+    story.append(Table(
+        [[
+            _bullet_col(labels["financial_signals"], financial_signals, styles, 82 * mm, BRAND_AMBER),
+            _bullet_col(labels["portfolio_events"], portfolio_events, styles, 82 * mm, BRAND_BLUE),
+        ]],
+        colWidths=[84 * mm, 84 * mm],
+    ))
+
+    story.append(PageBreak())
+
+    story.append(_section_band(
+        labels["buyer_section"],
+        "Show where assets can move and which buyer paths are currently most plausible."
+        if lang == "en" else
+        "Zeigen, wohin Assets bewegt werden können und welche Käuferpfade aktuell am plausibelsten sind.",
+        styles,
+        accent=BRAND_GREEN,
+    ))
+    story.append(Spacer(1, 3 * mm))
     for flowable in _buyer_landscape(market, labels, styles):
         story.append(flowable)
 
@@ -1113,121 +1906,59 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         story.append(Table(
             [[_bullet_col("Monetization Paths" if lang == "en" else "Monetarisierungspfade",
                           monet_paths or ["n/v"], styles, 82 * mm, BRAND_GREEN),
-              _bullet_col("Redeployment Paths" if lang == "en" else "Redeployment-Pfade",
+              _bullet_col("Redeployment Paths" if lang == "en" else "Weiterverwendungspfade",
                           redep_paths or ["n/v"], styles, 82 * mm, BRAND_TEAL)]],
             colWidths=[84 * mm, 84 * mm],
         ))
         story.append(Spacer(1, 3 * mm))
 
-    # Repurposing & analytics signals
-    repurp = _top_items(industry.get("repurposing_signals"), 5)
-    analytics = _top_items(industry.get("analytics_signals"), 5)
-    if repurp or analytics:
-        story.append(Table(
-            [[_bullet_col("Repurposing Signals" if lang == "en" else "Repurposing-Signale",
-                          repurp or ["n/v"], styles, 82 * mm, BRAND_TEAL),
-              _bullet_col("Analytics Signals" if lang == "en" else "Analytics-Signale",
-                          analytics or ["n/v"], styles, 82 * mm, BRAND_BLUE)]],
-            colWidths=[84 * mm, 84 * mm],
-        ))
-        story.append(Spacer(1, 3 * mm))
+    story.append(PageBreak())
+    story.append(_section_band(
+        labels["stakeholder_section"],
+        "Target-company decision-makers first, then external buyer and partner contacts."
+        if lang == "en" else
+        "Zuerst die Entscheider im Zielunternehmen, danach externe Käufer- und Partnerkontakte.",
+        styles,
+        accent=BRAND_NAVY,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph(labels["target_contacts"], styles["section"]))
+    story.append(_contact_table(target_contacts[:4], labels, styles))
+    if buyer_contacts:
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(labels["buyer_contacts"], styles["section"]))
+        story.append(_contact_table(buyer_contacts[:3], labels, styles))
+    cov = _safe_text(contacts_section.get("coverage_quality"), "")
+    if cov not in {"", "n/v", "n/a"}:
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(f"{labels['coverage']}: {cov}", styles["small"]))
 
+    story.append(PageBreak())
+
+    story.append(_section_band(
+        labels["validation_section"],
+        "Keep only the few unresolved points that materially affect outreach quality and pair them with concrete validation steps."
+        if lang == "en" else
+        "Nur die wenigen offenen Punkte behalten, die die Outreach-Qualität materiell beeinflussen, und mit konkreten Validierungsschritten verknüpfen.",
+        styles,
+        accent=BRAND_RED,
+    ))
+    story.append(Spacer(1, 3 * mm))
+    story.append(Table(
+        [[
+            _bullet_col(labels["open_questions"], top_risks or risks, styles, 82 * mm, BRAND_RED),
+            _bullet_col(labels["validation_plan"], top_actions or next_steps, styles, 82 * mm, BRAND_GREEN),
+        ]],
+        colWidths=[84 * mm, 84 * mm],
+    ))
     story.append(Spacer(1, 4 * mm))
-
-    # Contact intelligence
-    contacts_section = pipeline_data.get("contact_intelligence", {}) or {}
-    all_contacts = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts", [])
-    if all_contacts:
-        story.append(Paragraph(
-            "Contact Intelligence" if lang == "en" else "Kontakt-Intelligence",
-            styles["section"],
-        ))
-        contact_data = [[
-            Paragraph("<b>Name</b>", styles["table_header"]),
-            Paragraph("<b>Role</b>" if lang == "en" else "<b>Rolle</b>", styles["table_header"]),
-            Paragraph("<b>Company</b>" if lang == "en" else "<b>Firma</b>", styles["table_header"]),
-        ]]
-        for i, c in enumerate(all_contacts[:10]):
-            name = _safe_text(c.get("name"), "\u2014")
-            role = _safe_text(c.get("rolle_titel") or c.get("funktion", ""), "\u2014")
-            firma = _safe_text(c.get("firma", ""), "\u2014")
-            contact_data.append([
-                Paragraph(name, styles["table_cell"]),
-                Paragraph(role, styles["table_cell"]),
-                Paragraph(firma, styles["table_cell"]),
-            ])
-        contact_table = Table(contact_data, colWidths=[50 * mm, 70 * mm, 50 * mm], repeatRows=1)
-        ct_style = [
-            ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
-            ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-            ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
-            ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 7),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]
-        for i in range(len(all_contacts[:10])):
-            bg = WHITE if i % 2 == 0 else SURFACE
-            ct_style.append(("BACKGROUND", (0, i + 1), (-1, i + 1), bg))
-        contact_table.setStyle(TableStyle(ct_style))
-        story.append(contact_table)
-        cov = _safe_text(contacts_section.get("coverage_quality"), "\u2014")
-        if cov != "\u2014":
-            story.append(Spacer(1, 2 * mm))
-            story.append(Paragraph(
-                f"Coverage: {cov}", styles["small"],
-            ))
-        story.append(Spacer(1, 5 * mm))
-
-    # Risks
-    story.append(Paragraph(labels["risk_section"], styles["section"]))
-    story.append(_risk_table(risks, styles))
-    story.append(Spacer(1, 5 * mm))
-
-    # Next steps / Meeting Actions
-    story.append(Paragraph(labels["action_section"], styles["section"]))
-    # Render actions from bundle if available
-    if bundle_data:
-        try:
-            bundle = DashboardBundle.model_validate(bundle_data)
-            actions_section = next((s for s in bundle.sections if s.section_id == "actions"), None)
-            if actions_section and actions_section.callouts:
-                for callout in actions_section.callouts:
-                    story.append(_pdf_callout_block(callout, styles))
-                    story.append(Spacer(1, 2 * mm))
-            else:
-                raise ValueError("no actions in bundle")
-        except Exception:
-            # Fall through to legacy rendering
-            bundle_data = None  # type: ignore[assignment]
-    if not bundle_data:
-        # RA-06: meeting_actions are the primary action output
-        meeting_actions_raw = pipeline_data.get("meeting_actions", [])
-        if not meeting_actions_raw:
-            # Fallback: extract from run_context short_term_memory if available
-            meeting_actions_raw = (
-                pipeline_data.get("run_context", {})
-                .get("short_term_memory", {})
-                .get("meeting_actions", [])
-            )
-        if meeting_actions_raw:
-            _action_icons = {"prepare_meeting": "\u25b8", "collect_missing_evidence": "\u25b8",
-                             "ask_user_selection": "\u25b8", "hold": "\u25b8"}
-            action_items = [
-                f"{_action_icons.get(a.get('action_type',''), '\u25b8')}  {_safe_text(a.get('title',''))}"
-                + (f" \u2014 {_safe_text(a.get('description',''))[:120]}" if a.get('description') else "")
-                for a in meeting_actions_raw[:6]
-            ]
-            story.append(_steps_table(action_items, styles))
-        else:
-            story.append(_steps_table(next_steps, styles))
-    story.append(Spacer(1, 7 * mm))
-
-    # Evidence appendix
-    story.append(Paragraph(labels["sources_section"], styles["section"]))
-    story.append(_source_table(sources, labels, styles))
+    validation_rows = [
+        (f"{index + 1}. {_truncate(question, 70)}", _truncate(action, 90))
+        for index, (question, action) in enumerate(validation_pairs)
+    ]
+    validation_table = _info_table(validation_rows, styles, (78 * mm, 92 * mm))
+    if validation_table:
+        story.append(validation_table)
 
     # ── render ───────────────────────────────────────────────────────────────
 
@@ -1239,9 +1970,9 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         rightMargin=20 * mm,
         topMargin=22 * mm,
         bottomMargin=14 * mm,
-        title=f"Liquisto Briefing - {company_name}",
+        title=f"{labels['report_title']} - {company_name}",
         author="Liquisto",
     )
-    hf = _make_header_footer(labels["page_label"])
+    hf = _make_header_footer(labels["page_label"], labels["report_title"])
     doc.build(story, onFirstPage=hf, onLaterPages=hf)
     return buffer.getvalue()

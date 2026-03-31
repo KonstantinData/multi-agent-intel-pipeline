@@ -433,6 +433,7 @@ class DepartmentLeadAgent:
             name=executor_name,
             human_input_mode="NEVER",
             code_execution_config=False,
+            llm_config=self._llm_config(self.name),
         )
 
         # ── Tool closures ──────────────────────────────────────────────────

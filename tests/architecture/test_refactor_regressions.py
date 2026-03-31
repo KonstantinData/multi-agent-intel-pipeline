@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from src.app.use_cases import (
     SELECTION_REQUIRED_RUN_STATUS,
@@ -9,7 +10,7 @@ from src.app.use_cases import (
     build_resolution_plan,
     determine_final_status,
 )
-from src.exporters.json_export import _extract_export_unresolved
+from src.exporters.json_export import _extract_export_unresolved, export_binary_artifact
 from src.orchestration.meeting_questions import build_initial_answer_matrix, matrix_status_for_task_status
 from src.orchestration.resolution_controller import ResolutionController
 from src.orchestration.run_context import RunContext
@@ -183,3 +184,15 @@ def test_baseline_run_export_contract_stability():
                     "contact_intelligence", "quality_review", "synthesis",
                     "research_readiness"):
         assert section in baseline_pipeline, f"pipeline_data missing section: {section}"
+
+
+def test_export_binary_artifact_persists_report_bytes(tmp_path: Path):
+    target = export_binary_artifact(
+        run_dir=tmp_path / "run-1",
+        relative_path="reports/liquisto_briefing_run-1_DE.pdf",
+        content=b"%PDF-test",
+    )
+
+    assert target.exists()
+    assert target.name == "liquisto_briefing_run-1_DE.pdf"
+    assert target.read_bytes() == b"%PDF-test"

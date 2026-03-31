@@ -8,6 +8,7 @@ All functions are stateless — they operate on plain dicts/lists/strings.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from src.models.schemas import (
@@ -323,6 +324,13 @@ def build_memory_context(
                 {k: v for k, v in c.items() if v != "n/v"}
                 for c in contacts_section.get("target_company_contacts", [])[:10]
             ]
+        market = current_sections.get("market_network", {})
+        if market:
+            ctx["buyer_firms"] = [
+                c.get("name", "n/v")
+                for c in (market.get("downstream_buyers", {}) or {}).get("companies", [])[:8]
+                if isinstance(c, dict) and c.get("name", "n/v") != "n/v"
+            ]
 
     if task_key == "target_company_contacts":
         company = current_sections.get("company_profile", {})
@@ -332,6 +340,12 @@ def build_memory_context(
             ctx["known_transaction_events"] = company.get(
                 "transaction_event_intelligence", {}
             ).get("strategic_events", [])[:5]
+
+    if task_key in {"financial_deep_dive", "transaction_event_intelligence"}:
+        company = current_sections.get("company_profile", {})
+        if company:
+            ctx["known_economic_signals"] = company.get("economic_situation", {})
+            ctx["known_products"] = company.get("products_and_services", [])[:6]
 
     if task_key == "market_situation":
         industry = current_sections.get("industry_analysis", {})
@@ -395,6 +409,313 @@ def dedup_list(items: list) -> list:
             seen.add(key)
             result.append(item)
     return result
+
+
+def _text_candidates(texts: list[str]) -> list[str]:
+    candidates: list[str] = []
+    for text in texts:
+        if not text:
+            continue
+        normalized = re.sub(r"\s+", " ", str(text)).strip()
+        if not normalized:
+            continue
+        for chunk in re.split(r"(?<=[.!?;])\s+|\n+", normalized):
+            line = chunk.strip(" -")
+            if 8 <= len(line) <= 260:
+                candidates.append(line)
+    return dedup_list(candidates)
+
+
+def _contains_metric_value(text: str) -> bool:
+    lower = text.lower()
+    return bool(
+        re.search(r"\d", text)
+        or any(token in lower for token in ("€", "$", "eur", "usd", "%", "bn", "billion", "million", "mrd", "mio"))
+    )
+
+
+def _pick_metric_lines(texts: list[str], *, keywords: tuple[str, ...], limit: int = 3) -> list[str]:
+    matches: list[str] = []
+    for line in _text_candidates(texts):
+        lower = line.lower()
+        if any(keyword in lower for keyword in keywords) and _contains_metric_value(line):
+            matches.append(line)
+    return dedup_list(matches)[:limit]
+
+
+def extract_financial_deep_dive(texts: list[str]) -> dict[str, Any]:
+    """Extract financial and inventory signals from raw evidence text."""
+    revenue_lines = _pick_metric_lines(texts, keywords=("revenue", "sales", "umsatz"), limit=2)
+    ebit_lines = _pick_metric_lines(texts, keywords=("ebit", "operating profit", "ebita"), limit=2)
+    net_loss_lines = _pick_metric_lines(
+        texts,
+        keywords=("net loss", "loss for the year", "jahresfehlbetrag", "net income", "net result"),
+        limit=2,
+    )
+    debt_lines = _pick_metric_lines(
+        texts,
+        keywords=("net debt", "leverage", "indebtedness", "nettoverschuld", "debt"),
+        limit=2,
+    )
+    working_capital_lines = _pick_metric_lines(
+        texts,
+        keywords=("working capital", "net working capital"),
+        limit=2,
+    )
+    inventory_lines = _pick_metric_lines(
+        texts,
+        keywords=("inventory", "inventories", "vorräte", "vorrate", "stock"),
+        limit=3,
+    )
+    write_down_lines = _pick_metric_lines(
+        texts,
+        keywords=("write-down", "write down", "impairment", "obsolescence", "wertberichtigung", "abschreibung"),
+        limit=3,
+    )
+    one_off_lines = _pick_metric_lines(
+        texts,
+        keywords=("one-off", "one off", "special item", "exceptional", "non-recurring", "sondereffekt"),
+        limit=2,
+    )
+
+    all_years = [int(year) for year in re.findall(r"\b(20\d{2})\b", " ".join(_text_candidates(texts)))]
+    categories = {
+        "revenue": revenue_lines,
+        "EBIT": ebit_lines,
+        "net loss": net_loss_lines,
+        "net debt": debt_lines,
+        "working capital": working_capital_lines,
+        "inventories": inventory_lines,
+        "write-downs": write_down_lines,
+        "one-off effects": one_off_lines,
+    }
+    key_financials: list[str] = []
+    for label, lines in categories.items():
+        if lines:
+            key_financials.append(f"{label}: {lines[0]}")
+
+    inventory_risks = write_down_lines[:]
+    for line in inventory_lines:
+        lower = line.lower()
+        if any(token in lower for token in ("obsolete", "slow-moving", "aging", "excess", "surplus", "write-down", "write down")):
+            inventory_risks.append(line)
+
+    balance_sheet_signals = dedup_list(debt_lines + working_capital_lines + write_down_lines + inventory_lines)[:5]
+    captured_labels = [label for label, lines in categories.items() if lines]
+    assessment = "n/v"
+    if captured_labels:
+        latest_year = max(all_years) if all_years else None
+        year_suffix = f" for FY{latest_year}" if latest_year else ""
+        assessment = (
+            f"Primary-source financial evidence{year_suffix} captures "
+            + ", ".join(captured_labels[:4])
+            + "."
+        )
+        if len(captured_labels) < 3:
+            assessment += " Coverage is still partial and should be strengthened with annual-report detail."
+
+    return {
+        "latest_fiscal_year": str(max(all_years)) if all_years else "n/v",
+        "key_financials": key_financials[:6],
+        "inventory_positions": inventory_lines[:4],
+        "inventory_risks": dedup_list(inventory_risks)[:4],
+        "balance_sheet_signals": balance_sheet_signals,
+        "assessment": assessment,
+    }
+
+
+def extract_transaction_events(texts: list[str]) -> dict[str, Any]:
+    """Extract strategic events and disclosure signals from raw evidence text."""
+    strategic_events = _pick_metric_lines(
+        texts,
+        keywords=(
+            "acquisition", "divest", "sale", "carve", "joint venture", "portfolio",
+            "restructur", "plant clos", "program termination", "layoff", "spin-off", "spin off",
+        ),
+        limit=5,
+    )
+    carve_out_signals = _pick_metric_lines(
+        texts,
+        keywords=("carve", "divest", "sale", "spin-off", "spin off", "portfolio"),
+        limit=4,
+    )
+    regulatory_signals = _pick_metric_lines(
+        texts,
+        keywords=("ifrs", "ias", "filing", "regulatory", "correction", "restatement", "ad hoc"),
+        limit=4,
+    )
+    assessment = "n/v"
+    if strategic_events or carve_out_signals or regulatory_signals:
+        categories: list[str] = []
+        if strategic_events:
+            categories.append("strategic events")
+        if carve_out_signals:
+            categories.append("portfolio / carve-out signals")
+        if regulatory_signals:
+            categories.append("regulatory disclosures")
+        assessment = "Primary-source event evidence captures " + ", ".join(categories) + "."
+    return {
+        "strategic_events": strategic_events,
+        "carve_out_signals": carve_out_signals,
+        "regulatory_signals": regulatory_signals,
+        "assessment": assessment,
+    }
+
+
+def _infer_contact_function(role_title: str) -> str:
+    lower = role_title.lower()
+    if any(token in lower for token in ("procurement", "purchasing", "supply chain", "sourcing")):
+        return "Procurement / Supply Chain"
+    if any(token in lower for token in ("operations", "manufacturing", "plant", "industrial")):
+        return "Operations"
+    if any(token in lower for token in ("aftermarket", "service", "parts")):
+        return "Aftermarket / Service"
+    if any(token in lower for token in ("finance", "cfo", "treasury", "controller", "controlling")):
+        return "Finance"
+    if any(token in lower for token in ("strategy", "transformation", "portfolio", "business development")):
+        return "Strategy / Transformation"
+    if any(token in lower for token in ("ceo", "coo", "president", "board", "managing director", "geschäftsführer")):
+        return "Executive"
+    return "n/v"
+
+
+def _infer_contact_seniority(role_title: str) -> str:
+    lower = role_title.lower()
+    if any(token in lower for token in ("ceo", "cfo", "coo", "board", "president", "managing director", "geschäftsführer")):
+        return "Executive"
+    if any(token in lower for token in ("svp", "evp", "vp", "vice president")):
+        return "VP"
+    if "head" in lower or "director" in lower:
+        return "Director"
+    if "manager" in lower or "lead" in lower:
+        return "Manager"
+    return "n/v"
+
+
+def _contact_relevance_defaults(role_title: str, function: str) -> tuple[str, str]:
+    lower = role_title.lower()
+    if function == "Finance":
+        return (
+            "Finance ownership is relevant for working-capital, cash, and inventory-to-cash discussions.",
+            "Open with working-capital, inventory aging, and cash-release questions.",
+        )
+    if function == "Procurement / Supply Chain":
+        return (
+            "Procurement / supply-chain ownership is relevant for excess stock, supplier commitments, and slow-moving inventory.",
+            "Open with excess stock, supplier commitments, and inventory visibility bottlenecks.",
+        )
+    if function == "Operations":
+        return (
+            "Operations ownership is relevant for plant-level inventory, asset redeployment, and throughput constraints.",
+            "Open with plant inventory, redeployment, and operational bottlenecks.",
+        )
+    if function == "Aftermarket / Service":
+        return (
+            "Aftermarket roles matter when spare-parts stock, service inventory, or remarketing routes are relevant.",
+            "Open with spare-parts aging, service stock, and aftermarket monetization angles.",
+        )
+    if function == "Strategy / Transformation":
+        return (
+            "Strategy / transformation roles are relevant when portfolio actions or restructuring may create urgency.",
+            "Open with restructuring, portfolio actions, and inventory monetization urgency.",
+        )
+    if function == "Executive" or any(token in lower for token in ("ceo", "cfo", "coo", "board")):
+        return (
+            "Executive ownership is relevant for portfolio decisions, working-capital pressure, and strategic urgency.",
+            "Open with strategic urgency, working-capital pressure, and decision ownership.",
+        )
+    return (
+        "Role appears commercially relevant and should be validated before outreach.",
+        "Open with inventory pressure, redeployment options, and ownership questions.",
+    )
+
+
+def prioritize_contact_records(
+    contacts: list[dict[str, Any]],
+    *,
+    preferred_company_names: list[str] | None = None,
+    limit: int = 5,
+) -> list[dict[str, str]]:
+    """Fill missing contact metadata and prioritize commercially relevant contacts."""
+    preferred = [name.lower() for name in (preferred_company_names or []) if name and name != "n/v"]
+    normalized = coerce_contact_records(contacts)
+    scored: list[tuple[int, dict[str, str]]] = []
+    seen: set[tuple[str, str]] = set()
+    for contact in normalized:
+        name = contact.get("name", "n/v")
+        company = contact.get("firma", "n/v")
+        if name == "n/v":
+            continue
+        dedup_key = (name.lower(), company.lower())
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        role_title = contact.get("rolle_titel", "n/v")
+        function = contact.get("funktion", "n/v")
+        if function == "n/v":
+            function = _infer_contact_function(role_title)
+            contact["funktion"] = function
+        seniority = contact.get("senioritaet", "n/v")
+        if seniority == "n/v":
+            seniority = _infer_contact_seniority(role_title)
+            contact["senioritaet"] = seniority
+        if contact.get("relevance_reason", "n/v") == "n/v" or contact.get("suggested_outreach_angle", "n/v") == "n/v":
+            relevance_reason, outreach_angle = _contact_relevance_defaults(role_title, function)
+            if contact.get("relevance_reason", "n/v") == "n/v":
+                contact["relevance_reason"] = relevance_reason
+            if contact.get("suggested_outreach_angle", "n/v") == "n/v":
+                contact["suggested_outreach_angle"] = outreach_angle
+
+        score = 0
+        lower_role = role_title.lower()
+        if seniority == "Executive":
+            score += 5
+        elif seniority == "VP":
+            score += 4
+        elif seniority == "Director":
+            score += 3
+        elif seniority == "Manager":
+            score += 2
+        if function in {"Finance", "Procurement / Supply Chain", "Operations", "Aftermarket / Service"}:
+            score += 3
+        elif function == "Strategy / Transformation":
+            score += 2
+        if any(token in lower_role for token in ("inventory", "aftermarket", "procurement", "supply chain", "operations", "finance", "cfo", "coo")):
+            score += 2
+        if preferred and company != "n/v" and any(pref in company.lower() or company.lower() in pref for pref in preferred):
+            score += 2
+        scored.append((score, contact))
+
+    scored.sort(key=lambda item: (-item[0], item[1].get("name", "")))
+    return [contact for _, contact in scored[:limit]]
+
+
+def assess_contact_coverage(
+    *,
+    contacts: list[dict[str, Any]],
+    prioritized_contacts: list[dict[str, Any]],
+    target_contacts: list[dict[str, Any]] | None = None,
+) -> str:
+    all_contacts = coerce_contact_records(contacts) + coerce_contact_records(target_contacts or [])
+    prioritized = coerce_contact_records(prioritized_contacts)
+    if not all_contacts:
+        return "n/v"
+    unique_firms = {
+        contact.get("firma", "")
+        for contact in all_contacts
+        if contact.get("firma") not in {"", "n/v"}
+    }
+    functions = {
+        contact.get("funktion", "")
+        for contact in prioritized
+        if contact.get("funktion") not in {"", "n/v"}
+    }
+    if len(prioritized) >= 3 and (len(unique_firms) >= 2 or len(functions) >= 2):
+        return "high"
+    if prioritized or len(all_contacts) >= 3:
+        return "medium"
+    return "low"
 
 
 # RF-2: Blacklist for parse_contact_from_title — generic terms that are not person names

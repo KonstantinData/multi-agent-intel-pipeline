@@ -6,12 +6,15 @@ NO AG2/autogen or OpenAI dependency.
 from __future__ import annotations
 
 from src.agents._helpers import (
+    assess_contact_coverage,
     coerce_to_string,
     coerce_contact_records,
+    build_memory_context,
+    extract_financial_deep_dive,
+    normalize_payload_updates,
+    prioritize_contact_records,
     sanitize_for_section,
     salvage_valid_fields,
-    build_memory_context,
-    normalize_payload_updates,
 )
 
 
@@ -179,6 +182,21 @@ class TestBuildMemoryContext:
         assert ctx.get("company_industry") == "Automotive"
         assert "driveline" in ctx.get("company_products", [])
 
+    def test_financial_deep_dive_includes_existing_economic_context(self):
+        ctx = build_memory_context(
+            task_key="financial_deep_dive",
+            target_section="company_profile",
+            current_sections={
+                "company_profile": {
+                    "products_and_services": ["gearboxes"],
+                    "economic_situation": {"financial_pressure": "high"},
+                }
+            },
+            role_memory=None,
+        )
+        assert ctx["known_economic_signals"]["financial_pressure"] == "high"
+        assert ctx["known_products"] == ["gearboxes"]
+
 
 # ---------------------------------------------------------------------------
 # Contact field aliasing (EN → DE schema)
@@ -227,6 +245,42 @@ class TestContactCoercion:
         result = coerce_contact_records(items)
         assert result[0]["firma"] == "n/v"
         assert result[0]["rolle_titel"] == "n/v"
+
+
+class TestFinancialExtraction:
+    def test_extract_financial_deep_dive_from_evidence_text(self):
+        result = extract_financial_deep_dive(
+            [
+                "Revenue increased to EUR 1.4 billion in 2024 while EBIT reached EUR 95 million.",
+                "Inventories rose to EUR 240 million and net working capital remained elevated.",
+                "Net debt fell to EUR 110 million after a one-off restructuring charge.",
+                "Inventory write-downs of EUR 12 million were recognized in 2024.",
+            ]
+        )
+        assert result["latest_fiscal_year"] == "2024"
+        assert any("revenue:" in item.lower() for item in result["key_financials"])
+        assert any("inventor" in item.lower() for item in result["inventory_positions"])
+        assert any("write-down" in item.lower() or "write down" in item.lower() for item in result["inventory_risks"])
+        assert any("working capital" in item.lower() or "net debt" in item.lower() for item in result["balance_sheet_signals"])
+
+
+class TestContactPrioritization:
+    def test_prioritize_contacts_fills_metadata_and_coverage(self):
+        prioritized = prioritize_contact_records(
+            [
+                {"name": "Jane Doe", "firma": "Buyer AG", "rolle_titel": "Chief Procurement Officer", "quelle": "https://example.com/jane"},
+                {"name": "John Smith", "firma": "Buyer AG", "rolle_titel": "Plant Operations Director", "quelle": "https://example.com/john"},
+            ],
+            preferred_company_names=["Buyer AG"],
+        )
+        assert prioritized[0]["senioritaet"] in {"Executive", "VP", "Director"}
+        assert prioritized[0]["suggested_outreach_angle"] != "n/v"
+        coverage = assess_contact_coverage(
+            contacts=prioritized,
+            prioritized_contacts=prioritized,
+            target_contacts=[],
+        )
+        assert coverage in {"medium", "high"}
 
 
 # ---------------------------------------------------------------------------

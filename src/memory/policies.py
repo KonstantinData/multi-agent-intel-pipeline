@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.app.use_cases import SUCCESS_RUN_STATUS
+
 # Minimum readiness score to persist patterns.  Runs below this threshold
 # produced evidence too weak to serve as reusable process guidance.
 MIN_READINESS_SCORE = 70
@@ -10,6 +12,8 @@ MIN_READINESS_SCORE = 70
 # Maximum fraction of degraded tasks allowed.  If more than this share of
 # tasks ended degraded, the run's process patterns are not trustworthy.
 MAX_DEGRADED_RATIO = 0.25
+
+SUCCESS_MEMORY_STATUSES = frozenset({"completed", SUCCESS_RUN_STATUS})
 
 
 def should_store_strategy(
@@ -20,7 +24,7 @@ def should_store_strategy(
     task_statuses: dict[str, str] | None = None,
 ) -> bool:
     """Persist only runs that are completed, usable, AND meet quality thresholds."""
-    if status != "completed" or not usable:
+    if status not in SUCCESS_MEMORY_STATUSES or not usable:
         return False
     if readiness_score < MIN_READINESS_SCORE:
         return False
@@ -30,4 +34,3 @@ def should_store_strategy(
         if total > 0 and degraded / total > MAX_DEGRADED_RATIO:
             return False
     return True
-

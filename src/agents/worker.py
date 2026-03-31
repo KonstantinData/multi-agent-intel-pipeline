@@ -16,6 +16,7 @@ from openai import OpenAI
 
 from src.agents._helpers import (
     SECTION_MODELS,
+    assess_contact_coverage as _assess_contact_coverage_impl,
     build_memory_context as _build_memory_context_impl,
     coerce_contact_records as _coerce_contact_records_impl,
     coerce_to_string as _coerce_to_string_impl,
@@ -25,11 +26,14 @@ from src.agents._helpers import (
     coerce_sources as _coerce_sources_impl,
     deep_merge as _deep_merge_impl,
     dedup_list as _dedup_list_impl,
+    extract_financial_deep_dive as _extract_financial_deep_dive_impl,
     extract_contacts_from_facts as _extract_contacts_from_facts_impl,
+    extract_transaction_events as _extract_transaction_events_impl,
     normalize_contact_fields as _normalize_contact_fields_impl,
     normalize_payload_updates as _normalize_payload_updates_impl,
     parse_contact_from_title as _parse_contact_from_title_static,
     pick_field as _pick_field_static,
+    prioritize_contact_records as _prioritize_contact_records_impl,
     salvage_valid_fields as _salvage_valid_fields_impl,
     sanitize_for_section as _sanitize_for_section_impl,
 )
@@ -365,6 +369,78 @@ class ResearchWorker:
                         raw_updates["employees"] = emp_match.group(0).strip()
                         break
 
+        evidence_texts = [
+            *[str(item.get("title", "")).strip() for item in search_results if item.get("title")],
+            *[str(item.get("visible_text_excerpt", "")).strip() for item in page_evidence if item.get("visible_text_excerpt")],
+            *[str(item) for item in synthesis.get("facts", []) if str(item).strip()],
+        ]
+
+        if target_section == "company_profile" and task_key == "financial_deep_dive":
+            extracted_financials = _extract_financial_deep_dive_impl(evidence_texts)
+            existing_financials = raw_updates.get("financial_deep_dive", {})
+            if not isinstance(existing_financials, dict):
+                existing_financials = {}
+            raw_updates["financial_deep_dive"] = self._deep_merge(extracted_financials, existing_financials)
+            if (
+                raw_updates.get("revenue") in {None, "", "n/v"}
+                and existing_payload.get("revenue", "n/v") == "n/v"
+            ):
+                for line in raw_updates["financial_deep_dive"].get("key_financials", []):
+                    if str(line).lower().startswith("revenue:"):
+                        raw_updates["revenue"] = str(line).split(":", 1)[1].strip()
+                        break
+
+        if target_section == "company_profile" and task_key == "transaction_event_intelligence":
+            extracted_events = _extract_transaction_events_impl(evidence_texts)
+            existing_events = raw_updates.get("transaction_event_intelligence", {})
+            if not isinstance(existing_events, dict):
+                existing_events = {}
+            raw_updates["transaction_event_intelligence"] = self._deep_merge(extracted_events, existing_events)
+
+        if target_section == "contact_intelligence":
+            buyer_candidates = (
+                (current_sections.get(target_section) or {}).get("buyer_candidates")
+                or []
+            )
+            contacts = self._coerce_contact_records(raw_updates.get("contacts", []))
+            target_contacts = self._coerce_contact_records(raw_updates.get("target_company_contacts", []))
+
+            if contacts:
+                raw_updates["contacts"] = contacts
+                raw_updates["prioritized_contacts"] = (
+                    self._prioritize_contact_records(
+                        raw_updates.get("prioritized_contacts") or contacts,
+                        preferred_company_names=buyer_candidates,
+                    )
+                )
+                raw_updates["narrative_summary"] = (
+                    raw_updates.get("narrative_summary")
+                    if raw_updates.get("narrative_summary") not in {"", "n/v", None}
+                    else f"Verified {len(contacts)} buyer-side contacts with {len(raw_updates['prioritized_contacts'])} prioritized outreach candidates."
+                )
+
+            if target_contacts:
+                raw_updates["target_company_contacts"] = target_contacts
+                raw_updates["target_company_prioritized_contacts"] = (
+                    self._prioritize_contact_records(
+                        raw_updates.get("target_company_prioritized_contacts") or target_contacts,
+                        preferred_company_names=[brief.company_name],
+                    )
+                )
+                raw_updates["target_company_summary"] = (
+                    raw_updates.get("target_company_summary")
+                    if raw_updates.get("target_company_summary") not in {"", "n/v", None}
+                    else f"Verified {len(target_contacts)} target-company stakeholders relevant to inventory, working capital, or operations."
+                )
+
+            coverage_quality = _assess_contact_coverage_impl(
+                contacts=raw_updates.get("contacts", []),
+                prioritized_contacts=raw_updates.get("prioritized_contacts", []),
+                target_contacts=raw_updates.get("target_company_contacts", []),
+            )
+            if coverage_quality != "n/v":
+                raw_updates["coverage_quality"] = coverage_quality
+
         try:
             payload = self._merge_payload(
                 section=target_section,
@@ -612,13 +688,16 @@ class ResearchWorker:
         if task_key == "financial_deep_dive":
             return [
                 f"site:{brief.normalized_domain} {company_name} annual report pdf",
+                f"site:{brief.normalized_domain} {company_name} investor relations annual report pdf",
                 f"\"{company_name}\" annual report inventory working capital pdf",
                 f"\"{company_name}\" annual report net debt EBIT pdf",
                 f"\"{company_name}\" investor presentation inventory pdf",
                 f"\"{company_name}\" financial statements inventory write-down pdf",
                 f"\"{company_name}\" Geschäftsbericht Vorräte Nettoverschuldung pdf",
                 f"\"{company_name}\" annual report notes inventories write-downs pdf",
-                f"\"{company_name}\" annual report balance sheet inventories debt pdf",
+                f"\"{company_name}\" consolidated financial statements inventory debt pdf",
+                f"site:bundesanzeiger.de \"{company_name}\" Jahresabschluss",
+                f"site:northdata.de \"{company_name}\" Jahresabschluss",
             ]
 
         if task_key in {"company_fundamentals", "product_asset_scope", "transaction_event_intelligence"}:
@@ -690,12 +769,15 @@ class ResearchWorker:
                 queries.extend([
                     f'"{firm}" procurement head supply chain director',
                     f'"{firm}" COO VP operations asset management',
+                    f'site:linkedin.com/in "{firm}" procurement operations',
+                    f'"{firm}" aftermarket service director',
                 ])
             if not queries:
                 # No valid buyer candidates — fall back to target company + industry
                 queries = [
                     f'"{company_name}" procurement head supply chain director',
                     f'"{company_name}" COO VP operations asset management',
+                    f'site:linkedin.com/in "{company_name}" procurement operations',
                     f'"{company_name}" {industry_hint} key accounts customer contacts',
                     f'{industry_hint} procurement director head of purchasing decision maker',
                 ]
@@ -1257,24 +1339,42 @@ class ResearchWorker:
                     contacts.append(parsed)
             payload_updates = {
                 "contacts": contacts,
-                "prioritized_contacts": [],
+                "prioritized_contacts": self._prioritize_contact_records(contacts),
                 "firms_searched": len({c["firma"] for c in contacts if c["firma"] != "n/v"}),
                 "contacts_found": len(contacts),
-                "coverage_quality": "low" if contacts else "n/v",
-                "narrative_summary": "Contact intelligence coverage is limited. Further targeted research required.",
+                "coverage_quality": _assess_contact_coverage_impl(
+                    contacts=contacts,
+                    prioritized_contacts=self._prioritize_contact_records(contacts),
+                    target_contacts=[],
+                ),
+                "narrative_summary": (
+                    f"Indicative buyer-side contact map with {len(contacts)} contacts."
+                    if contacts
+                    else "Contact intelligence coverage is limited. Further targeted research required."
+                ),
                 "open_questions": ["Which decision-makers at buyer firms are most relevant for Liquisto?"],
                 "sources": [],
             }
-            open_questions.append("No verified contacts found — validate decision-makers directly before outreach.")
+            if not contacts:
+                open_questions.append("No verified contacts found — validate decision-makers directly before outreach.")
             if task_key == "target_company_contacts":
+                prioritized_target_contacts = self._prioritize_contact_records(
+                    contacts,
+                    preferred_company_names=[brief["company_name"]],
+                )
                 payload_updates = {
                     "target_company_contacts": contacts,
-                    "target_company_prioritized_contacts": contacts[:3],
-                    "target_company_summary": "Target-company stakeholder coverage is limited and needs stronger validation.",
+                    "target_company_prioritized_contacts": prioritized_target_contacts,
+                    "target_company_summary": (
+                        f"Indicative target-company stakeholder map with {len(contacts)} validated contacts."
+                        if contacts
+                        else "Target-company stakeholder coverage is limited and needs stronger validation."
+                    ),
                     "open_questions": ["Which target-company stakeholder owns inventory, working capital, or portfolio actions?"],
                     "sources": [],
                 }
-                open_questions.append("No verified target-company stakeholder found — validate finance, procurement, or operations leadership directly.")
+                if not contacts:
+                    open_questions.append("No verified target-company stakeholder found — validate finance, procurement, or operations leadership directly.")
 
         if not results:
             open_questions.append(f"No external search evidence found for {task_key}.")
@@ -1323,7 +1423,10 @@ class ResearchWorker:
             # Derive counters from actual contacts — fixes bug where LLM
             # delivers contacts but not the metadata counters, leaving them
             # at the schema default of 0.
-            actual_contacts = merged.get("contacts", []) or merged.get("target_company_contacts", [])
+            actual_contacts = [
+                *list(merged.get("contacts", []) or []),
+                *list(merged.get("target_company_contacts", []) or []),
+            ]
             merged["contacts_found"] = len(actual_contacts)
             merged["firms_searched"] = len(
                 {c.get("firma", "") for c in actual_contacts
@@ -1386,6 +1489,19 @@ class ResearchWorker:
 
     def _coerce_contact_records(self, items: Any) -> list[dict[str, str]]:
         return _coerce_contact_records_impl(items)
+
+    def _prioritize_contact_records(
+        self,
+        contacts: list[dict[str, Any]],
+        *,
+        preferred_company_names: list[str] | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, str]]:
+        return _prioritize_contact_records_impl(
+            contacts,
+            preferred_company_names=preferred_company_names,
+            limit=limit,
+        )
 
     def _normalize_contact_fields(self, item: dict[str, Any]) -> dict[str, str]:
         return _normalize_contact_fields_impl(item)

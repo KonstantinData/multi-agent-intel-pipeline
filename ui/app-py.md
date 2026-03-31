@@ -82,6 +82,20 @@ Tab 5: L["tab_log"]         → "Protokoll"              — Message Feed
 
 **PDF-Downloads NICHT in der Sidebar** — sie wandern in den Briefing-Tab (siehe 3.2).
 
+### 2.6 PDF-Export-Verhalten
+- PDF-Erzeugung läuft über `generate_pdf(...)`, aber die UI ist der tatsächliche Export-Entrypoint.
+- Beim Rendern der Download-Buttons werden die PDFs zusätzlich unter `artifacts/runs/{run_id}/reports/` persistiert:
+  - `liquisto_briefing_{run_id}_DE.pdf`
+  - `liquisto_briefing_{run_id}_EN.pdf`
+- Das PDF ist ein Executive-Briefing:
+  - `Management Snapshot`
+  - `Primäre Empfehlung`
+  - `Opportunity Thesis`
+  - `Finanz- & Inventarsignale`
+  - `Stakeholder Map`
+  - `Zentrale Risiken`
+- Kein Evidenz-Anhang und keine lange Quellenliste im PDF. Diese Inhalte bleiben in der UI.
+
 ### 2.5 n/v-Bereinigung
 - Der interne Platzhalter `"n/v"` darf **niemals** dem Nutzer angezeigt werden
 - Hilfsfunktion `_show(value)` → gibt `value` zurück wenn es nicht in `{"n/v", "n/a", "", None}` ist, sonst `None`

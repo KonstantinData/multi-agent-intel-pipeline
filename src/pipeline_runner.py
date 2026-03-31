@@ -12,6 +12,7 @@ from src.agents.runtime_factory import create_runtime_agents
 from src.app.use_cases import (
     BLOCKED_RUN_STATUS,
     SELECTION_REQUIRED_RUN_STATUS,
+    SUCCESS_RUN_STATUS,
     build_dashboard_state,
     build_resolution_plan,
     determine_final_status,
@@ -19,11 +20,12 @@ from src.app.use_cases import (
 from src.config import summarize_worker_report_costs
 from src.domain.intake import IntakeRequest
 from src.exporters.json_export import export_run
+from src.memory.backfill import backfill_long_term_memory_from_runs
 from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_patterns
 from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
 from src.memory.retrieval import retrieve_strategies
-from src.models.meeting_ready import ResolutionPlan
+from src.models.meeting_ready import FinalBriefing, MeetingAction, ResolutionPlan
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
@@ -106,6 +108,100 @@ def _extract_pipeline_data(messages: list[dict[str, Any]]) -> dict[str, Any]:
     return validate_pipeline_data(pipeline_data)
 
 
+def _normalize_meeting_actions(raw_actions: list[Any] | None) -> list[MeetingAction]:
+    actions: list[MeetingAction] = []
+    for item in raw_actions or []:
+        if isinstance(item, MeetingAction):
+            actions.append(item)
+        elif isinstance(item, dict):
+            actions.append(MeetingAction.model_validate(item))
+    return actions
+
+
+def _sync_finalization_artifacts(
+    *,
+    run_context: RunContext,
+    pipeline_data: dict[str, Any],
+    run_id: str,
+    company_name: str,
+    status: str,
+    meeting_actions: list[MeetingAction] | list[dict[str, Any]] | None = None,
+) -> None:
+    evidence_health = str(
+        ((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low")
+    )
+    blocked_reasons = list(run_context.meeting_readiness_assessment.blocked_reasons or [])
+    if status == BLOCKED_RUN_STATUS and not blocked_reasons:
+        readiness_reasons = [
+            str(reason).strip()
+            for reason in ((pipeline_data.get("research_readiness") or {}).get("reasons") or [])
+            if str(reason).strip()
+        ]
+        blocked_reasons = readiness_reasons[:5]
+        if not blocked_reasons:
+            finalization_reason = str(
+                (run_context.resolution_state.get("finalization_blocked") or {}).get("reason") or ""
+            ).strip()
+            if finalization_reason == "meeting_critical_public_gaps_open":
+                blocked_reasons = ["Meeting-critical public gaps remain open."]
+            elif finalization_reason == "meeting_not_ready":
+                blocked_reasons = ["Research output is not yet meeting-ready."]
+
+    readiness = run_context.meeting_readiness_assessment.model_copy(
+        update={
+            "run_status": status,
+            "meeting_ready": status == SUCCESS_RUN_STATUS,
+            "blocked_reasons": [] if status == SUCCESS_RUN_STATUS else blocked_reasons,
+            "confidence": (
+                "high"
+                if status == SUCCESS_RUN_STATUS and evidence_health == "high"
+                else "medium"
+                if status == SUCCESS_RUN_STATUS
+                else "low"
+            ),
+        }
+    )
+    run_context.meeting_readiness_assessment = readiness
+    run_context.short_term_memory.meeting_readiness_assessment = readiness
+
+    actions = _normalize_meeting_actions(
+        meeting_actions
+        if meeting_actions is not None
+        else (
+            run_context.short_term_memory.meeting_actions
+            or pipeline_data.get("meeting_actions")
+            or []
+        )
+    )
+    if actions:
+        run_context.short_term_memory.meeting_actions = actions
+        pipeline_data["meeting_actions"] = sort_meeting_actions(
+            [action.model_dump(mode="json") for action in actions]
+        )
+
+    final_briefing = FinalBriefing(
+        run_id=run_id,
+        company_name=company_name,
+        status=status,
+        executive_summary=str((pipeline_data.get("synthesis") or {}).get("executive_summary") or "n/v"),
+        evidence_packets=list(run_context.short_term_memory.evidence_packets),
+        answer_matrix_updates=list(run_context.short_term_memory.answer_matrix_updates),
+        readiness=readiness,
+        recommended_actions=actions,
+        metadata={
+            "run_status": status,
+            "research_readiness_score": int(
+                ((pipeline_data.get("research_readiness") or {}).get("score", 0) or 0)
+            ),
+            "evidence_health": evidence_health,
+        },
+    )
+    run_context.final_briefing = final_briefing
+    run_context.short_term_memory.final_briefing = final_briefing
+    pipeline_data["meeting_readiness_assessment"] = readiness.model_dump(mode="json")
+    pipeline_data["final_briefing"] = final_briefing.model_dump(mode="json")
+
+
 def resume_pipeline(
     *,
     run_id: str,
@@ -167,12 +263,28 @@ def resume_pipeline(
     first_round_resolution["bucket"] = "NOT_MEETING_CRITICAL"  # user decision applied
     run_context.resolution_state["first_round_resolution"] = first_round_resolution
     readiness = pipeline_data.get("research_readiness", {})
+    meeting_assessment = MeetingReadinessGate().evaluate(
+        answer_matrix=run_context.answer_matrix,
+        resolution_state=run_context.resolution_state,
+        evidence_health=str((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low"),
+        readiness_usable=bool(readiness.get("usable")),
+    )
+    run_context.meeting_readiness_assessment = meeting_assessment
     status = determine_final_status(
         readiness_usable=bool(readiness.get("usable")),
         first_round_resolution=first_round_resolution,
         remaining_public_gaps=[],  # user resolved the selection requirement
     )
+    if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
+        status = meeting_assessment.run_status
     run_context.status = status
+    _sync_finalization_artifacts(
+        run_context=run_context,
+        pipeline_data=pipeline_data,
+        run_id=run_id,
+        company_name=run_context.intake.get("company_name", ""),
+        status=status,
+    )
 
     # RA-07: Checkpoint after dashboard resume
     _write_checkpoint(run_dir, "after_dashboard_resume", run_context)
@@ -224,6 +336,7 @@ def run_pipeline(
     agents = create_runtime_agents()
 
     memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
+    backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=RUNS_DIR)
     run_context = RunContext(
         run_id=run_id,
         intake={"company_name": company_name, "web_domain": web_domain, "language": intake.language},
@@ -463,6 +576,8 @@ def run_pipeline(
             first_round_resolution=first_round_resolution,
             remaining_public_gaps=list(remaining_public_gaps),
         )
+        if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
+            status = meeting_assessment.run_status
         resume_entrypoint = (
             "supervisor_resume_after_user_selection"
             if status == SELECTION_REQUIRED_RUN_STATUS
@@ -481,6 +596,14 @@ def run_pipeline(
                 "open_gaps": list(remaining_public_gaps),
             }
         run_context.status = status
+        _sync_finalization_artifacts(
+            run_context=run_context,
+            pipeline_data=pipeline_data,
+            run_id=run_id,
+            company_name=company_name,
+            status=status,
+            meeting_actions=meeting_actions,
+        )
 
         # RA-08: Persist budget tracker and guardrail telemetry
         run_context.resolution_state["budget_tracker"] = budget_tracker.snapshot()

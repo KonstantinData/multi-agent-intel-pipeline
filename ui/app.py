@@ -19,6 +19,7 @@ os.chdir(PROJECT_ROOT)
 
 from src.app.use_cases import build_standard_backlog
 from src.config import summarize_runtime_models
+from src.exporters.json_export import export_binary_artifact
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
 from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
@@ -203,25 +204,40 @@ def _ranked_service_paths(synthesis: dict) -> list[dict]:
     return positive + unclear
 
 
+def _build_pdf_export(lang: str) -> tuple[bytes, str]:
+    """Generate and persist the current PDF export for the active run."""
+    if not (st.session_state.run_id and st.session_state.pipeline_data):
+        return b"", ""
+    lang_suffix = lang.upper()
+    file_name = f"liquisto_briefing_{st.session_state.run_id}_{lang_suffix}.pdf"
+    pdf_bytes = generate_pdf(st.session_state.pipeline_data, lang=lang)
+    export_binary_artifact(
+        run_dir=RUNS_DIR / st.session_state.run_id,
+        relative_path=f"reports/{file_name}",
+        content=pdf_bytes,
+    )
+    return pdf_bytes, file_name
+
+
 def _render_pdf_downloads(L: dict) -> None:
     if not (st.session_state.run_id and st.session_state.pipeline_data):
         return
     col_de, col_en = st.columns(2)
     with col_de:
-        pdf_de = generate_pdf(st.session_state.pipeline_data, lang="de")
+        pdf_de, file_name_de = _build_pdf_export("de")
         st.download_button(
             L["download_pdf_de"],
             data=pdf_de,
-            file_name=f"liquisto_briefing_{st.session_state.run_id}_DE.pdf",
+            file_name=file_name_de,
             mime="application/pdf",
             use_container_width=True,
         )
     with col_en:
-        pdf_en = generate_pdf(st.session_state.pipeline_data, lang="en")
+        pdf_en, file_name_en = _build_pdf_export("en")
         st.download_button(
             L["download_pdf_en"],
             data=pdf_en,
-            file_name=f"liquisto_briefing_{st.session_state.run_id}_EN.pdf",
+            file_name=file_name_en,
             mime="application/pdf",
             use_container_width=True,
         )

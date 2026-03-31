@@ -41,3 +41,21 @@ def test_initial_answer_matrix_starts_pending():
     matrix = build_initial_answer_matrix()
     assert matrix["q_market_situation"]["status"] == "pending"
     assert matrix["q_market_situation"]["source_tasks"] == []
+
+
+def test_supervisor_brief_company_name_ignores_placeholder_legal_name():
+    brief = SupervisorBrief(
+        submitted_company_name="Ziehl-Abegg",
+        submitted_web_domain="ziehl-abegg.com",
+        verified_company_name="Ziehl-Abegg",
+        verified_legal_name="n/v",
+        name_confidence="medium",
+        website_reachable=True,
+        homepage_url="https://ziehl-abegg.com",
+        page_title="Ziehl-Abegg",
+        meta_description="Ziehl-Abegg",
+        raw_homepage_excerpt="Ziehl-Abegg excerpt",
+        normalized_domain="ziehl-abegg.com",
+    )
+
+    assert brief.company_name == "Ziehl-Abegg"

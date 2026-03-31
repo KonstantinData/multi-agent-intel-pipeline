@@ -8,6 +8,10 @@ Validates:
 """
 from __future__ import annotations
 
+from io import BytesIO
+
+from pypdf import PdfReader
+
 from src.models.visualization import (
     ChartSeries,
     ChartSpec,
@@ -290,6 +294,27 @@ def test_pdf_without_bundle_still_works():
     pdf_bytes = generate_pdf(pd, lang="en")
     assert isinstance(pdf_bytes, bytes)
     assert pdf_bytes[:5] == b"%PDF-"
+
+
+def test_pdf_localizes_core_labels_for_german_and_english():
+    from src.exporters.pdf_report import generate_pdf
+
+    pd = _make_pipeline_data()
+    pdf_de = generate_pdf(pd, lang="de")
+    pdf_en = generate_pdf(pd, lang="en")
+
+    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
+    text_en = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_en)).pages)
+
+    assert "Management-Dashboard" in text_de
+    assert "Offene Fragen & Validierungsplan" in text_de
+    assert "Executive Dashboard" not in text_de
+    assert "Open Questions & Validation Plan" not in text_de
+
+    assert "Executive Dashboard" in text_en
+    assert "Open Questions & Validation Plan" in text_en
+    assert "Management-Dashboard" not in text_en
+    assert "Offene Fragen & Validierungsplan" not in text_en
 
 
 def test_compose_dashboard_bundle_is_json_serializable():

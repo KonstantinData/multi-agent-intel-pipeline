@@ -433,6 +433,8 @@ def assess_research_readiness(
     has_contacts = bool(
         contact_intelligence.get("contacts")
         or contact_intelligence.get("prioritized_contacts")
+        or contact_intelligence.get("target_company_contacts")
+        or contact_intelligence.get("target_company_prioritized_contacts")
     )
     contact_coverage = str(contact_intelligence.get("coverage_quality", "n/v")).lower()
     if has_contacts and contact_coverage not in {"n/v", "low"}:
