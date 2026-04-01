@@ -23,11 +23,10 @@ anchor referenced in `refactor-architecture-final.md`.
   briefing.
 
 ### 3. Opportunity Prioritization
-- Clear ranking of Liquisto service paths (excess inventory monetization,
-  repurposing/circularity, analytics/decision support) with evidence-based
-  reasoning for each.
-- "Unclear" is an acceptable assessment when evidence is genuinely absent,
-  but must not be the default for all paths.
+- Clear assessment of whether an excess inventory monetization path is
+  supported, with evidence-based reasoning.
+- "Further validation required" is acceptable when evidence is genuinely
+  absent, but it must be justified explicitly.
 
 ### 4. Buyer / Redeployment Specificity
 - Named buyer companies with relevance explanation per buyer.

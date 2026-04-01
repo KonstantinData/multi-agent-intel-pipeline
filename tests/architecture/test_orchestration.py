@@ -21,7 +21,13 @@ from src.app.use_cases import (
     get_task_contract,
 )
 from src.models.registry import SCHEMA_REGISTRY, resolve_output_schema, assemble_section, SECTION_MODEL_MAP
-from src.orchestration.synthesis import build_synthesis_context, assess_research_readiness
+from src.orchestration.synthesis import (
+    assess_research_readiness,
+    build_contact_briefing_assets,
+    build_playbook_assets,
+    build_synthesis_context,
+    harmonize_synthesis_output,
+)
 from src.orchestration.task_router import Assignment, evaluate_run_conditions
 from src.config.settings import MAX_TASK_RETRIES, SOFT_TOKEN_BUDGET, HARD_TOKEN_CAP
 from src.agents.critic import CriticAgent, _evaluate_rule
@@ -122,7 +128,7 @@ class TestTaskBacklogContracts:
             assert not missing, f"Task '{task['task_key']}' is missing fields: {missing}"
 
     def test_all_tasks_have_12_entries(self):
-        assert len(STANDARD_TASK_BACKLOG) == 15
+        assert len(STANDARD_TASK_BACKLOG) == 13
 
     def test_output_schema_key_resolves_in_registry(self):
         for task in STANDARD_TASK_BACKLOG:
@@ -334,7 +340,7 @@ class TestSynthesisContext:
     def test_build_synthesis_context_returns_confidence_from_quality_review(self):
         result = build_synthesis_context(
             company_profile={"company_name": "ACME GmbH", "industry": "Manufacturing"},
-            industry_analysis={"analytics_signals": [], "key_trends": []},
+            industry_analysis={"key_trends": []},
             market_network={
                 "peer_competitors": {"companies": []},
                 "downstream_buyers": {"companies": [], "assessment": "n/v"},
@@ -351,7 +357,7 @@ class TestSynthesisContext:
     def test_synthesis_fallback_confidence_not_forced_low(self):
         result = build_synthesis_context(
             company_profile={"company_name": "ACME GmbH", "industry": "Manufacturing"},
-            industry_analysis={"analytics_signals": ["gap signal"], "key_trends": ["trend"]},
+            industry_analysis={"key_trends": ["trend"]},
             market_network={
                 "peer_competitors": {"companies": [{"name": "Peer1"}], "assessment": "competitive"},
                 "downstream_buyers": {"companies": [{"name": "Buyer1"}], "assessment": "active"},
@@ -369,14 +375,14 @@ class TestSynthesisContext:
     def test_negative_placeholder_signals_are_not_treated_as_positive(self):
         synthesis = build_synthesis_context(
             company_profile={"company_name": "Example GmbH", "industry": "Mechanical Engineering"},
-            industry_analysis={"analytics_signals": [], "key_trends": []},
+            industry_analysis={"key_trends": []},
             market_network={
                 "peer_competitors": {"companies": []},
                 "downstream_buyers": {"companies": [], "assessment": "No credible buyer path validated yet."},
                 "service_providers": {"companies": []},
                 "cross_industry_buyers": {"companies": []},
                 "monetization_paths": ["No credible monetization path validated yet."],
-                "redeployment_paths": ["No validated repurposing path found."],
+                "redeployment_paths": [],
             },
             contact_intelligence={},
             quality_review={"open_gaps": []},
@@ -397,7 +403,7 @@ class TestSynthesisContext:
                     "key_financials": ["Revenue 2025: EUR 38.8bn"],
                 },
             },
-            industry_analysis={"analytics_signals": ["planning complexity"], "key_trends": []},
+            industry_analysis={"key_trends": []},
             market_network={
                 "peer_competitors": {"companies": []},
                 "downstream_buyers": {"companies": [{"name": "Buyer1"}], "assessment": "active"},
@@ -412,6 +418,134 @@ class TestSynthesisContext:
         )
         assert synthesis["recommended_engagement_paths"][0] == "excess_inventory"
         assert "inventory-to-cash" in synthesis["opportunity_assessment_summary"].lower()
+
+    def test_further_validation_required_without_financial_or_buyer_routes(self):
+        synthesis = build_synthesis_context(
+            company_profile={
+                "company_name": "Example GmbH",
+                "industry": "Mechanical Engineering",
+                "economic_situation": {
+                    "assessment": "Revenue declined in Europe but recovered in Asia.",
+                    "financial_pressure": "moderate pressure from regional volatility",
+                },
+                "financial_deep_dive": {
+                    "inventory_positions": [],
+                    "inventory_risks": [],
+                    "balance_sheet_signals": [],
+                    "key_financials": ["Revenue 2024: EUR 893m"],
+                },
+            },
+            industry_analysis={"key_trends": []},
+            market_network={
+                "peer_competitors": {"companies": []},
+                "downstream_buyers": {"companies": [{"name": "Buyer1"}], "assessment": "indicative only"},
+                "service_providers": {"companies": []},
+                "cross_industry_buyers": {"companies": []},
+                "monetization_paths": [],
+                "redeployment_paths": [],
+            },
+            contact_intelligence={"target_company_contacts": [{"name": "Jane Doe"}]},
+            quality_review={"open_gaps": [], "evidence_health": "high"},
+            memory_snapshot={"sources": [], "next_actions": []},
+        )
+        assert synthesis["recommended_engagement_paths"][0] == "further_validation_required"
+
+    def test_harmonize_synthesis_output_falls_back_to_validation_when_buyer_route_is_too_thin(self):
+        synthesis = harmonize_synthesis_output(
+            synthesis={
+                "generation_mode": "normal",
+                "executive_summary": "Original summary",
+                "opportunity_assessment_summary": "Original opportunity",
+                "recommended_engagement_paths": ["excess_inventory"],
+            },
+            company_profile={
+                "company_name": "Ziehl-Abegg",
+                "financial_deep_dive": {
+                    "assessment": "Public financial detail remains limited.",
+                    "key_financials": ["Revenue 2024: EUR 893m"],
+                    "inventory_positions": [],
+                    "inventory_risks": [],
+                    "balance_sheet_signals": [],
+                },
+            },
+            industry_analysis={},
+            market_network={
+                "downstream_buyers": {"companies": [{"name": "Newark Electronics"}]},
+                "monetization_paths": ["Aftermarket resale via service and spare-parts channels."],
+                "redeployment_paths": [],
+            },
+            contact_intelligence={"prioritized_contacts": [{"name": "Neil Davies", "firma": "Newark Electronics"}]},
+            quality_review={"evidence_health": "medium"},
+        )
+        assert synthesis["recommended_engagement_paths"][0] == "further_validation_required"
+
+    def test_buyer_routes_can_still_support_excess_inventory_when_inventory_keyword_is_negated(self):
+        synthesis = build_synthesis_context(
+            company_profile={
+                "company_name": "Ziehl-Abegg",
+                "industry": "Mechanical Engineering",
+                "economic_situation": {
+                    "recent_events": ["USA became largest foreign market"],
+                    "inventory_signals": ["Company emphasizes effective inventory management to avoid excess stock and write-downs"],
+                    "financial_pressure": "low",
+                    "assessment": "No public evidence of inventory stress or financial distress.",
+                },
+                "financial_deep_dive": {
+                    "inventory_positions": [],
+                    "inventory_risks": [],
+                    "balance_sheet_signals": [],
+                    "key_financials": ["Revenue 2025: EUR 1.0bn"],
+                },
+            },
+            industry_analysis={},
+            market_network={
+                "downstream_buyers": {
+                    "companies": [
+                        {"name": "Toyota Material Handling"},
+                        {"name": "Commercial Vehicle Manufacturers (City Bus OEMs)"},
+                    ]
+                },
+                "monetization_paths": ["Aftermarket service and OEM resale routes are visible."],
+                "redeployment_paths": [],
+            },
+            contact_intelligence={
+                "prioritized_contacts": [
+                    {"name": "Scott Claver", "firma": "Toyota Material Handling"},
+                    {"name": "Bret Bruin", "firma": "Toyota Material Handling"},
+                ]
+            },
+            quality_review={"open_gaps": [], "evidence_health": "medium"},
+            memory_snapshot={"sources": [], "next_actions": []},
+        )
+        assert synthesis["recommended_engagement_paths"][0] == "excess_inventory"
+
+    def test_curated_critical_questions_prevent_ui_gap_backlog_from_blocking_readiness(self):
+        readiness = assess_research_readiness(
+            company_profile={"company_name": "ACME"},
+            industry_analysis={"industry_name": "Industrials"},
+            market_network={"target_company": "ACME"},
+            contact_intelligence={
+                "target_company_contacts": [
+                    {"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"},
+                    {"name": "John Doe", "firma": "ACME", "rolle_titel": "Head of Supply Chain"},
+                ],
+                "coverage_quality": "medium",
+            },
+            quality_review={"evidence_health": "medium", "open_gaps": [f"Gap {i}" for i in range(30)]},
+            synthesis={
+                "generation_mode": "normal",
+                "executive_summary": "Actionable summary",
+                "opportunity_assessment_summary": "Further validation is required before a primary path is confirmed.",
+                "recommended_engagement_paths": ["further_validation_required"],
+                "critical_open_questions": [
+                    {"label": "One", "question": "Q1"},
+                    {"label": "Two", "question": "Q2"},
+                    {"label": "Three", "question": "Q3"},
+                ],
+            },
+        )
+        assert readiness["usable"] is True
+        assert not any("too numerous" in reason.lower() for reason in readiness["reasons"])
 
 
 # ===========================================================================
@@ -434,12 +568,11 @@ class TestSectionAssembly:
     def test_assemble_section_industry_analysis(self):
         raw = {
             "industry_name": "Automotive", "assessment": "Declining",
-            "key_trends": ["EV shift"], "repurposing_signals": ["battery reuse"],
-            "analytics_signals": ["planning gap"],
+            "key_trends": ["EV shift"], "overcapacity_signals": ["battery stock overhang"],
         }
         result = assemble_section("industry_analysis", raw)
         assert result["industry_name"] == "Automotive"
-        assert result["repurposing_signals"] == ["battery reuse"]
+        assert result["overcapacity_signals"] == ["battery stock overhang"]
         assert "overcapacity_signals" in result
 
     def test_assemble_section_market_network(self):
@@ -504,7 +637,7 @@ class TestSupervisorRouting:
         sup = self._sup()
         assert sup.route_question(question="What is the demand outlook?")["route"] == "MarketDepartment"
         assert sup.route_question(question="Markt Nachfrage und Angebot")["route"] == "MarketDepartment"
-        assert sup.route_question(question="circular economy repurposing")["route"] == "MarketDepartment"
+        assert sup.route_question(question="market overcapacity and supply pressure")["route"] == "MarketDepartment"
 
     def test_route_synthesis_keywords(self):
         sup = self._sup()
@@ -666,14 +799,144 @@ class TestConfigDefaults:
 class TestResearchReadiness:
     def test_requires_multiple_sections(self):
         readiness = assess_research_readiness(
+            company_profile={
+                "company_name": "ACME",
+                "financial_deep_dive": {
+                    "assessment": "Primary-source financial evidence captures inventories, working capital, and revenue.",
+                    "key_financials": ["Revenue: EUR 200m", "EBIT: EUR 12m"],
+                    "inventory_positions": ["Inventories: EUR 40m"],
+                    "balance_sheet_signals": ["Working capital elevated"],
+                    "inventory_risks": [],
+                },
+            },
+            industry_analysis={"industry_name": "Software"},
+            market_network={"target_company": "ACME"},
+            contact_intelligence={
+                "target_company_contacts": [
+                    {"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"},
+                    {"name": "John Doe", "firma": "ACME", "rolle_titel": "Head of Supply Chain"},
+                ],
+                "coverage_quality": "medium",
+            },
+            quality_review={"evidence_health": "medium"},
+            synthesis={
+                "generation_mode": "normal",
+                "executive_summary": "Actionable summary",
+                "opportunity_assessment_summary": "Strong fit",
+                "recommended_engagement_paths": ["excess_inventory"],
+            },
+        )
+        assert readiness["usable"] is True
+        assert readiness["score"] >= 70
+
+    def test_incomplete_fallback_synthesis_blocks_readiness(self):
+        readiness = assess_research_readiness(
             company_profile={"company_name": "ACME"},
             industry_analysis={"industry_name": "Software"},
             market_network={"target_company": "ACME"},
             contact_intelligence={},
             quality_review={"evidence_health": "medium"},
+            synthesis={
+                "generation_mode": "fallback",
+                "executive_summary": "Conservative output — synthesis incomplete.",
+                "opportunity_assessment_summary": "Synthesis did not complete within max_round.",
+                "recommended_engagement_paths": ["excess_inventory"],
+            },
         )
-        assert readiness["usable"] is True
-        assert readiness["score"] >= 70
+        assert readiness["usable"] is False
+        assert any("synthesis is incomplete" in reason.lower() for reason in readiness["reasons"])
+
+    def test_financially_grounded_primary_path_requires_financial_substance(self):
+        readiness = assess_research_readiness(
+            company_profile={"company_name": "ACME", "financial_deep_dive": {}},
+            industry_analysis={"industry_name": "Industrials"},
+            market_network={"target_company": "ACME"},
+            contact_intelligence={
+                "target_company_contacts": [
+                    {"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"},
+                    {"name": "John Doe", "firma": "ACME", "rolle_titel": "Head of Supply Chain"},
+                ],
+                "coverage_quality": "medium",
+            },
+            quality_review={"evidence_health": "medium"},
+            synthesis={
+                "generation_mode": "normal",
+                "executive_summary": "Actionable summary",
+                "opportunity_assessment_summary": "Inventory pressure suggests fit.",
+                "recommended_engagement_paths": ["excess_inventory"],
+            },
+        )
+        assert readiness["usable"] is False
+        assert any("financial deep dive is too thin" in reason.lower() for reason in readiness["reasons"])
+
+    def test_target_company_coverage_is_required_for_meeting_ready(self):
+        readiness = assess_research_readiness(
+            company_profile={
+                "company_name": "ACME",
+                "financial_deep_dive": {
+                    "assessment": "Primary-source financial evidence captures inventories and working capital.",
+                    "key_financials": ["Revenue: EUR 200m", "EBIT: EUR 12m"],
+                    "inventory_positions": ["Inventories: EUR 40m"],
+                    "balance_sheet_signals": ["Working capital elevated"],
+                },
+            },
+            industry_analysis={"industry_name": "Industrials"},
+            market_network={"target_company": "ACME"},
+            contact_intelligence={
+                "target_company_contacts": [{"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"}],
+                "coverage_quality": "low",
+            },
+            quality_review={"evidence_health": "medium"},
+            synthesis={
+                "generation_mode": "normal",
+                "executive_summary": "Actionable summary",
+                "opportunity_assessment_summary": "Inventory pressure suggests fit.",
+                "recommended_engagement_paths": ["excess_inventory"],
+            },
+        )
+        assert readiness["usable"] is False
+        assert any("stakeholder coverage is too thin" in reason.lower() for reason in readiness["reasons"])
+
+
+class TestPlaybookAssets:
+    def test_build_contact_briefing_assets_produces_cards_and_missing_roles(self):
+        assets = build_contact_briefing_assets(
+            company_profile={"company_name": "ACME", "headquarters": "Berlin"},
+            contact_intelligence={
+                "target_company_contacts": [
+                    {
+                        "name": "Jane Doe",
+                        "firma": "ACME GmbH",
+                        "rolle_titel": "Chief Financial Officer",
+                        "funktion": "Finance",
+                        "quelle": "https://example.com/cfo",
+                        "confidence": "medium",
+                    }
+                ]
+            },
+        )
+        assert assets["target_company_contact_cards"]
+        assert any(
+            role["role_name"] == "Head of Procurement / Purchasing"
+            for role in assets["target_company_missing_roles"]
+        )
+        assert assets["target_company_access_path"]
+
+    def test_build_playbook_assets_limits_to_critical_questions_and_structured_steps(self):
+        assets = build_playbook_assets(
+            company_profile={"company_name": "ACME"},
+            market_network={"downstream_buyers": {"companies": [{"name": "Buyer1"}]}},
+            contact_intelligence={
+                "target_company_contact_cards": [{"name": "Jane Doe"}],
+                "target_company_missing_roles": [{"role_name": "Head of Supply Chain"}],
+            },
+            synthesis={"recommended_engagement_paths": ["excess_inventory"]},
+        )
+        assert len(assets["critical_open_questions"]) == 5
+        assert assets["recommended_next_steps"]
+        assert assets["recommended_next_steps"][0]["phase"] == "pre_meeting"
+        assert assets["recommended_next_steps"][0]["asset_hypothesis"] != "n/v"
+        assert assets["recommended_next_steps"][0]["definition_of_done"] != "n/v"
 
 
 # ===========================================================================

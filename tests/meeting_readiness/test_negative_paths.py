@@ -166,15 +166,13 @@ def test_low_evidence_does_not_block_when_coverage_is_strong():
             "q_market_situation": {"status": "partially_answered"},
             "q_peer_companies": {"status": "answered"},
             "q_monetization_redeployment": {"status": "answered"},
-            "q_repurposing_circularity": {"status": "answered"},
-            "q_analytics_operational_improvement": {"status": "answered"},
             "q_contact_intelligence": {"status": "partially_answered"},
         },
         resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
         evidence_health="low",
         readiness_usable=True,
     )
-    # 8 answered/partial → should NOT be blocked by low evidence alone
+    # Strong answered/partial coverage should NOT be blocked by low evidence alone
     assert result.meeting_ready
 
 

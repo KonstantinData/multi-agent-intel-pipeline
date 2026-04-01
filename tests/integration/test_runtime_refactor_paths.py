@@ -8,6 +8,31 @@ from src.exporters.json_export import export_run
 from src.orchestration.run_context import RunContext
 
 
+def test_export_run_persists_pdf_reports(tmp_path, monkeypatch):
+    import src.exporters.pdf_report as pdf_report
+
+    run_dir = tmp_path / "pdf_export"
+
+    def _fake_generate_pdf(pipeline_data: dict, *, lang: str = "de") -> bytes:
+        return f"%PDF-{lang}".encode("utf-8")
+
+    monkeypatch.setattr(pdf_report, "generate_pdf", _fake_generate_pdf)
+
+    export_run(
+        run_dir=run_dir,
+        run_id="pdf_export",
+        company_name="PdfCo",
+        web_domain="pdf.example",
+        status="meeting_ready",
+        messages=[],
+        pipeline_data={"synthesis": {"executive_summary": "summary"}},
+        run_context={"short_term_memory": {}},
+    )
+
+    assert (run_dir / "reports" / "liquisto_briefing_pdf_export_DE.pdf").read_bytes() == b"%PDF-de"
+    assert (run_dir / "reports" / "liquisto_briefing_pdf_export_EN.pdf").read_bytes() == b"%PDF-en"
+
+
 def test_runtime_path_pause_resume_and_export_contracts(tmp_path):
     run_id = "integration_baseline"
     run_dir = tmp_path / run_id
