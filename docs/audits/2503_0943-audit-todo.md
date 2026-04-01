@@ -1,5 +1,9 @@
 # 2503_0943 Audit TODO
 
+> Historische Umsetzungsdatei zum Audit-Stand 2026-03-25.
+> Delta seit 2026-04-01: `ReportWriter` ist als echter Runtime-Agent umgesetzt
+> (`src/orchestration/report_runtime.py`, `src/agents/report_writer.py`).
+
 **Bezug:** `2503_0943-audit.md`  
 **Zweck:** Umsetzungsdatei für die schrittweise Abarbeitung der Audit-Findings  
 **Prinzip:** Das Audit bleibt unveränderter Befund-Snapshot. Diese Datei dokumentiert Entscheidungen, Prioritäten, Umsetzungspfad und Fortschritt.
@@ -18,7 +22,7 @@
 | F6 | Role-Memory-Retrieval schließen | mittel-hoch | P1 | ✅ Erledigt |
 | F7 | Status-/Decision-Vokabular vereinheitlichen | mittel | P1 | ✅ Erledigt |
 | F8 | Test-Surface konsolidieren | mittel | P2 | ✅ Erledigt |
-| F9 | ReportWriter-Rolle architektonisch bereinigen | niedrig-mittel | P2 | ✅ Erledigt |
+| F9 | ReportWriter-Rolle als echten Runtime-Agent verdrahten | niedrig-mittel | P2 | ✅ Erledigt |
 | F10 | Drift-Indikatoren / Signatur-Genauigkeit bereinigen | niedrig | P2 | ✅ Erledigt |
 
 ---
@@ -343,33 +347,33 @@ Top-Level-Tests außerhalb von `tests/` liegen neben der eigentlichen Pytest-Wah
 
 ---
 
-## F9 — ReportWriter-Rolle architektonisch bereinigen
+## F9 — ReportWriter-Rolle als Runtime-Agent verdrahten
 
 **Severity:** niedrig bis mittel  
 **Priorität:** P2  
 **Status:** ✅ Erledigt
 
 ### Finding
-`ReportWriterAgent` existiert als Architektur-Objekt, die eigentliche Report-Erstellung läuft aber außerhalb davon.
+`ReportWriterAgent` war zeitweise nur als Architekturobjekt vorhanden, ohne echten Runtime-Aufrufpfad.
 
 ### Zielbild
-Eine klare Entscheidung:
-- entweder echter Runtime-Agent
-- oder bewusst kein Agent, sondern regelbasierte Synthesis-/Rendering-Komponente
+Ein echter Runtime-Knoten `report_writer`, der im Pipeline-Fluss aufgerufen wird
+und `run_context.report_package` konsistent erzeugt.
 
 ### Best-Practice-Entscheidung
-Keine Scheinkomponenten. Jede Runtime-Rolle muss entweder operational sein oder entfernt/umbenannt werden.
+Keine Scheinkomponenten. Runtime-Rollen sind entweder operativ oder werden entfernt.
+Fuer `ReportWriter` wurde die operative Variante umgesetzt.
 
 ### Betroffene Dateien
 - `src/agents/report_writer.py`
-- `src/orchestration/synthesis.py`
+- `src/orchestration/report_runtime.py`
 - `src/pipeline_runner.py`
 
 ### Umsetzungspfad
-1. Rolle fachlich entscheiden
-2. entweder Agent operationalisieren
-3. oder Nicht-Agent-Komponente sauber benennen
-4. Aufrufer bereinigen
+1. `ReportWriterRuntime` als dedizierten Runtime-Knoten einfuehren
+2. `ReportWriterAgent.build_report_package(...)` als operative Kernfunktion nutzen
+3. `pipeline_runner.py` auf `agents["report_writer"].run(...)` umstellen
+4. alte direkte Writer-Routine in `synthesis.py` entfernen
 
 ### Akzeptanzkriterien
 - keine Stub-Rolle ohne echte Runtime-Funktion

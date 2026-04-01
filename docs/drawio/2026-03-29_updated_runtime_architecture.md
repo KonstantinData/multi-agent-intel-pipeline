@@ -1,7 +1,7 @@
 # Updated Runtime Architecture v2 — exakte Laufbeschreibung in verständlicher Sprache
 
 Diese Datei erklärt den **wirklichen Lauf des Systems** so, dass Du die Datei
-`docs/updated_runtime_architecture.drawio` **Schritt für Schritt mitlesen** kannst.
+`docs/drawio/runtime_architecture.drawio` **Schritt für Schritt mitlesen** kannst.
 
 Ziel dieser Beschreibung ist nicht nur Technik-Dokumentation, sondern echte Nachvollziehbarkeit:
 
@@ -338,8 +338,7 @@ Die Standardaufgaben sind aktuell im Wesentlichen so aufgeteilt:
 
 #### MarketDepartment
 - `market_situation`
-- `repurposing_circularity`
-- `analytics_operational_improvement`
+- Historisch: zusaetzliche Markt-Tasks fuer Repurposing/Circularity und Analytics/Operational Improvement
 
 #### BuyerDepartment
 - `peer_companies`
@@ -1193,14 +1192,20 @@ Das ist die Stelle, an der aus vielen Einzelteilen ein **kanonisches Gesamtergeb
 
 ---
 
-### 12.6 `build_report_package(...)`
-**Wo im Code:** `src/pipeline_runner.py`, `src/orchestration/synthesis.py`
+### 12.6 `report_writer.run(...)`
+**Wo im Code:** `src/pipeline_runner.py`, `src/orchestration/report_runtime.py`, `src/agents/report_writer.py`
 
 ### Was passiert?
-Zusätzlich zum maschinenfreundlichen `pipeline_data` wird ein reportfreundliches Paket gebaut.
+Zusätzlich zum maschinenfreundlichen `pipeline_data` läuft jetzt ein eigener
+Runtime-Schritt `report_writer`.
+
+Dieser ruft `ReportWriterAgent.build_report_package(...)` auf und erzeugt ein
+stabil strukturiertes `report_package`.
 
 ### Warum?
 Damit es eine Struktur gibt, die sich leichter für UI, Bericht oder Präsentation weiterverwenden lässt.
+Außerdem ist die Report-Erstellung damit als echter Runtime-Knoten sichtbar
+(inklusive eigener `ReportWriter`-Message im Event-Stream).
 
 ### Ergebnis
 `run_context.report_package` wird gesetzt.

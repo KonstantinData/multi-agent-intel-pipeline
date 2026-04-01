@@ -221,8 +221,8 @@ string names and actual Pydantic classes, a central registry must resolve them.
 ### Unused Agent Stubs — Assign Responsibility!
 
 - [X] `src/agents/strategic_analyst.py` — `CrossDomainStrategicAnalystAgent` not imported anywhere → removed
-- [X] `src/agents/report_writer.py` — `ReportWriterAgent` is a slim config holder; registered in `definitions.py` as metadata/icon carrier; report is built in `pipeline_runner.py` — keep as is, no `run()` needed
-- **Decision**: `ReportWriterAgent` stays as a config/metadata stub; `strategic_analyst.py` removed (dead code)
+- [X] `src/agents/report_writer.py` — promoted to a real runtime path via `src/orchestration/report_runtime.py`; `pipeline_runner.py` now executes `agents["report_writer"].run(...)`
+- **Decision (updated 2026-04-01)**: `ReportWriter` is a real runtime agent path; `strategic_analyst.py` remains removed (dead code)
 
 ### Backward-Compat Shim
 

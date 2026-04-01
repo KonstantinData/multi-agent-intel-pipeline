@@ -74,6 +74,17 @@ Responsibilities:
 - derive negotiation relevance and next-step logic
 - produce the final `synthesis` section
 
+### Report Writer Runtime
+
+After synthesis and section validation, the runtime executes a dedicated
+`report_writer` node (`src/orchestration/report_runtime.py`), backed by
+`ReportWriterAgent` (`src/agents/report_writer.py`).
+
+Responsibilities:
+- build `run_context.report_package` from validated `pipeline_data`
+- expose a stable report-oriented structure for UI/export
+- emit explicit `ReportWriter` runtime telemetry messages
+
 ## Department Model
 
 Each department operates as a bounded collaborative group.
@@ -92,8 +103,8 @@ Questions owned:
 Questions owned:
 - market situation, demand, and supply pressure
 - overcapacity or contraction signals
-- repurposing and circularity paths
-- analytics and operational improvement signals
+- excess-inventory monetization and redeployment paths
+- inventory-relevant market pressure and timing signals
 
 ### Buyer Department
 
@@ -184,7 +195,7 @@ Lead calls: finalize_package(summary) → TERMINATE
 ```
 
 `MAX_TASK_RETRIES` is configurable via env var `LIQUISTO_MAX_TASK_RETRIES`
-(default: 2).
+(default: 3).
 
 ### Supervisor boundary (CHG-03)
 

@@ -204,7 +204,12 @@ marimo/_lsp/
 __marimo__/
 
 # Project-specific
+artifacts/
 OAI_CONFIG_LIST
+.DS_Store
+**/.DS_Store
+tmp/pdfs/
+tmp/docs/
 
 streamlit_log.txt
 start_debug.bat

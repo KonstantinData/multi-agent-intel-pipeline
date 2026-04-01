@@ -1,5 +1,10 @@
 # Report Quality Gap Analysis — 2026-03-30
 
+> Snapshot analysis of run quality at 2026-03-30.
+> Current scope note (2026-04-01): Liquisto focus in this repo is now the
+> excess-inventory path; repurposing/idle-data service lanes are no longer
+> first-class targets in current briefing guidance.
+
 ## Gegenstand
 
 Vergleich zwischen dem Deep-Research-Referenzbericht (`research-report-detail-expectation.md`)
@@ -22,9 +27,8 @@ und dem tatsächlichen Run-Output `20260329T214800Z` (ZF Friedrichshafen, zf.com
 | **Kontakte Buyer-Seite** | Hypothesenbasiert, korrekt als solche markiert | 13 Kontakte, aber nur bei Bosch/Denso/Magna — keine bei ZF | Falsche Zielrichtung |
 | **Buyer-Kandidaten (benannt)** | LKQ, Inter Cars, Genuine Parts, Ritchie Bros. | Fiat Chrysler, generische Kategorien | Keine echten Sekundärmarkt-Buyer |
 | **Inventory-Signale** | 324 Mio. Wertminderung, Slow-Moving, Obsoleszenz | `inventory_signals: []` | **Null** |
-| **Repurposing** | Reman-Netzwerk (20+ Standorte), Core-Flows, nicht-reman-fähige Restströme | 3 generische Signale | Keine operative Tiefe |
-| **Analytics-Signale** | IAS-8-Korrektur, Forecast-Fehler, Obsoleszenz-Prädiktoren | 4 generische Signale | Keine konkreten Pain Points |
-| **Opportunity Assessment** | "Mixed/Staged mit Start über Excess Inventory" — klar begründet | Alle 3 Pfade "medium" — keine Priorisierung | Kein klarer Leading Path |
+| **Excess-Inventory-These** | Bilanz-, Working-Capital- und Buyer-Signale stützen einen Inventory-to-Cash-Fall | Teilweise generische Signale | Finanz- und Buyer-Substanz muss zusammenkommen |
+| **Opportunity Assessment** | "Excess Inventory" klar begründet oder sauber als weitere Validierung markiert | Uneindeutige oder generische Empfehlung | Kein sauberer Leading Path |
 | **Meeting-Angle** | "Inventory-to-Cash ohne OE-Risiko" + 5 konkrete Validierungsfragen | Generische Meeting Actions | Nicht meeting-actionable |
 | **Quellenregister** | Gruppiert nach Typ, 30+ Quellen mit Kontext | Flache URL-Liste | Keine Quellenqualität |
 

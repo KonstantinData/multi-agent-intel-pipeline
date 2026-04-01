@@ -1,5 +1,9 @@
 # Refactor Baseline — Current Runtime Behavior (2026-03-29)
 
+> Historical baseline snapshot (pre-refactor checkpoint).
+> This file documents the behavior at 2026-03-29 and is not the live
+> architecture source of truth for 2026-04-01+.
+
 ## Purpose
 
 This document freezes the **current live runtime behavior** before the
@@ -89,7 +93,8 @@ evaluated per task (`evaluate_run_conditions`); tasks may be skipped.
 - `build_resolution_plan(...)` creates a persisted resolution plan.
 - `build_dashboard_state(...)` creates dashboard state with
   `resume_entrypoint`.
-- `build_report_package(...)` assembles the report metadata.
+- (historical) `build_report_package(...)` assembled report metadata directly in
+  the pipeline path. Current runtime uses `agents["report_writer"].run(...)`.
 - `validate_pipeline_data(...)` produces the final `pipeline_data`.
 - Long-term memory consolidation via `consolidate_role_patterns`.
 - `export_run(...)` writes all artifacts to `artifacts/runs/<run_id>/`.

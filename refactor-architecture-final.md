@@ -68,7 +68,7 @@ The following files are current runtime anchors and must be treated as authorita
 - `src/exporters/pdf_report.py`
 - `ui/app.py`
 - `docs/target_runtime_architecture.md`
-- `docs/runtime_architecture.drawio`
+- `docs/drawio/runtime_architecture.drawio`
 
 If any path has changed in the active repo, the implementation agent must update this file and the audit file in the same section that introduces the path change.
 
@@ -866,7 +866,7 @@ Make code, docs, diagrams, exports, and wording converge on one architecture.
 
 **Existing**
 - `docs/target_runtime_architecture.md`
-- `docs/runtime_architecture.drawio`
+- `docs/drawio/runtime_architecture.drawio`
 - `README.md`
 - compat modules created earlier
 

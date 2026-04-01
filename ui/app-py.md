@@ -242,7 +242,7 @@ Expander: L["company_profile"] (expanded=True)
 
 Expander: L["market_industry"]
   Branche, Assessment, Demand Outlook, Key Trends
-  Repurposing-Signale, Analytics-Signale
+  Overcapacity-Signale und excess-stock-relevante Marktbeobachtungen
 
 Expander: L["buyer_network"]
   Peer Competitors (assessment + companies)
@@ -412,8 +412,6 @@ st.caption(L["page_subtitle"])
         "overcapacity_signals": list[str],
         "excess_stock_indicators": str,
         "demand_outlook": str,
-        "repurposing_signals": list[str],
-        "analytics_signals": list[str],
         "assessment": str,
         "sources": list[...]
     },

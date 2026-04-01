@@ -1,5 +1,10 @@
 # 2703_1023 Audit TODO — finale umsetzungsreife Fassung
 
+> Historische Umsetzungsdatei zum Audit-Stand 2026-03-27.
+> Delta seit 2026-04-01: Report-Building laeuft ueber
+> `src/orchestration/report_runtime.py` + `src/agents/report_writer.py`
+> (nicht mehr ueber `src/orchestration/synthesis.py`).
+
 **Bezug:** `2703_1023-audit.md`, Run-Analyse, Review der ueberarbeiteten TODO  
 **Zweck:** Verbleibende Architekturdefekte und Haertungen in eine saubere, umsetzbare Patch-Reihenfolge ueberfuehren  
 **Prinzip:** Ein Ticket = ein klarer technischer Zweck. Keine doppelten Root-Causes. Keine stillen Shape- oder Contract-Annahmen.
@@ -83,7 +88,7 @@ Es gibt zwei klar getrennte Begriffe:
 **Severity:** kritisch  
 **Prioritaet:** P0  
 **Status:** Erledigt  
-**Umsetzung:** `synthesis_department.py` (`read_report_segment`, `finalize_synthesis`, `available_segments`), `synthesis.py` (`build_report_package`), `pipeline_runner.py` (Synthesis-Admission) auf Envelope-Resolver migriert. Kein Consumer liest mehr direkt aus Envelope-Root.
+**Umsetzung:** `synthesis_department.py` (`read_report_segment`, `finalize_synthesis`, `available_segments`), `report_runtime.py`/`report_writer.py` (Report-Assembly), `pipeline_runner.py` (Synthesis-Admission) auf Envelope-Resolver migriert. Kein Consumer liest mehr direkt aus Envelope-Root.
 
 ### Finding
 
@@ -92,7 +97,7 @@ Mehrere Consumer lesen aktuell Raw-Felder direkt aus Envelope-Objekten. Das betr
 ### Betroffene Pfade
 
 - `synthesis_department.py`
-- `src/orchestration/synthesis.py` / `build_report_package()`
+- `src/orchestration/report_runtime.py` und `src/agents/report_writer.py`
 - `pipeline_runner.py` an den Stellen, an denen Admission-Status oder Department-Payloads ausgelesen werden
 
 ### Patch-Sequenz
@@ -102,7 +107,7 @@ Mehrere Consumer lesen aktuell Raw-Felder direkt aus Envelope-Objekten. Das betr
    - `resolve_admitted_payload(pkg)`
    - `resolve_admission(pkg)`
 2. `synthesis_department.py`: alle direkten Zugriffe auf `package.get("report_segment")`, `confidence`, `visual_focus` etc. auf Resolver umstellen.
-3. `build_report_package()`: `visual_focus` und andere Department-Felder nur noch ueber Resolver lesen.
+3. Report-Assembly (`report_writer.run(...)`): `visual_focus` und andere Department-Felder nur noch ueber Resolver lesen.
 4. `pipeline_runner.py`: Admission-Entscheidungen nicht aus impliziten Marker-Feldern oder rohen Dict-Annahmen ableiten, sondern aus dem kanonischen Envelope-Zugriff.
 5. Keine verteilte `pkg.get("raw_package", pkg)`-Logik an vielen Stellen hinterlassen; stattdessen zentrale Helper nutzen.
 

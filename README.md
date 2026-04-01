@@ -33,7 +33,7 @@ streamlit run ui/app.py
 ## Architecture
 
 Architecture spec: [docs/drawio/target_runtime_architecture.md](docs/drawio/target_runtime_architecture.md) ·
-Diagram: [docs/drawio/updated_runtime_architecture.drawio](docs/drawio/updated_runtime_architecture.drawio)
+Diagram: [docs/drawio/runtime_architecture.drawio](docs/drawio/runtime_architecture.drawio)
 
 ### Control Plane
 
@@ -50,7 +50,7 @@ questions.
 | Department | Scope |
 |------------|-------|
 | Company Department | Company fundamentals, economic/commercial situation, product and asset scope. The CompanyLead owns the goods classification (made vs distributed vs held-in-stock) as a domain judgment |
-| Market Department | Market situation, repurposing/circularity, analytics and operational improvement signals |
+| Market Department | Market situation, demand pressure, overcapacity, and excess-stock signals |
 | Buyer Department | Peer companies, monetization and redeployment paths |
 | Contact Department | Contact discovery and qualification at prioritized buyer firms |
 
@@ -67,7 +67,8 @@ Each department group contains:
 ### Synthesis Plane
 
 - **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment.
-- **Report rendering** — turns the approved analysis into a professional operator-facing report for PDF export (German + English).
+- **Report Writer Runtime** — dedicated runtime node (`report_writer`) that assembles `report_package` from validated pipeline sections and emits `ReportWriter` telemetry events.
+- **Report rendering/export** — UI/export layer generates operator-facing PDF output (German + English) from the finalized run artifacts.
 
 ### Meeting-Readiness Layer
 
@@ -117,6 +118,7 @@ The runtime plans around **meeting questions**, not only departments.
 | [src/orchestration/supervisor_loop.py](src/orchestration/supervisor_loop.py) | Supervisor-controlled department routing loop |
 | [src/orchestration/department_runtime.py](src/orchestration/department_runtime.py) | Bounded department group runtime |
 | [src/orchestration/synthesis_runtime.py](src/orchestration/synthesis_runtime.py) | Synthesis department AG2 runtime |
+| [src/orchestration/report_runtime.py](src/orchestration/report_runtime.py) | Report writer runtime wrapper used as real pipeline agent |
 | [src/orchestration/task_router.py](src/orchestration/task_router.py) | Supervisor mandate → department assignments |
 | [src/orchestration/meeting_questions.py](src/orchestration/meeting_questions.py) | Question registry, answer matrix, task-to-question mapping |
 | [src/orchestration/resolution_controller.py](src/orchestration/resolution_controller.py) | 5-bucket resolution classification |
@@ -129,6 +131,7 @@ The runtime plans around **meeting questions**, not only departments.
 | [src/agents/lead.py](src/agents/lead.py) | DepartmentLeadAgent — evidence-first AG2 group lifecycle |
 | [src/agents/worker.py](src/agents/worker.py) | ResearchWorker — evidence packets as primary output |
 | [src/agents/supervisor.py](src/agents/supervisor.py) | SupervisorAgent — intake, routing, package acceptance |
+| [src/agents/report_writer.py](src/agents/report_writer.py) | ReportWriterAgent — report package assembly from pipeline artifacts |
 | [src/agents/critic.py](src/agents/critic.py) | CriticAgent — deterministic rule-based review |
 | [src/agents/judge.py](src/agents/judge.py) | JudgeAgent — deterministic three-outcome quality gate |
 | [src/app/use_cases.py](src/app/use_cases.py) | Liquisto standard scope, task backlog, resolution plan helpers |

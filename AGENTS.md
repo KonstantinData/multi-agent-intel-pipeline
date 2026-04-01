@@ -65,6 +65,8 @@ The output is **not** raw chat. The output is a validated `DepartmentPackage`.
 
 After domain departments complete, the Synthesis Department performs cross-domain
 interpretation and produces the final `synthesis` section.
+The runtime then passes artifacts through a dedicated `ReportWriter` runtime
+node that assembles the final `report_package`.
 
 ---
 
@@ -229,10 +231,12 @@ When working on tests:
 | `src/orchestration/supervisor_loop.py` | supervisor-controlled department routing loop |
 | `src/orchestration/department_runtime.py` | bounded department group runtime |
 | `src/orchestration/synthesis_runtime.py` | synthesis department runtime |
+| `src/orchestration/report_runtime.py` | report writer runtime node (`report_writer`) |
 | `src/orchestration/follow_up.py` | run loading, follow-up routing, persisted follow-up answers |
 | `src/orchestration/contracts.py` | typed runtime contracts and department artifact state |
 | `src/orchestration/speaker_selector.py` | guardrail-only selector for department group chats |
 | `src/agents/lead.py` | department lead lifecycle and package finalization |
+| `src/agents/report_writer.py` | report package assembly agent used by report runtime |
 | `src/memory/short_term_store.py` | run-scoped memory including department run states |
 | `src/memory/consolidation.py` | process-pattern consolidation into long-term memory |
 | `docs/target_runtime_architecture.md` | canonical detailed runtime architecture reference |
