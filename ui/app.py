@@ -210,7 +210,9 @@ def _build_pdf_export(lang: str) -> tuple[bytes, str]:
         return b"", ""
     lang_suffix = lang.upper()
     file_name = f"liquisto_briefing_{st.session_state.run_id}_{lang_suffix}.pdf"
-    pdf_bytes = generate_pdf(st.session_state.pipeline_data, lang=lang)
+    pdf_payload = dict(st.session_state.pipeline_data)
+    pdf_payload.setdefault("run_id", st.session_state.run_id)
+    pdf_bytes = generate_pdf(pdf_payload, lang=lang)
     export_binary_artifact(
         run_dir=RUNS_DIR / st.session_state.run_id,
         relative_path=f"reports/{file_name}",
@@ -336,39 +338,6 @@ def _render_briefing_tab(L: dict) -> None:
             if pdesc:
                 st.caption(pdesc)
 
-        if len(ranked) > 1:
-            secondary = ranked[1]
-            sarea = secondary.get("service_area", "")
-            slabel = service_label(sarea, L)
-            sicon = service_icon(sarea)
-            sreasoning = _nv(secondary.get("reasoning", ""))
-
-            has_third = len(ranked) > 2
-            if has_third:
-                col_sec, col_low = st.columns([2, 1])
-            else:
-                col_sec = st.columns(1)[0]
-                col_low = None
-
-            with col_sec:
-                with st.container(border=True):
-                    st.markdown(f"**{sicon} {slabel}**")
-                    st.caption(L["secondary_rec"])
-                    if sreasoning:
-                        st.caption(sreasoning[:200])
-
-            if has_third and col_low is not None:
-                third = ranked[2]
-                tarea = third.get("service_area", "")
-                tlabel = service_label(tarea, L)
-                with col_low:
-                    with st.container(border=True):
-                        st.markdown(f"**{tlabel}**")
-                        st.caption(L["low_relevance"])
-                        reasoning_text = _nv(third.get("reasoning", ""))
-                        if reasoning_text:
-                            st.caption(reasoning_text[:140])
-
     gen_mode = synthesis.get("generation_mode", "normal")
     if gen_mode == "fallback":
         st.caption(f"_{L['fallback_note']}_")
@@ -380,14 +349,23 @@ def _render_briefing_tab(L: dict) -> None:
 
     with col_talk:
         st.markdown(f"### {L['talk_about']}")
-        next_steps = synthesis.get("next_steps", [])
+        structured_steps = synthesis.get("recommended_next_steps", [])
+        next_steps = synthesis.get("research_backlog", synthesis.get("next_steps", []))
         buyer_summary = _nv(market.get("downstream_buyers", {}).get("assessment", ""))
         peer_count = len(market.get("peer_competitors", {}).get("companies", []))
 
         points: list[str] = []
+        for step in structured_steps[:4]:
+            if isinstance(step, dict):
+                action = _nv(step.get("action", ""))
+                target = _nv(step.get("target_person", ""))
+                if action:
+                    points.append(f"{action}{f' -> {target}' if target else ''}")
         for step in next_steps[:4]:
+            if len(points) >= 4:
+                break
             s = _nv(step)
-            if s:
+            if s and s not in points:
                 points.append(s)
         if buyer_summary and len(points) < 4:
             points.append(f"{L['buyer_market']}: {buyer_summary[:200]}")
@@ -402,9 +380,15 @@ def _render_briefing_tab(L: dict) -> None:
 
     with col_validate:
         st.markdown(f"### {L['validate']}")
+        questions = synthesis.get("critical_open_questions", [])
         key_risks = synthesis.get("key_risks", [])
         open_gaps = quality.get("open_gaps", [])
         hypotheses: list[str] = []
+        for item in questions[:3]:
+            if isinstance(item, dict):
+                q = _nv(item.get("question", ""))
+                if q:
+                    hypotheses.append(q)
         for risk in key_risks[:3]:
             r = _nv(risk)
             if r:
@@ -543,21 +527,6 @@ def _render_research_tab(L: dict) -> None:
             tv = _nv(trend)
             if tv:
                 st.write(f"- {tv}")
-        repurposing = industry.get("repurposing_signals", [])
-        if repurposing:
-            st.markdown(f"**{L['repurposing_signals']}:**")
-            for item in repurposing[:5]:
-                iv = _nv(item)
-                if iv:
-                    st.write(f"- {iv}")
-        analytics = industry.get("analytics_signals", [])
-        if analytics:
-            st.markdown(f"**{L['analytics_signals']}:**")
-            for item in analytics[:5]:
-                iv = _nv(item)
-                if iv:
-                    st.write(f"- {iv}")
-
     with st.expander(L["buyer_network"]):
         peers = market.get("peer_competitors", {})
         if peers:
@@ -642,6 +611,25 @@ def _render_research_tab(L: dict) -> None:
                         st.info(f"**{L['outreach_angle']}:** {outreach}")
         else:
             st.caption(L["no_contacts_found"])
+
+    synthesis = pipeline_data.get("synthesis", {})
+    research_backlog = synthesis.get("research_backlog", synthesis.get("next_steps", []))
+    if research_backlog:
+        with st.expander("Research Backlog", expanded=False):
+            for item in research_backlog[:12]:
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
+
+    memory = st.session_state.run_context.get("short_term_memory", {})
+    evidence_packets = memory.get("evidence_packets", [])
+    if evidence_packets:
+        with st.expander("Evidence Packets", expanded=False):
+            for packet in evidence_packets[:12]:
+                if isinstance(packet, dict):
+                    packet_id = _nv(packet.get("packet_id", ""))
+                    task_key = _nv((packet.get("metadata") or {}).get("task_key", ""))
+                    st.write(f"- {packet_id or 'packet'}{f' — {task_key}' if task_key else ''}")
 
 
 def _render_follow_up_panel(L: dict) -> None:
@@ -768,6 +756,23 @@ def _render_quality_tab(L: dict) -> None:
                 gv = _nv(g)
                 if gv:
                     st.write(f"- {gv}")
+    synthesis = pipeline_data.get("synthesis", {})
+    research_backlog = synthesis.get("research_backlog", synthesis.get("next_steps", []))
+    if research_backlog:
+        with st.expander("Research Backlog", expanded=False):
+            for item in research_backlog[:12]:
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
+    memory = run_context.get("short_term_memory", {})
+    evidence_packets = memory.get("evidence_packets", [])
+    if evidence_packets:
+        with st.expander("Evidence Packets", expanded=False):
+            for packet in evidence_packets[:15]:
+                if isinstance(packet, dict):
+                    packet_id = _nv(packet.get("packet_id", "packet"))
+                    task_key = _nv((packet.get("metadata") or {}).get("task_key", ""))
+                    st.write(f"- {packet_id}{f' — {task_key}' if task_key else ''}")
 
     # ── Run metadata ──────────────────────────────────────────────────────
     with st.expander(L["run_metadata"], expanded=False):

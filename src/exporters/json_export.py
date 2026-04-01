@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from src.app.use_cases import SUCCESS_RUN_STATUS, sanitize_success_unresolved
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_pipeline_data_for_status(
@@ -92,6 +95,21 @@ def export_run(
         json.dumps(run_context.get("short_term_memory", {}), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    if sanitized_pipeline_data:
+        try:
+            from src.exporters.pdf_report import generate_pdf
+
+            for lang in ("de", "en"):
+                file_name = f"liquisto_briefing_{run_id}_{lang.upper()}.pdf"
+                pdf_payload = dict(sanitized_pipeline_data)
+                pdf_payload.setdefault("run_id", run_id)
+                export_binary_artifact(
+                    run_dir=path,
+                    relative_path=f"reports/{file_name}",
+                    content=generate_pdf(pdf_payload, lang=lang),
+                )
+        except Exception as exc:  # pragma: no cover - non-fatal export hardening
+            logger.warning("pdf export failed for run %s: %s", run_id, exc)
 
 
 def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> None:

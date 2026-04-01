@@ -8,9 +8,11 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from src.app.use_cases import sanitize_success_unresolved
 from src.models.visualization import ChartSpec, DashboardBundle, DashboardSection, InsightCallout, TableBlock
+from src.utils import strict_json_dumps
 
 from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib import colors
@@ -64,6 +66,29 @@ def _top_items(values: Any, limit: int = 5) -> list[str]:
         return []
     rendered = [_safe_text(item, "").strip() for item in values]
     return [item for item in rendered if item][:limit]
+
+
+def _display_domain(value: str) -> str:
+    text = _safe_text(value, "")
+    match = re.search(r"https?://[^\s)]+", text)
+    if not match:
+        return text
+    url = match.group(0).rstrip(".,;:")
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    if not host:
+        return text
+    return text.replace(match.group(0), host)
+
+
+def _localized_contact_source(value: Any, lang: str) -> str:
+    text = _safe_text(value, "—")
+    if text == "—":
+        return text
+    if lang == "de":
+        text = _offline_translate_text(text, "de")
+    return _display_domain(text)
 
 
 def _relevance_to_score(label: str) -> tuple[int, colors.Color]:
@@ -149,6 +174,7 @@ def _translation(lang: str) -> dict[str, str]:
             "confidence": "Confidence",
             "primary_path": "Primary Path",
             "research_score": "Research Score",
+            "run_id": "RunID",
             "top_actions": "Immediate Actions",
             "narrative_overview": "Commercial Angle",
             "financial_signals": "Balance-sheet and inventory signals",
@@ -166,6 +192,23 @@ def _translation(lang: str) -> dict[str, str]:
             "open_questions": "Critical open questions",
             "validation_plan": "Validation plan",
             "contact_relevance": "Relevance",
+            "contact_org": "Organization / Location",
+            "contact_channel": "Profile / Channel",
+            "contact_source_verification": "Source & Verification",
+            "contact_confidence": "Confidence",
+            "missing_roles": "Critical missing roles",
+            "access_path": "Recommended access path",
+            "missing_role_name": "Missing role",
+            "missing_role_why": "Why critical",
+            "missing_role_area": "Likely org area",
+            "missing_role_channel": "Best search channel",
+            "open_label": "Label",
+            "open_owner_timing": "Owner / Timing",
+            "open_impact": "Decision impact",
+            "step_phase": "Phase",
+            "step_owner": "Owner",
+            "step_action": "Action",
+            "step_output": "Hypothesis / output / done",
             "inventory": "Inventory",
             "ebit": "EBIT",
             "net_loss": "Net Loss",
@@ -180,7 +223,7 @@ def _translation(lang: str) -> dict[str, str]:
         "report_subtitle": "Zielkundenanalyse für die kommerzielle Vorbereitung",
         "prepared_for": "Erstellt für Liquisto",
         "date_label": "Berichtsdatum",
-        "snapshot": "Management-Dashboard",
+        "snapshot": "Management-Übersicht",
         "summary": "Management-Zusammenfassung",
         "service_fit": "Chancen-These",
         "company_profile": "Unternehmensprofil",
@@ -237,7 +280,7 @@ def _translation(lang: str) -> dict[str, str]:
         "finance_section": "Finanz- & Inventarsignale",
         "financial_snapshot": "Finanzüberblick",
         "portfolio_events": "Portfolio- und Restrukturierungsereignisse",
-        "stakeholder_section": "Stakeholder-Übersicht",
+        "stakeholder_section": "Ansprechpartner-Übersicht",
         "target_contacts": "Kontakte im Zielunternehmen",
         "buyer_contacts": "Käufer- und Partnerkontakte",
         "contact_role": "Rolle",
@@ -246,6 +289,7 @@ def _translation(lang: str) -> dict[str, str]:
         "confidence": "Sicherheit",
         "primary_path": "Hauptpfad",
         "research_score": "Recherchewert",
+        "run_id": "RunID",
         "top_actions": "Prioritäre Aktionen",
         "narrative_overview": "Gesprächsansatz",
         "financial_signals": "Bilanz- und Inventarsignale",
@@ -263,6 +307,23 @@ def _translation(lang: str) -> dict[str, str]:
         "open_questions": "Kritische offene Fragen",
         "validation_plan": "Validierungsplan",
         "contact_relevance": "Relevanz",
+        "contact_org": "Organisation / Standort",
+        "contact_channel": "Profil / Kanal",
+        "contact_source_verification": "Quelle & Verifikation",
+        "contact_confidence": "Sicherheitsgrad",
+        "missing_roles": "Fehlende Schlüsselrollen",
+        "access_path": "Empfohlener Zugangspfad",
+        "missing_role_name": "Fehlende Rolle",
+        "missing_role_why": "Warum kritisch",
+        "missing_role_area": "Wahrscheinlicher Bereich",
+        "missing_role_channel": "Bester Suchkanal",
+        "open_label": "Label",
+        "open_owner_timing": "Verantwortlich / Zeitpunkt",
+        "open_impact": "Entscheidungswirkung",
+        "step_phase": "Phase",
+        "step_owner": "Verantwortlich",
+        "step_action": "Aktion",
+        "step_output": "Hypothese / Ergebnis / Abschluss",
         "inventory": "Inventar",
         "ebit": "EBIT",
         "net_loss": "Nettoverlust",
@@ -272,6 +333,408 @@ def _translation(lang: str) -> dict[str, str]:
         "open_value": "Offen",
         "coverage": "Abdeckung",
     }
+
+
+_OFFLINE_EXACT_TRANSLATIONS = {
+    "de": {
+        "Manufacturing": "Fertigung",
+        "Mechanical Engineering": "Maschinenbau",
+        "over 1 billion EUR (2025)": "über 1 Milliarde EUR (2025)",
+        "growing": "wachsend",
+        "axial fans — manufactured": "Axialventilatoren — hergestellt",
+        "centrifugal fans — manufactured": "Radialventilatoren — hergestellt",
+        "frequency inverters — manufactured": "Frequenzumrichter — hergestellt",
+        "active harmonic filters — manufactured": "Aktive Oberschwingungsfilter — hergestellt",
+        "Workforce increased from 5,300 to 5,800 employees recently.": "Die Belegschaft stieg zuletzt von 5.300 auf 5.800 Mitarbeitende.",
+        "There is no public evidence of restructuring, layoffs, insolvency, or inventory write-downs.": "Es gibt keine öffentlichen Hinweise auf Restrukturierung, Entlassungen, Insolvenz oder Abwertungen auf Bestände.",
+        "The company supplies electric in-wheel hub drives (ZAwheel) integrated into city buses used for urban transport.": "Das Unternehmen liefert elektrische Radnabenantriebe (ZAwheel), die in Stadtbussen für den urbanen Verkehr eingesetzt werden.",
+        "ZIEHL-ABEGG is a privately held company that does not publicly disclose detailed consolidated financial statements including balance sheet, net debt, or inventory write-downs.": "ZIEHL-ABEGG ist ein privat geführtes Unternehmen und veröffentlicht keine detaillierten konsolidierten Abschlüsse mit Bilanz, Nettoverschuldung oder Bestandsabwertungen.",
+        "This geographic shift in demand underscores the importance of tailored regional demand forecasting and inventory management.": "Diese geografische Nachfrageverschiebung unterstreicht die Bedeutung einer regional zugeschnittenen Nachfrageprognose und Bestandssteuerung.",
+        "Too few financial datapoints extracted": "Zu wenige Finanzdaten extrahiert",
+        "No inventory positions extracted": "Keine Inventarpositionen extrahiert",
+        "No balance-sheet signals extracted": "Keine Bilanzsignale extrahiert",
+        "Head of Supply Chain / Material Management DACH / EU": "Leitung Lieferkette / Materialmanagement DACH / EU",
+        "Head of Procurement / Purchasing": "Leitung Einkauf / Beschaffung",
+        "Plant Lead Poland": "Werkleitung Polen",
+        "Plant Lead Kupferzell / Germany": "Werkleitung Kupferzell / Deutschland",
+        "Only publicly evidenced named stakeholders are listed; no placeholder email addresses or phone numbers are generated.": "Es werden nur öffentlich belegte, namentliche Ansprechpartner aufgeführt; Platzhalter-E-Mail-Adressen oder Telefonnummern werden nicht erzeugt.",
+        "The current map is strongest at the executive level around": "Die aktuelle Übersicht ist auf Ebene der Geschäftsleitung am stärksten rund um",
+        "The remaining operational gaps are:": "Die verbleibenden operativen Lücken sind:",
+        "Close these roles before any cold outreach sequence is written.": "Schließen Sie diese Rollen, bevor eine Cold-Outreach-Sequenz ausgearbeitet wird.",
+        "specialized fans — manufactured": "Spezialventilatoren — hergestellt",
+        "elevator machines — manufactured": "Aufzugsmaschinen — hergestellt",
+        "electromotors — manufactured": "Elektromotoren — hergestellt",
+        "control technology products (e.g., active harmonic filters) — manufactured": "Regeltechnik-Produkte (z. B. aktive Oberschwingungsfilter) — hergestellt",
+        "sensors for in-house controllers — manufactured": "Sensoren für interne Steuerungen — hergestellt",
+        "drive technology components — manufactured": "Antriebstechnik-Komponenten — hergestellt",
+        "Repair and refurbishment services for used or": "Reparatur- und Aufbereitungsleistungen für gebrauchte oder",
+        "Retrofit and upgrade solutions for existing": "Retrofit- und Upgrade-Lösungen für bestehende",
+        "Repurposing used motors and fans for": "Weiterverwendung gebrauchter Motoren und Ventilatoren für",
+        "Refurbishing and reselling components for use in": "Aufbereitung und Weiterverkauf von Komponenten zur Nutzung in",
+        "Integration of electric drive technology into": "Integration von elektrischer Antriebstechnik in",
+        "Utilizing control technology platforms for new": "Nutzung von Regeltechnik-Plattformen für neue",
+        "No validated repurposing path is available yet.": "Es liegt noch kein validierter Weiterverwendungspfad vor.",
+        "new industrial automation or HVAC system": "neue industrielle Automatisierungs- oder HLK-Systeme",
+        "Service / Retrofit": "Service / Nachrüstung",
+        "Supply-Chain": "Lieferkette",
+        "Revenue growth of": "Umsatzwachstum von",
+        "Revenue decline of approximately": "Umsatzrückgang von etwa",
+        "Revenue exceeds": "Umsatz übersteigt",
+        "growth over": "Wachstum von über",
+        "year-on-year": "im Jahresvergleich",
+        "Opening of new": "Eröffnung eines neuen",
+        "manufacturing hub": "Fertigungsstandorts",
+        "Addition of more than": "Aufstockung um mehr als",
+        "temporary workers": "Zeitarbeitskräfte",
+        "Close the operational contact gap around": "Schließen Sie die operative Kontaktlücke rund um",
+        "via Sales Navigator, assistant, and switchboard routes before or immediately after first response.": "über LinkedIn-Recherche, Assistenz- und Zentralenpfade vor oder unmittelbar nach der ersten Rückmeldung.",
+        "Will ask für quantified working-capital impact und a low-friction first step.": "Wird nach quantifiziertem Working-Capital-Effekt und einem niedrigschwelligen ersten Schritt fragen.",
+        "Prepare a hypothesis-led executive outreach for": "Bereiten Sie eine hypothesenbasierte Ansprache der Geschäftsleitung vor für",
+        "that frames Liquisto as an analytics and visibility wedge, not as a generic inventory vendor.": "die Liquisto als Analytik- und Transparenzhebel positioniert und nicht als generischen Bestandsanbieter.",
+        "Validate the five critical questions in sequence: visibility gap, steering rhythm, data access, segmentation, and decision ownership especially in the Polish plant footprint.": "Validieren Sie die fünf kritischen Fragen in Reihenfolge: Transparenzlücke, Steuerungsrhythmus, Datenzugang, Segmentierung und Entscheidungshoheit, insbesondere im polnischen Werksverbund.",
+        "The first meeting can convert the case from directional interest into a qualified monetization or analytics opportunity.": "Das erste Gespräch kann den Fall von grundsätzlichem Interesse in eine qualifizierte Monetarisierungs- oder Analytik-Chance überführen.",
+        "Convert the first meeting into a qualification gate for a real analytics pilot or visibility diagnostic.": "Überführen Sie das erste Gespräch in ein Qualifizierungsgate für einen realen Analytik-Piloten oder eine Transparenzdiagnose.",
+        "At least one operational owner or named escalation route is documented for follow-up.": "Für das Follow-up ist mindestens ein operativer Verantwortlicher oder ein benannter Eskalationspfad dokumentiert.",
+        "Germany": "Deutschland",
+        "Poland": "Polen",
+        "Chief Financial Officer (CFO)": "Finanzvorstand (CFO)",
+        "Chief Executive Officer (CEO)": "Vorstandsvorsitzender (CEO)",
+        "Chief Technology Officer (CTO)": "Technikvorstand (CTO)",
+        "Executive Vice President of Operations": "Leiter Operations",
+        "Press contact": "Pressekontakt",
+        "inferred": "abgeleitet",
+        "Conservative output — synthesis incomplete.": "Konservative Ausgabe – Synthese unvollständig.",
+        "Synthesis did not complete within max_round.": "Synthese wurde innerhalb der max_round nicht abgeschlossen.",
+        "Synthesis was not accepted by the Supervisor gate.": "Die Synthese wurde vom Supervisor-Gate nicht akzeptiert.",
+        "Economic pressure signals and buyer-path evidence indicate potential excess asset disposition needs.": "Finanzielle Drucksignale und Buyer-Pfad-Evidenz deuten auf potenziellen Bedarf zum Abbau von Überbeständen hin.",
+        "Operational visibility, planning, or balance-sheet complexity indicates analytics leverage.": "Operative Transparenz, Planungsprobleme oder Bilanzkomplexität sprechen für einen Analytics-Hebel.",
+        "Strong excess inventory opportunity.": "Starke Chance im Bereich Überbestände.",
+        "Economic buyer": "Wirtschaftlicher Entscheider",
+        "Economic buyer for working-capital topics.": "Wirtschaftlicher Entscheider für Working-Capital-Themen.",
+        "Procurement gatekeeper": "Einkaufs-Gatekeeper",
+        "Operational sponsor": "Operativer Sponsor",
+        "Aftermarket owner": "Aftermarket-Verantwortlicher",
+        "Technical owner": "Technischer Verantwortlicher",
+        "Executive sponsor": "Top-Management-Sponsor",
+        "Stakeholder": "Ansprechpartner",
+        "Company or public web source": "Unternehmens- oder öffentliche Webquelle",
+        "Public source": "Öffentliche Quelle",
+        "Verified": "Verifiziert",
+        "Partially verified": "Teilweise verifiziert",
+        "Partially verified via company source": "Teilweise verifiziert über Unternehmensquelle",
+        "Role inferred from public company evidence.": "Rolle aus öffentlichen Unternehmensquellen abgeleitet.",
+        "Inventory Volume": "Bestandsvolumen",
+        "Standardization": "Standardisierung",
+        "WIP Stage": "WIP-Stadium",
+        "Governance": "Governance",
+        "Decision Owner": "Entscheider",
+        "Visibility Gap": "Transparenzlücke",
+        "Repurposing Fit": "Weiterverwendungs-Fit",
+        "What is the current slow-moving inventory volume?": "Wie hoch ist das aktuelle Volumen langsam drehender Bestände?",
+        "Determines commercial size.": "Bestimmt die kommerzielle Größenordnung.",
+        "Excess inventory is material.": "Überbestände sind materiell relevant.",
+        "Decides whether Liquisto should lead with inventory-to-cash.": "Entscheidet, ob Liquisto mit Inventory-to-Cash führen sollte.",
+        "Prepare CFO-first outreach": "CFO-zentrierte Ansprache vorbereiten",
+        "Secure executive sponsor": "Executive Sponsor sichern",
+        "Tailored outreach note": "Individuell zugeschnittene Outreach-Nachricht",
+        "Meeting invitation sent": "Gesprächseinladung versendet",
+        "Named sponsor exists": "Benannter Unterstützer vorhanden",
+        "Liquisto Account Lead": "Liquisto Account Lead",
+        "Liquisto SDR / Research": "Liquisto SDR / Research",
+        "Liquisto Commercial": "Liquisto Commercial",
+        "Analytics": "Analytik",
+        "analytics": "Analytik",
+        "Working Capital": "Nettoumlaufvermögen",
+        "working capital": "Nettoumlaufvermögen",
+        "Working-Capital": "Nettoumlaufvermögen",
+        "working-capital": "Nettoumlaufvermögen",
+        "Supply Chain": "Lieferkette",
+        "supply chain": "Lieferkette",
+        "Procurement": "Einkauf",
+        "procurement": "Einkauf",
+        "Executive": "Geschäftsleitung",
+        "Aftermarket": "Servicegeschäft",
+        "Owner": "Verantwortlich",
+        "Done": "Abschluss",
+        "email addresses": "E-Mail-Adressen",
+        "phone numbers": "Telefonnummern",
+        "Key decision-maker for financial and working-capital topics.": "Zentraler Entscheider für Finanz- und Working-Capital-Themen.",
+        "Ultimate operational decision-maker, sponsor for efficiency projects.": "Oberster operativer Entscheider und Sponsor für Effizienzprojekte.",
+        "Key decision-maker for financial and working-capital initiatives": "Zentraler Entscheider für Finanz- und Working-Capital-Initiativen",
+        "Ultimate operational decision-maker, sponsor for efficiency projects": "Oberster operativer Entscheider und Sponsor für Effizienzprojekte",
+    },
+    "en": {
+        "Fertigung": "Manufacturing",
+        "Maschinenbau": "Mechanical Engineering",
+        "Konservative Ausgabe – Synthese unvollständig.": "Conservative output — synthesis incomplete.",
+        "Synthese wurde innerhalb der max_round nicht abgeschlossen.": "Synthesis did not complete within max_round.",
+        "Die Synthese wurde vom Supervisor-Gate nicht akzeptiert.": "Synthesis was not accepted by the Supervisor gate.",
+        "Starke Chance im Bereich Überbestände.": "Strong excess inventory opportunity.",
+        "Wirtschaftlicher Entscheider": "Economic buyer",
+        "Wirtschaftlicher Entscheider für Working-Capital-Themen.": "Economic buyer for working-capital topics.",
+        "Einkaufs-Gatekeeper": "Procurement gatekeeper",
+        "Operativer Sponsor": "Operational sponsor",
+        "Aftermarket-Verantwortlicher": "Aftermarket owner",
+        "Technischer Verantwortlicher": "Technical owner",
+        "Top-Management-Sponsor": "Executive sponsor",
+        "Unternehmens- oder öffentliche Webquelle": "Company or public web source",
+        "Öffentliche Quelle": "Public source",
+        "Verifiziert": "Verified",
+        "Teilweise verifiziert": "Partially verified",
+        "Teilweise verifiziert über Unternehmensquelle": "Partially verified via company source",
+        "Rolle aus öffentlichen Unternehmensquellen abgeleitet.": "Role inferred from public company evidence.",
+        "Bestandsvolumen": "Inventory Volume",
+        "Standardisierung": "Standardization",
+        "WIP-Stadium": "WIP Stage",
+        "Governance": "Governance",
+        "Entscheider": "Decision Owner",
+        "Transparenzlücke": "Visibility Gap",
+        "Weiterverwendungs-Fit": "Repurposing Fit",
+        "Wie hoch ist das aktuelle Volumen langsam drehender Bestände?": "What is the current slow-moving inventory volume?",
+        "Bestimmt die kommerzielle Größenordnung.": "Determines commercial size.",
+        "Überbestände sind materiell relevant.": "Excess inventory is material.",
+        "Entscheidet, ob Liquisto mit Inventory-to-Cash führen sollte.": "Decides whether Liquisto should lead with inventory-to-cash.",
+        "CFO-zentrierte Ansprache vorbereiten": "Prepare CFO-first outreach",
+        "Executive Sponsor sichern": "Secure executive sponsor",
+        "Individuell zugeschnittene Outreach-Nachricht": "Tailored outreach note",
+        "Meeting-Einladung versendet": "Meeting invitation sent",
+        "Benannter Sponsor vorhanden": "Named sponsor exists",
+    },
+}
+
+
+def _offline_translate_text(text: str, target_lang: str) -> str:
+    rendered = str(text or "")
+    if not rendered.strip():
+        return rendered
+
+    exact = _OFFLINE_EXACT_TRANSLATIONS.get(target_lang, {})
+    if rendered in exact:
+        return exact[rendered]
+
+    replacements = (
+        [
+            ("Chief Financial Officer (CFO)", "Finanzvorstand (CFO)"),
+            ("Chief Executive Officer (CEO)", "Vorstandsvorsitzender (CEO)"),
+            ("Chief Technology Officer (CTO)", "Technikvorstand (CTO)"),
+            ("Executive Vice President of Operations", "Leiter Operations"),
+            ("Press contact", "Pressekontakt"),
+            ("Germany", "Deutschland"),
+            ("Poland", "Polen"),
+            ("inferred", "abgeleitet"),
+            ("Economic buyer", "Wirtschaftlicher Entscheider"),
+            ("Procurement gatekeeper", "Einkaufs-Gatekeeper"),
+            ("Operational sponsor", "Operativer Sponsor"),
+            ("Aftermarket owner", "Aftermarket-Verantwortlicher"),
+            ("Technical owner", "Technischer Verantwortlicher"),
+            ("Executive sponsor", "Top-Management-Sponsor"),
+            ("Executive Board Member", "Mitglied der Geschäftsleitung"),
+            ("Executive leadership", "Geschäftsleitung"),
+            ("Financial leadership", "Finanzleitung"),
+            ("Procurement / Supply Chain", "Einkauf / Lieferkette"),
+            ("Working Capital", "Nettoumlaufvermögen"),
+            ("working capital", "Nettoumlaufvermögen"),
+            ("Supply Chain", "Lieferkette"),
+            ("supply chain", "Lieferkette"),
+            ("Material Management", "Materialmanagement"),
+            ("Procurement", "Einkauf"),
+            ("procurement", "Einkauf"),
+            ("Purchasing", "Beschaffung"),
+            ("Head of ", "Leitung "),
+            ("Plant Lead ", "Werkleitung "),
+            ("Analytics", "Analytik"),
+            ("analytics", "Analytik"),
+            ("Aftermarket", "Servicegeschäft"),
+            ("LinkedIn Sales Navigator", "LinkedIn-Recherche"),
+            ("Sales Navigator", "LinkedIn-Recherche"),
+            ("company leadership pages", "Unternehmensführungsseiten"),
+            ("assistant", "Assistenz"),
+            ("switchboard", "Zentrale"),
+            ("manufactured", "hergestellt"),
+            ("growing", "wachsend"),
+            ("over 1 billion EUR (2025)", "über 1 Milliarde EUR (2025)"),
+            ("Workforce increased from 5,300 to 5,800 employees recently.", "Die Belegschaft stieg zuletzt von 5.300 auf 5.800 Mitarbeitende."),
+            ("The company ", "Das Unternehmen "),
+            ("There is no public evidence of restructuring, layoffs, insolvency, or inventory write-downs.", "Es gibt keine öffentlichen Hinweise auf Restrukturierung, Entlassungen, Insolvenz oder Abwertungen auf Bestände."),
+            ("Overall, ZIEHL-ABEGG faces supply pressure from regional demand imbalances but is positioned to leverage growth in emerging markets and new capacity investments.", "Insgesamt steht ZIEHL-ABEGG unter Angebotsdruck durch regionale Nachfrageungleichgewichte, ist aber gut positioniert, um Wachstum in aufstrebenden Märkten und neue Kapazitätsinvestitionen zu nutzen."),
+            ("ZIEHL-ABEGG is a privately held company that does not publicly disclose detailed consolidated financial statements including balance sheet, net debt, or inventory write-downs.", "ZIEHL-ABEGG ist ein privat geführtes Unternehmen und veröffentlicht keine detaillierten konsolidierten Abschlüsse mit Bilanz, Nettoverschuldung oder Bestandsabwertungen."),
+            ("This geographic shift in demand underscores the importance of tailored regional demand forecasting and inventory management.", "Diese geografische Nachfrageverschiebung unterstreicht die Bedeutung einer regional zugeschnittenen Nachfrageprognose und Bestandssteuerung."),
+            ("Too few financial datapoints extracted", "Zu wenige Finanzdaten extrahiert"),
+            ("No inventory positions extracted", "Keine Inventarpositionen extrahiert"),
+            ("No balance-sheet signals extracted", "Keine Bilanzsignale extrahiert"),
+            ("conference mentions", "Konferenznennungen"),
+            ("email addresses", "E-Mail-Adressen"),
+            ("phone numbers", "Telefonnummern"),
+            ("Owner / Timing", "Verantwortlich / Zeitpunkt"),
+            ("Owner", "Verantwortlich"),
+            ("Hypothesis / output / done", "Hypothese / Ergebnis / Abschluss"),
+            ("Done", "Abschluss"),
+            ("Company or public web source", "Unternehmens- oder öffentliche Webquelle"),
+            ("Public source", "Öffentliche Quelle"),
+            ("Press contact:", "Pressekontakt:"),
+            ("Verified via ", "Verifiziert über "),
+            ("Partially verified via ", "Teilweise verifiziert über "),
+            (" via ", " über "),
+            (" and ", " und "),
+            (" for ", " für "),
+            (" with ", " mit "),
+            (" from ", " von "),
+            (" into ", " in "),
+            (" before ", " vor "),
+            (" after ", " nach "),
+            (" around ", " rund um "),
+            (" through ", " durch "),
+            ("meeting", "Gespräch"),
+            ("Meeting", "Gespräch"),
+            ("stakeholder", "Ansprechpartner"),
+            ("Stakeholder", "Ansprechpartner"),
+            ("sponsor", "Unterstützer"),
+            ("Sponsor", "Unterstützer"),
+            ("dashboard", "Übersicht"),
+            ("Dashboard", "Übersicht"),
+            ("phase", "Abschnitt"),
+            ("Phase", "Abschnitt"),
+            ("systems", "Systeme"),
+            ("Systems", "Systeme"),
+            ("repair", "Reparatur"),
+            ("Repair", "Reparatur"),
+            ("refurbishment", "Aufbereitung"),
+            ("Refurbishment", "Aufbereitung"),
+            ("refurbishing", "Aufbereitung"),
+            ("Refurbishing", "Aufbereitung"),
+            ("reselling", "Weiterverkauf"),
+            ("Reselling", "Weiterverkauf"),
+            ("components", "Komponenten"),
+            ("Components", "Komponenten"),
+            ("integration of", "Integration von"),
+            ("Integration of", "Integration von"),
+            ("utilizing", "Nutzung von"),
+            ("Utilizing", "Nutzung von"),
+            ("visibility", "Transparenz"),
+            ("Visibility", "Transparenz"),
+            ("Opening of new ", "Eröffnung eines neuen "),
+            ("new vehicles, elevators, und industrial equipment", "neue Fahrzeuge, Aufzüge und Industrieausrüstung"),
+            ("technologies to industrial partners", "Technologien für Industriepartner"),
+            ("secondary industrial applications or less", "sekundäre industrielle Anwendungen oder geringer"),
+            ("new industrial automation or HVAC system", "neue industrielle Automatisierungs- oder HLK-Systeme"),
+            ("control technology platforms", "Regeltechnik-Plattformen"),
+            ("adjacent markets such as medical equipment or", "benachbarte Märkte wie Medizintechnik oder"),
+            (" to improve energy", " zur Verbesserung der Energieeffizienz"),
+            ("repurposing", "Weiterverwendung"),
+            ("Repurposing", "Weiterverwendung"),
+            ("retrofit", "Nachrüstung"),
+            ("Retrofit", "Nachrüstung"),
+            ("upgrade", "Nachrüstung"),
+            ("Upgrade", "Nachrüstung"),
+            ("existing", "bestehende"),
+            ("Existing", "Bestehende"),
+            ("Supply-Chain", "Lieferkette"),
+            ("equipment", "Ausrüstung"),
+            ("applications", "Anwendungen"),
+            ("Key decision-maker for financial and working-capital topics.", "Zentraler Entscheider für Finanz- und Working-Capital-Themen."),
+            ("Ultimate operational decision-maker, sponsor for efficiency projects.", "Oberster operativer Entscheider und Sponsor für Effizienzprojekte."),
+            ("Key decision-maker for financial and working-capital initiatives", "Zentraler Entscheider für Finanz- und Working-Capital-Initiativen"),
+            ("Ultimate operational decision-maker, sponsor for efficiency projects", "Oberster operativer Entscheider und Sponsor für Effizienzprojekte"),
+            ("Top-down introduction via company switchboard or network.", "Top-down-Einstieg über Zentrale oder bestehendes Netzwerk."),
+            ("Relevant for inventory, working capital, or operating-model validation.", "Relevant für die Validierung von Beständen, Working Capital oder Betriebsmodell."),
+            ("Prepare a hypothesis-led outreach for ", "Bereiten Sie eine hypothesenbasierte Ansprache für "),
+            (" anchored in the leading path `", " vor, verankert im führenden Pfad `"),
+            (" and the likely working-capital impact.", "` sowie dem wahrscheinlichen Working-Capital-Effekt."),
+            ("Identify the missing operational role `", "Identifizieren Sie die fehlende operative Rolle `"),
+            (" and map the best access path before outreach or immediately after first response.", "` und klären Sie den besten Zugangspfad vor dem Outreach oder direkt nach der ersten Rückmeldung."),
+            ("Validate the five critical questions in sequence: inventory volume, standardization, WIP stage, governance constraints, and decision ownership.", "Validieren Sie die fünf kritischen Fragen nacheinander: Bestandsvolumen, Standardisierung, WIP-Stadium, Governance-Grenzen und Entscheidungshoheit."),
+            ("Send a 24-hour recap with the validated opportunity path, named sponsor, and explicit request for the next operational working session.", "Senden Sie innerhalb von 24 Stunden ein Recap mit validiertem Opportunity-Pfad, benanntem Sponsor und einer expliziten Bitte um den nächsten operativen Arbeitstermin."),
+            ("Request a lightweight NDA package with inventory aging, slow movers, WIP segmentation, and any write-down or working-capital views for the affected region.", "Fordern Sie ein schlankes NDA-Paket mit Lageralterung, Slow Movern, WIP-Segmentierung sowie möglichen Wertberichtigungs- oder Working-Capital-Sichten für die betroffene Region an."),
+            ("Validate the top buyer categories against CRM and existing network fit before any external buyer outreach begins.", "Validieren Sie die wichtigsten Käuferkategorien gegen CRM und bestehenden Netzwerk-Fit, bevor externer Buyer-Outreach startet."),
+            ("Open top-down with ", "Top-down mit "),
+            (", then request handoff to the operational owner for inventory, procurement, or plant execution.", " eröffnen, dann Übergabe an den operativen Verantwortlichen für Bestand, Einkauf oder Werksumsetzung anfordern."),
+            ("Close the remaining stakeholder gap before outreach by identifying: ", "Schließen Sie die verbleibende Ansprechpartner-Lücke vor dem Outreach durch die Identifikation von: "),
+            ("Keep buyer/partner contacts separate from target-company stakeholders; do not mix them in the target-contact section.", "Käufer- und Partnerkontakte getrennt von Zielunternehmens-Ansprechpartnern halten; nicht im Zielkontaktblock mischen."),
+            ("What is the current book-value and physical volume of slow-moving or excess inventory at ", "Wie hoch sind aktueller Buchwert und physisches Volumen langsam drehender oder überschüssiger Bestände bei "),
+            (", split by site and business line?", ", aufgeschlüsselt nach Standort und Geschäftsbereich?"),
+            ("What share of the overhang is standard, resale-capable inventory versus customer-specific OEM configuration?", "Welcher Anteil des Überhangs ist standardisiert und wiederverkaufsfähig im Vergleich zu kundenspezifischen OEM-Konfigurationen?"),
+            ("Where is inventory currently stuck most heavily: raw materials, purchased electronics, WIP, or finished goods?", "Wo ist Bestand aktuell am stärksten gebunden: Rohmaterial, zugekaufte Elektronik, WIP oder Fertigware?"),
+            ("Which brand, channel, compliance, or customer-conflict rules limit secondary sales, aftermarket resale, or discreet buyer matching?", "Welche Marken-, Kanal-, Compliance- oder Kundenschutzregeln begrenzen Sekundärverkäufe, Aftermarket-Resale oder diskretes Buyer-Matching?"),
+            ("Who owns the release decision for excess inventory in Europe, and who can sponsor NDA-based data sharing after the meeting?", "Wer verantwortet in Europa die Freigabeentscheidung für Überbestände, und wer kann nach dem Gespräch ein NDA-basiertes Datenteilen unterstützen?"),
+            ("Where does ", "Wo fehlen bei "),
+            (" currently lack reliable inventory visibility across plants, regions, or business lines?", " derzeit belastbare Bestands-Transparenz über Werke, Regionen oder Geschäftsbereiche hinweg?"),
+            ("Which materials, legacy parts, or subassemblies cannot be sold directly but could be repurposed into adjacent industrial use cases?", "Welche Materialien, Altteile oder Baugruppen lassen sich nicht direkt verkaufen, könnten aber in benachbarte industrielle Use Cases weiterverwendet werden?"),
+            ("This determines whether the excess-inventory case is commercially material enough for immediate action.", "Das bestimmt, ob der Excess-Inventory-Case kommerziell relevant genug für unmittelbares Handeln ist."),
+            ("This defines whether analytics should be the commercial entry point.", "Das definiert, ob Analytics der kommerzielle Einstiegshebel sein sollte."),
+            ("This decides whether redeployment can happen quickly or only via selective channels.", "Das entscheidet, ob Weiterverwendung schnell oder nur über selektive Kanäle möglich ist."),
+            ("The optimal monetization path differs completely by asset maturity and material state.", "Der optimale Monetarisierungspfad unterscheidet sich grundlegend nach Asset-Reife und Materialzustand."),
+            ("Commercial feasibility depends on whether management allows controlled external monetization.", "Die kommerzielle Umsetzbarkeit hängt davon ab, ob das Management eine kontrollierte externe Monetarisierung zulässt."),
+            ("Without a named operational sponsor, the opportunity will stall after an encouraging first discussion.", "Ohne benannten operativen Sponsor wird die Opportunity nach einem guten Erstgespräch ins Stocken geraten."),
+            ("Repurposing only works if non-standard stock still has technical and commercial reuse value.", "Weiterverwendung funktioniert nur, wenn nicht standardisierter Bestand noch technischen und kommerziellen Wiederverwendungswert hat."),
+            ("There is enough trapped working capital to justify a monetization mandate.", "Es ist genug gebundenes Working Capital vorhanden, um ein Monetarisierungsmandat zu rechtfertigen."),
+            ("A meaningful portion of stock is transferable to secondary OEM or aftermarket demand.", "Ein relevanter Teil des Bestands lässt sich in sekundäre OEM- oder Aftermarket-Nachfrage überführen."),
+            ("The overhang can be segmented into discrete pools with different liquidation routes.", "Der Überhang lässt sich in getrennte Bestandscluster mit unterschiedlichen Liquidationswegen segmentieren."),
+            ("The company can monetize excess stock without damaging premium positioning or OEM relationships.", "Das Unternehmen kann Überbestände monetarisieren, ohne Premium-Positionierung oder OEM-Beziehungen zu beschädigen."),
+            ("A reachable owner exists who can move from discussion to data room and pilot scope.", "Es gibt einen erreichbaren Verantwortlichen, der von der Diskussion in einen Datenraum- und Pilotumfang überführen kann."),
+            ("A circularity-led path can absorb inventory that direct buyers cannot take.", "Ein zirkularitätsgetriebener Pfad kann Bestand aufnehmen, den direkte Käufer nicht übernehmen."),
+            ("Confirms whether Liquisto should lead with inventory-to-cash rather than analytics-only positioning.", "Bestätigt, ob Liquisto eher mit Inventory-to-Cash statt nur mit Analytics-Positionierung führen sollte."),
+            ("Confirms whether Liquisto", "Bestätigt, ob Liquisto"),
+            ("Changes buyer targeting, discount logic, and expected conversion speed.", "Verändert Buyer-Targeting, Rabattlogik und erwartete Konversionsgeschwindigkeit."),
+            ("Determines whether Liquisto pitches finished-goods redeployment, component brokerage, or circularity routes first.", "Bestimmt, ob Liquisto zuerst Fertigwaren-Weiterverwendung, Komponenten-Brokerage oder Zirkularitätswege pitchen sollte."),
+            ("Determines whether Liquisto", "Bestimmt, ob Liquisto"),
+            ("Defines which buyer categories and go-to-market mechanics are viable.", "Definiert, welche Käuferkategorien und Go-to-Market-Mechaniken tragfähig sind."),
+            ("Determines whether Liquisto can progress directly to post-meeting data collection.", "Bestimmt, ob Liquisto direkt in die Datensammlung nach dem Gespräch übergehen kann."),
+            ("Enter the meeting with a credible commercial narrative instead of a generic inventory pitch.", "Mit einer glaubwürdigen kommerziellen Story statt mit einem generischen Inventory-Pitch ins Gespräch gehen."),
+            ("One tailored opening message and a 3-point meeting narrative.", "Eine zugeschnittene Eröffnungsnachricht und eine 3-Punkte-Gesprächs-Story."),
+            ("The opening clearly links stock release to the stakeholder's agenda.", "Die Ansprache verknüpft Bestandsfreisetzung klar mit der Agenda des Ansprechpartners."),
+            ("Target-company sponsor identified", "Unterstützer im Zielunternehmen identifiziert"),
+            ("Avoid single-threaded outreach into CEO/CFO only.", "Vermeidet ein eindimensionales Outreach nur an CEO/CFO."),
+            ("Named operational stakeholder or explicit switchboard/escalation path.", "Benannter operativer Ansprechpartner oder expliziter Zentrale-/Eskalationspfad."),
+            ("At least one operational sponsor below the executive level is identified.", "Mindestens ein operativer Unterstützer unterhalb der Geschäftsleitung ist identifiziert."),
+            ("LinkedIn / public-contact search", "LinkedIn- / Public-Contact-Recherche"),
+            ("Convert the first meeting into a qualification gate for a real inventory monetization or analytics project.", "Das erste Gespräch in ein Qualifizierungsgate für ein echtes Inventory-Monetization- oder Analytics-Projekt überführen."),
+            ("Structured answers that confirm or disprove the lead hypothesis.", "Strukturierte Antworten, die die Leit-Hypothese bestätigen oder widerlegen."),
+            ("At least three of the five questions are answered with concrete operational detail.", "Mindestens drei der fünf Fragen werden mit konkretem operativem Detail beantwortet."),
+            ("Meeting secured", "Gespräch gesichert"),
+            ("Turn meeting momentum into a committed follow-up step.", "Gesprächs-Momentum in einen verbindlichen Folgeschritt überführen."),
+            ("Recap email with agreed next call, stakeholder list, and validation summary.", "Recap-E-Mail mit vereinbartem Folgetermin, Ansprechpartner-Liste und Validierungszusammenfassung."),
+            ("A follow-up meeting or data-review slot is scheduled.", "Ein Follow-up-Gespräch oder Datenreview-Termin ist angesetzt."),
+            ("Positive first meeting", "Positives Erstgespräch"),
+            ("Move from hypothesis to quantified deal sizing.", "Von der Hypothese zur quantifizierten Deal-Bewertung übergehen."),
+            ("Structured data extract suitable for buyer matching or inventory diagnostics.", "Strukturierter Datenextrakt, geeignet für Buyer-Matching oder Bestandsdiagnostik."),
+            ("Data package received or explicitly approved for transfer.", "Datenpaket erhalten oder explizit zur Übergabe freigegeben."),
+            ("Named operational owner and NDA approval", "Benannter operativer Verantwortlicher und NDA-Freigabe"),
+            ("Keep redeployment outreach tightly matched to asset fit and channel constraints.", "Weiterverwendungs-Outreach eng an Asset-Fit und Kanalrestriktionen ausrichten."),
+            ("Shortlisted buyer lanes with CRM overlap and exclusion rules.", "Shortlist der Käuferpfade mit CRM-Überlappung und Ausschlussregeln."),
+            ("Only buyer categories with verified asset-fit remain in the plan.", "Nur Käuferkategorien mit verifiziertem Asset-Fit verbleiben im Plan."),
+            ("Meeting confirms monetizable stock exists", "Gespräch bestätigt monetarisierbaren Bestand"),
+        ]
+        if target_lang == "de"
+        else [
+            ("Wirtschaftlicher Entscheider", "Economic buyer"),
+            ("Einkaufs-Gatekeeper", "Procurement gatekeeper"),
+            ("Operativer Sponsor", "Operational sponsor"),
+            ("Aftermarket-Verantwortlicher", "Aftermarket owner"),
+            ("Technischer Verantwortlicher", "Technical owner"),
+            ("Top-Management-Sponsor", "Executive sponsor"),
+            ("Unternehmens- oder öffentliche Webquelle", "Company or public web source"),
+            ("Öffentliche Quelle", "Public source"),
+            ("Verifiziert über ", "Verified via "),
+            ("Teilweise verifiziert über ", "Partially verified via "),
+            ("Top-down-Einstieg über Zentrale oder bestehendes Netzwerk.", "Top-down introduction via company switchboard or network."),
+            ("Mit einer glaubwürdigen kommerziellen Story statt mit einem generischen Inventory-Pitch ins Meeting gehen.", "Enter the meeting with a credible commercial narrative instead of a generic inventory pitch."),
+        ]
+    )
+    for source, target in replacements:
+        rendered = rendered.replace(source, target)
+    return rendered
+
+
+def _offline_translate_obj(value: Any, target_lang: str) -> Any:
+    if isinstance(value, dict):
+        return {key: _offline_translate_obj(item, target_lang) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_offline_translate_obj(item, target_lang) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_offline_translate_obj(item, target_lang) for item in value)
+    if isinstance(value, str):
+        return _offline_translate_text(value, target_lang)
+    return value
 
 
 def _styles() -> dict[str, ParagraphStyle]:
@@ -563,7 +1026,7 @@ def _render_bundle_section_to_pdf(
 
 # ── page chrome ───────────────────────────────────────────────────────────────
 
-def _make_header_footer(page_label: str, report_title: str):  # noqa: ANN001
+def _make_header_footer(page_label: str, _report_title: str):  # noqa: ANN001
     def _header_footer(canvas, doc) -> None:  # noqa: ANN001
         canvas.saveState()
         canvas.setFillColor(WHITE)
@@ -581,9 +1044,6 @@ def _make_header_footer(page_label: str, report_title: str):  # noqa: ANN001
                 preserveAspectRatio=True,
                 anchor="sw",
             )
-        canvas.setFillColor(BRAND_NAVY)
-        canvas.setFont("Helvetica-Bold", 8)
-        canvas.drawString(doc.leftMargin + 26 * mm, PAGE_HEIGHT - 9 * mm, report_title)
         canvas.setFillColor(TEXT_MUTED)
         canvas.setFont("Helvetica", 8)
         canvas.drawRightString(PAGE_WIDTH - doc.rightMargin, PAGE_HEIGHT - 9 * mm, f"{page_label} {doc.page}")
@@ -596,8 +1056,15 @@ def _make_header_footer(page_label: str, report_title: str):  # noqa: ANN001
 
 # ── cover ─────────────────────────────────────────────────────────────────────
 
-def _cover_block(company_name: str, subtitle: str, prepared_for: str,
-                 date_label: str, styles: dict[str, ParagraphStyle]) -> Table:
+def _cover_block(
+    company_name: str,
+    subtitle: str,
+    prepared_for: str,
+    date_label: str,
+    run_id_label: str,
+    run_id: str,
+    styles: dict[str, ParagraphStyle],
+) -> Table:
     date_str = datetime.now().strftime("%Y-%m-%d")
     accent_strip = Table([["", "", ""]], colWidths=[90 * mm, 50 * mm, 30 * mm], rowHeights=[2.5 * mm])
     accent_strip.setStyle(TableStyle([
@@ -610,15 +1077,16 @@ def _cover_block(company_name: str, subtitle: str, prepared_for: str,
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     content = [[
-        _logo_flowable(46),
         Paragraph(
-            f"<b>{company_name}</b><br/>{subtitle}<br/><font size='9' color='#4A5E60'>{prepared_for} · {date_label}: {date_str}</font>",
+            (
+                f"<b>{company_name}</b><br/>{subtitle}<br/>"
+                f"<font size='9' color='#4A5E60'>{prepared_for} · {date_label}: {date_str} · {run_id_label}: {run_id}</font>"
+            ),
             styles["title"],
-        ),
-    ], [accent_strip, ""]]
-    table = Table(content, colWidths=[48 * mm, 122 * mm])
+        )
+    ], [accent_strip]]
+    table = Table(content, colWidths=[170 * mm])
     table.setStyle(TableStyle([
-        ("SPAN", (0, 1), (1, 1)),
         ("BACKGROUND", (0, 0), (-1, 0), WHITE),
         ("BOX", (0, 0), (-1, 0), 0.8, BORDER),
         ("LEFTPADDING", (0, 0), (-1, -1), 14),
@@ -816,8 +1284,6 @@ def _compact_event(value: Any, limit: int = 135) -> str:
 def _service_area_label(value: str, lang: str) -> str:
     mapping = {
         "excess_inventory": "Excess Inventory" if lang == "en" else "Bestandsabbau",
-        "repurposing": "Repurposing" if lang == "en" else "Weiterverwendung",
-        "analytics": "Analytics" if lang == "en" else "Analytik",
         "further_validation_required": "Further validation required" if lang == "en" else "Weitere Validierung nötig",
     }
     key = (value or "").strip().lower()
@@ -957,6 +1423,136 @@ def _run_status_from_pipeline(pipeline_data: dict[str, Any]) -> str:
     return "meeting_ready"
 
 
+def _resolve_run_id(pipeline_data: dict[str, Any]) -> str:
+    direct = _safe_text(pipeline_data.get("run_id"), "")
+    if direct and direct not in {"n/v", "n/a"}:
+        return direct
+    final_briefing = pipeline_data.get("final_briefing") or {}
+    if isinstance(final_briefing, dict):
+        nested = _safe_text(final_briefing.get("run_id"), "")
+        if nested and nested not in {"n/v", "n/a"}:
+            return nested
+    metadata = pipeline_data.get("metadata") or {}
+    if isinstance(metadata, dict):
+        nested = _safe_text(metadata.get("run_id"), "")
+        if nested and nested not in {"n/v", "n/a"}:
+            return nested
+    return "n/v"
+
+
+_FINANCE_SIGNAL_TOKENS = (
+    "revenue",
+    "umsatz",
+    "ebit",
+    "ebitda",
+    "net debt",
+    "netto",
+    "loss",
+    "verlust",
+    "inventory",
+    "inventar",
+    "bestand",
+    "write-down",
+    "wertberichtigung",
+    "working capital",
+    "umlaufverm",
+    "balance sheet",
+    "bilanz",
+    "cash",
+    "mio",
+    "million",
+    "bn",
+    "billion",
+    "eur",
+    "%",
+)
+
+_NON_FINANCE_SIGNAL_TOKENS = (
+    "analytics",
+    "analytik",
+    "transparenz",
+    "transparency",
+    "ai",
+    "daten",
+    "data",
+    "platform",
+    "plattform",
+    "reporting",
+    "forecast",
+    "prognose",
+)
+
+_FINANCE_HARD_SIGNAL_TOKENS = (
+    "revenue",
+    "umsatz",
+    "ebit",
+    "ebitda",
+    "net debt",
+    "nette debt",
+    "verlust",
+    "loss",
+    "write-down",
+    "wertberichtigung",
+    "working capital",
+    "umlaufverm",
+    "balance sheet",
+    "bilanz",
+    "cash",
+    "liquidit",
+)
+
+_INVENTORY_SIGNAL_TOKENS = (
+    "inventory",
+    "inventar",
+    "bestand",
+    "lager",
+)
+
+_INVENTORY_PRESSURE_TOKENS = (
+    "excess",
+    "uberhang",
+    "überhang",
+    "aging",
+    "obsolet",
+    "abschreibung",
+    "write-down",
+    "wertberichtigung",
+    "capital bind",
+    "kapitalbindung",
+    "slow-moving",
+    "slow moving",
+    "reichweite",
+    "days inventory",
+)
+
+
+def _is_finance_inventory_signal(text: str) -> bool:
+    lower = text.lower()
+    has_finance_token = any(token in lower for token in _FINANCE_SIGNAL_TOKENS)
+    has_non_finance_token = any(token in lower for token in _NON_FINANCE_SIGNAL_TOKENS)
+    has_hard_signal_token = any(token in lower for token in _FINANCE_HARD_SIGNAL_TOKENS)
+    has_inventory_token = any(token in lower for token in _INVENTORY_SIGNAL_TOKENS)
+    has_inventory_pressure = any(token in lower for token in _INVENTORY_PRESSURE_TOKENS)
+    if not has_finance_token:
+        return False
+    if has_non_finance_token and not has_hard_signal_token and not (has_inventory_token and has_inventory_pressure):
+        return False
+    if has_hard_signal_token:
+        return True
+    return has_inventory_token and has_inventory_pressure
+
+
+def _filter_finance_inventory_signals(values: list[str], *, lang: str) -> list[str]:
+    filtered = [item for item in values if _is_finance_inventory_signal(item)]
+    if filtered:
+        return filtered
+    return [
+        "No balance-sheet or inventory signal extracted"
+        if lang == "en"
+        else "Kein belastbares Bilanz- oder Inventarsignal extrahiert"
+    ]
+
+
 def _sentence_candidates(texts: list[str]) -> list[str]:
     combined = " ".join(texts)
     chunks = re.split(r"(?<=[.!?])\s+|\n+", combined)
@@ -990,15 +1586,27 @@ def _extract_financial_cards(profile: dict[str, Any], industry: dict[str, Any], 
         *[str(item) for item in (deep_dive.get("inventory_positions") or [])],
         *[str(item) for item in (deep_dive.get("inventory_risks") or [])],
     ]
+    signal_texts = [sentence for sentence in _sentence_candidates(texts) if _is_finance_inventory_signal(sentence)]
+    signal_source = signal_texts if signal_texts else texts
     open_value = labels.get("open_value", "Open")
     return [
         (labels["revenue_trend"], _truncate(econ.get("revenue_trend"), 72, open_value)),
-        (labels["ebit"], _first_matching_sentence(texts, [r"\bebit\b"], open_value)),
-        (labels["net_loss"], _first_matching_sentence(texts, [r"net loss", r"jahresfehlbetrag"], open_value)),
-        (labels["write_downs"], _first_matching_sentence(texts, [r"write[- ]down", r"impair", r"wertberichtigung"], open_value)),
-        (labels["net_debt"], _first_matching_sentence(texts, [r"net debt", r"leverage", r"nettoverschuld"], open_value)),
-        (labels["working_capital"], _first_matching_sentence(texts, [r"working capital", r"net working capital"], open_value)),
-        (labels["inventory"], _first_matching_sentence(texts, [r"\binventor", r"vorr"], open_value)),
+        (labels["ebit"], _first_matching_sentence(signal_source, [r"\bebit\b"], open_value)),
+        (labels["net_loss"], _first_matching_sentence(signal_source, [r"net loss", r"jahresfehlbetrag"], open_value)),
+        (labels["write_downs"], _first_matching_sentence(signal_source, [r"write[- ]down", r"impair", r"wertberichtigung"], open_value)),
+        (labels["net_debt"], _first_matching_sentence(signal_source, [r"net debt", r"leverage", r"nettoverschuld"], open_value)),
+        (labels["working_capital"], _first_matching_sentence(signal_source, [r"working capital", r"net working capital", r"umlaufverm"], open_value)),
+        (
+            labels["inventory"],
+            _first_matching_sentence(
+                signal_source,
+                [
+                    r"(inventory|inventar|vorr|lager|bestand).*(write[- ]down|wertberichtigung|obsolet|aging|slow[- ]moving|capital|uberhang|überhang|reichweite)",
+                    r"(write[- ]down|wertberichtigung|obsolet|aging|slow[- ]moving|capital|uberhang|überhang|reichweite).*(inventory|inventar|vorr|lager|bestand)",
+                ],
+                open_value,
+            ),
+        ),
     ]
 
 
@@ -1103,52 +1711,349 @@ def _opportunity_table(recommended_paths: list[str], service_relevance: list[dic
     return table
 
 
-def _contact_table(contacts: list[dict[str, Any]], labels: dict[str, str],
-                   styles: dict[str, ParagraphStyle]) -> Table:
-    data = [[
-        Paragraph("<b>Name</b>", styles["table_header"]),
-        Paragraph(f"<b>{labels['contact_role']}</b>", styles["table_header"]),
-        Paragraph(f"<b>{labels['contact_relevance']}</b>", styles["table_header"]),
-        Paragraph(f"<b>{labels['contact_angle']}</b>", styles["table_header"]),
-    ]]
-    for contact in contacts:
-        company = _truncate(contact.get("firma"), 30, "")
-        name = _safe_text(contact.get("name"), "—")
-        if company:
-            name = f"{name}<br/><font size='7' color='#4A5E60'>{company}</font>"
-        relevance = _truncate(
-            contact.get("relevance_reason") or contact.get("confidence"),
-            88,
-            "—",
+def _confidence_ampel_color(value: Any) -> colors.Color:
+    rendered = _safe_text(value, "").lower()
+    if any(token in rendered for token in ("hoch", "high", "verified", "verifiziert")):
+        return BRAND_GREEN
+    if any(token in rendered for token in ("mittel", "medium", "partial", "teilweise")):
+        return BRAND_AMBER
+    if any(token in rendered for token in ("niedrig", "low", "unverified", "unverifiziert")):
+        return BRAND_RED
+    return TEXT_MUTED
+
+
+def _contact_profile_card(
+    *,
+    name: Any,
+    role: Any,
+    organization_location: Any,
+    relevance: Any,
+    outreach_angle: Any,
+    profile_channel: Any,
+    source_verification: Any,
+    confidence: Any,
+    labels: dict[str, str],
+    styles: dict[str, ParagraphStyle],
+    lang: str,
+    likely_objection: Any = "",
+) -> Table:
+    resolved_name = _safe_text(name, "—")
+    resolved_role = _safe_text(role, "—")
+    resolved_org = _safe_text(organization_location, "—")
+    resolved_relevance = _safe_text(relevance, "—")
+    resolved_angle = _safe_text(outreach_angle, "—")
+    resolved_channel = _safe_text(profile_channel, "—")
+    resolved_source = _safe_text(source_verification, "—")
+    resolved_confidence = _safe_text(confidence, "—")
+    objection_text = _safe_text(likely_objection, "")
+    objection_label = "Likely objection" if lang == "en" else "Wahrscheinlicher Einwand"
+
+    confidence_color = _confidence_ampel_color(resolved_confidence)
+    confidence_display = (
+        _display_confidence(resolved_confidence, lang)
+        if resolved_confidence.lower() in {"high", "medium", "low", "hoch", "mittel", "niedrig"}
+        else resolved_confidence
+    )
+
+    header_html = (
+        f"<b>{resolved_name}</b><br/>"
+        f"<font color='#005A9C'><b>{resolved_role}</b></font>"
+    )
+    org_html = f"<b>{labels['contact_org']}:</b> {resolved_org}"
+    body_lines = [
+        f"• <b>{labels['contact_relevance']}:</b> {resolved_relevance}",
+        f"• <b>{labels['contact_angle']}:</b> {resolved_angle}",
+    ]
+    if objection_text and objection_text not in {"n/v", "n/a", "—"}:
+        body_lines.append(f"• <b>{objection_label}:</b> {objection_text}")
+    body_html = "<br/>".join(body_lines)
+    footer_html = (
+        f"<b>{labels['contact_channel']}:</b> {resolved_channel}<br/>"
+        f"<b>{labels['contact_source_verification']}:</b> {resolved_source}"
+    )
+
+    confidence_badge = Table(
+        [[Paragraph(f"<b>{labels['contact_confidence']}</b><br/>{confidence_display}", styles["small"])]],
+        colWidths=[30 * mm],
+    )
+    confidence_badge.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _accent_surface(confidence_color)),
+        ("BOX", (0, 0), (-1, -1), 0.8, confidence_color),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+
+    header_block = Table(
+        [[Paragraph(header_html, styles["body"]), confidence_badge]],
+        colWidths=[120 * mm, 30 * mm],
+    )
+    header_block.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    card = Table(
+        [
+            [header_block],
+            [Paragraph(org_html, styles["small"])],
+            [Paragraph(body_html, styles["body"])],
+            [Paragraph(footer_html, styles["small"])],
+        ],
+        colWidths=[170 * mm],
+    )
+    card.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F7FAFF")),
+        ("BACKGROUND", (0, 1), (-1, 1), WHITE),
+        ("BACKGROUND", (0, 2), (-1, 2), SURFACE),
+        ("BACKGROUND", (0, 3), (-1, 3), colors.HexColor("#F9FCFC")),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, BRAND_BLUE),
+        ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, BORDER),
+        ("LINEBELOW", (0, 1), (-1, 1), 0.4, BORDER),
+        ("LINEBELOW", (0, 2), (-1, 2), 0.4, BORDER),
+    ]))
+    return card
+
+
+def _target_contact_cards(
+    cards: list[dict[str, Any]],
+    labels: dict[str, str],
+    styles: dict[str, ParagraphStyle],
+    lang: str,
+) -> list[Any]:
+    flowables: list[Any] = []
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        flowables.append(
+            _contact_profile_card(
+                name=card.get("name"),
+                role=card.get("role"),
+                organization_location=card.get("organization_location"),
+                relevance=card.get("relevance_buying_center"),
+                outreach_angle=card.get("outreach_rationale") or card.get("relevance_buying_center"),
+                profile_channel=_localized_contact_source(card.get("profile_contact_channel"), lang),
+                source_verification=_localized_contact_source(card.get("source_verification"), lang),
+                confidence=card.get("confidence"),
+                labels=labels,
+                styles=styles,
+                lang=lang,
+                likely_objection=card.get("likely_objection"),
+            )
         )
-        angle = _truncate(
-            contact.get("suggested_outreach_angle") or contact.get("relevance_reason"),
-            120,
-            "—",
+        flowables.append(Spacer(1, 2.2 * mm))
+    if flowables:
+        flowables.pop()
+    return flowables
+
+
+def _buyer_contact_cards(
+    contacts: list[dict[str, Any]],
+    labels: dict[str, str],
+    styles: dict[str, ParagraphStyle],
+    lang: str,
+) -> list[Any]:
+    flowables: list[Any] = []
+    for contact in contacts:
+        if not isinstance(contact, dict):
+            continue
+        org = " / ".join(
+            part for part in [
+                _safe_text(contact.get("firma"), ""),
+                _safe_text(contact.get("standort"), ""),
+            ] if part and part not in {"n/v", "n/a", "—"}
+        )
+        flowables.append(
+            _contact_profile_card(
+                name=contact.get("name"),
+                role=contact.get("rolle_titel") or contact.get("funktion"),
+                organization_location=org or "—",
+                relevance=contact.get("relevance_reason") or contact.get("confidence"),
+                outreach_angle=contact.get("suggested_outreach_angle") or contact.get("relevance_reason"),
+                profile_channel=_localized_contact_source(contact.get("quelle"), lang),
+                source_verification=_localized_contact_source(contact.get("quelle"), lang),
+                confidence=contact.get("confidence"),
+                labels=labels,
+                styles=styles,
+                lang=lang,
+            )
+        )
+        flowables.append(Spacer(1, 2.2 * mm))
+    if flowables:
+        flowables.pop()
+    return flowables
+
+
+def _missing_role_cards(
+    roles: list[dict[str, Any]],
+    labels: dict[str, str],
+    styles: dict[str, ParagraphStyle],
+    lang: str,
+) -> list[Any]:
+    flowables: list[Any] = []
+    next_action_label = "Next search action" if lang == "en" else "Nächste Suchaktion"
+    for role in roles:
+        if not isinstance(role, dict):
+            continue
+        role_name = _safe_text(role.get("role_name"), "—")
+        likely_area = _safe_text(role.get("likely_org_area"), "—")
+        why_critical = _safe_text(role.get("why_critical"), "—")
+        best_channel = _safe_text(role.get("best_search_channel"), "—")
+        next_action = _safe_text(role.get("next_search_action"), "—")
+
+        header_html = (
+            f"<b>{role_name}</b><br/>"
+            f"<font color='#D97706'><b>{labels['missing_role_area']}:</b> {likely_area}</font>"
+        )
+        body_html = f"• <b>{labels['missing_role_why']}:</b> {why_critical}"
+        footer_html = (
+            f"<b>{labels['missing_role_channel']}:</b> {best_channel}<br/>"
+            f"<b>{next_action_label}:</b> {next_action}"
+        )
+
+        card = Table(
+            [
+                [Paragraph(header_html, styles["body"])],
+                [Paragraph(body_html, styles["body"])],
+                [Paragraph(footer_html, styles["small"])],
+            ],
+            colWidths=[170 * mm],
+        )
+        card.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), WHITE),
+            ("BACKGROUND", (0, 1), (-1, 1), SURFACE_WARM),
+            ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#FFF9F2")),
+            ("BOX", (0, 0), (-1, -1), 0.7, BRAND_AMBER),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        flowables.append(card)
+        flowables.append(Spacer(1, 2.2 * mm))
+    if flowables:
+        flowables.pop()
+    return flowables
+
+
+def _open_question_table(questions: list[dict[str, Any]], labels: dict[str, str],
+                         styles: dict[str, ParagraphStyle], lang: str) -> Table:
+    data = [[
+        Paragraph(f"<b>{labels['open_label']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['open_questions']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['open_owner_timing']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['open_impact']}</b>", styles["table_header"]),
+    ]]
+    for item in questions:
+        if not isinstance(item, dict):
+            continue
+        owner_timing = " / ".join(
+            part for part in [
+                _safe_text(item.get("owner"), ""),
+                _phase_label(str(item.get("timing", "")), lang),
+            ] if part
         )
         data.append([
-            Paragraph(name, styles["table_cell"]),
-            Paragraph(_truncate(contact.get("rolle_titel") or contact.get("funktion"), 72, "—"), styles["table_cell"]),
-            Paragraph(relevance, styles["table_cell"]),
-            Paragraph(angle, styles["table_cell"]),
+            Paragraph(_safe_text(item.get("label"), "—"), styles["table_cell"]),
+            Paragraph(_safe_text(item.get("question"), "—"), styles["table_cell"]),
+            Paragraph(_safe_text(owner_timing, "—"), styles["table_cell"]),
+            Paragraph(_safe_text(item.get("decision_impact"), "—"), styles["table_cell"]),
         ])
     if len(data) == 1:
-        data.append([
-            Paragraph("—", styles["table_cell"]),
-            Paragraph("—", styles["table_cell"]),
-            Paragraph("—", styles["table_cell"]),
-            Paragraph("—", styles["table_cell"]),
-        ])
-    table = Table(data, colWidths=[34 * mm, 40 * mm, 44 * mm, 52 * mm], repeatRows=1)
+        data.append([Paragraph("—", styles["table_cell"])] * 4)
+    table = Table(data, colWidths=[24 * mm, 72 * mm, 30 * mm, 44 * mm], repeatRows=1)
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_RED),
         ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, SURFACE]),
         ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 7),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
+def _phase_label(value: str, lang: str) -> str:
+    mapping = {
+        "en": {
+            "pre_meeting": "Pre-meeting",
+            "during_meeting": "During meeting",
+            "post_meeting": "Post-meeting",
+            "post_meeting_under_nda": "Post-meeting under NDA",
+        },
+        "de": {
+            "pre_meeting": "Vor dem Gespräch",
+            "during_meeting": "Im Gespräch",
+            "post_meeting": "Nach dem Gespräch",
+            "post_meeting_under_nda": "Nach dem Gespräch unter NDA",
+        },
+    }
+    rendered = str(value or "").strip()
+    normalized = rendered.lower().replace(" ", "_").replace("-", "_")
+    lang_map = mapping.get(lang, mapping["en"])
+    if normalized in lang_map:
+        return lang_map[normalized]
+    if "post" in normalized and "nda" in normalized:
+        return lang_map["post_meeting_under_nda"]
+    if "pre" in normalized or normalized.startswith("vor_"):
+        return lang_map["pre_meeting"]
+    if "during" in normalized or "im_gespr" in normalized:
+        return lang_map["during_meeting"]
+    if "post" in normalized or normalized.startswith("nach_"):
+        return lang_map["post_meeting"]
+    return _safe_text(value, "—")
+
+
+def _next_step_table(steps: list[dict[str, Any]], labels: dict[str, str],
+                     styles: dict[str, ParagraphStyle], lang: str) -> Table:
+    data = [[
+        Paragraph(f"<b>{labels['step_phase']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['step_owner']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['step_action']}</b>", styles["table_header"]),
+        Paragraph(f"<b>{labels['step_output']}</b>", styles["table_header"]),
+    ]]
+    for item in steps:
+        if not isinstance(item, dict):
+            continue
+        output = (
+            f"{_safe_text(item.get('asset_hypothesis'), '')} / "
+            f"{_safe_text(item.get('expected_output'), '')} / "
+            f"{_safe_text(item.get('definition_of_done'), '')}"
+        ).strip(" /")
+        data.append([
+            Paragraph(_truncate(_phase_label(str(item.get("phase", "")), lang), 26, "—"), styles["table_cell"]),
+            Paragraph(_truncate(item.get("owner"), 34, "—"), styles["table_cell"]),
+            Paragraph(_truncate(item.get("action"), 120, "—"), styles["table_cell"]),
+            Paragraph(_truncate(output, 110, "—"), styles["table_cell"]),
+        ])
+    if len(data) == 1:
+        data.append([Paragraph("—", styles["table_cell"])] * 4)
+    table = Table(data, colWidths=[24 * mm, 28 * mm, 70 * mm, 48 * mm], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_GREEN),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, SURFACE]),
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
@@ -1352,6 +2257,146 @@ def _source_table(sources: list[dict[str, Any]], labels: dict[str, str],
 # ── main entry ────────────────────────────────────────────────────────────────
 
 _LANG_NAMES = {"en": "English", "de": "German", "fr": "French", "es": "Spanish"}
+TRANSLATION_TIMEOUT_SECONDS = 90.0
+_ENGLISH_MARKERS = {
+    "the", "and", "with", "for", "from", "into", "through", "over", "under", "before", "after",
+    "meeting", "inventory", "buyer", "buyers", "sponsor", "owner", "owners", "plant", "data",
+    "project", "projects", "visibility", "growth", "decline", "stable", "company", "manufacturer",
+    "manufacturing", "control", "technology", "systems", "global", "revenue", "financial",
+    "operational", "working", "capital", "services", "service", "partner", "contacts", "contact",
+    "critical", "question", "questions", "search", "pages", "lead", "identify", "local", "press",
+    "release", "releases", "partially", "verified", "source", "sources", "likely", "could",
+    "would", "should", "there", "enough", "strongest", "opportunity", "landscape", "path",
+    "paths", "next", "step", "steps", "report", "preparation", "commercial", "support",
+    "fit", "demand", "supply", "chain", "procurement",
+}
+
+
+def _looks_untranslated_for_german(text: str) -> bool:
+    rendered = str(text or "").strip()
+    if not rendered or rendered in {"n/v", "n/a", "—"}:
+        return False
+    lowered = re.sub(r"https?://\S+", " ", rendered.lower())
+    lowered = re.sub(r"\b[a-z0-9.-]+\.[a-z]{2,}\b", " ", lowered)
+    words = re.findall(r"[a-z][a-z'-]{2,}", lowered)
+    if not words:
+        return False
+    marker_hits = sum(1 for word in words if word in _ENGLISH_MARKERS)
+    strong_phrases = (
+        " is a ",
+        " are ",
+        " with ",
+        " for ",
+        " and ",
+        " the ",
+        "year-on-year",
+        "working capital",
+        "supply chain",
+        "linkedin sales navigator",
+    )
+    return marker_hits >= 2 or any(phrase in lowered for phrase in strong_phrases)
+
+
+def _set_nested_value(payload: Any, path: tuple[Any, ...], value: str) -> Any:
+    if not path:
+        return value
+    key = path[0]
+    if len(path) == 1:
+        if isinstance(payload, dict):
+            payload[key] = value
+            return payload
+        if isinstance(payload, list):
+            payload[key] = value
+            return payload
+        if isinstance(payload, tuple):
+            items = list(payload)
+            items[key] = value
+            return tuple(items)
+        return payload
+    if isinstance(payload, dict):
+        payload[key] = _set_nested_value(payload[key], path[1:], value)
+        return payload
+    if isinstance(payload, list):
+        payload[key] = _set_nested_value(payload[key], path[1:], value)
+        return payload
+    if isinstance(payload, tuple):
+        items = list(payload)
+        items[key] = _set_nested_value(items[key], path[1:], value)
+        return tuple(items)
+    return payload
+
+
+def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
+    if target_lang != "de":
+        return payload
+    try:
+        from openai import OpenAI
+        from src.config.settings import DEFAULT_MODEL, get_openai_api_key
+
+        api_key = get_openai_api_key()
+        if not api_key:
+            return payload
+
+        pending: dict[str, str] = {}
+        paths: dict[str, tuple[Any, ...]] = {}
+
+        def _walk(value: Any, path: tuple[Any, ...] = ()) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    _walk(item, path + (key,))
+                return
+            if isinstance(value, list):
+                for index, item in enumerate(value):
+                    _walk(item, path + (index,))
+                return
+            if isinstance(value, tuple):
+                for index, item in enumerate(value):
+                    _walk(item, path + (index,))
+                return
+            if isinstance(value, str) and _looks_untranslated_for_german(value):
+                token = f"t{len(paths)}"
+                paths[token] = path
+                pending[token] = value
+
+        _walk(payload)
+        if not pending:
+            return payload
+
+        client = OpenAI(api_key=api_key, timeout=TRANSLATION_TIMEOUT_SECONDS, max_retries=0)
+        tokens = list(paths.keys())
+        chunk_size = 24
+        for start in range(0, len(tokens), chunk_size):
+            chunk_tokens = tokens[start:start + chunk_size]
+            chunk_payload = {token: pending[token] for token in chunk_tokens}
+            try:
+                resp = client.chat.completions.create(
+                    model=DEFAULT_MODEL,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are fixing residual untranslated text inside a German executive PDF export. "
+                                "Translate every JSON value fully into idiomatic German. "
+                                "Do not leave English words behind unless they are company names, URLs, legal names, "
+                                "or abbreviations like CEO/CFO/EBIT/NDA. "
+                                "Return only a valid JSON object with the exact same keys."
+                            ),
+                        },
+                        {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0,
+                    timeout=TRANSLATION_TIMEOUT_SECONDS,
+                )
+                translated: dict[str, str] = json.loads(resp.choices[0].message.content)
+            except Exception:
+                continue
+            for token in chunk_tokens:
+                if token in translated:
+                    payload = _set_nested_value(payload, paths[token], translated[token])
+        return payload
+    except Exception:
+        return payload
 
 
 def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[str, Any]:
@@ -1360,15 +2405,14 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
     Returns a deep-copied, translated version of pipeline_data.
     Falls back silently to the original on any error.
     """
+    data = copy.deepcopy(pipeline_data)
     try:
         from openai import OpenAI  # local import — only needed here
         from src.config.settings import get_openai_api_key
 
         api_key = get_openai_api_key()
         if not api_key:
-            return pipeline_data
-
-        data = copy.deepcopy(pipeline_data)
+            return _offline_translate_obj(data, target_lang)
         syn  = data.get("synthesis", {}) or {}
         ind  = data.get("industry_analysis", {}) or {}
         prof = data.get("company_profile", {}) or {}
@@ -1462,6 +2506,46 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
             if isinstance(action, dict):
                 _add(f"meeting_action_title_{i}", action.get("title", ""))
                 _add(f"meeting_action_desc_{i}", action.get("description", ""))
+        for i, item in enumerate(syn.get("critical_open_questions", []) or []):
+            if isinstance(item, dict):
+                _add(f"coq_label_{i}", item.get("label", ""))
+                _add(f"coq_question_{i}", item.get("question", ""))
+                _add(f"coq_why_{i}", item.get("why_critical", ""))
+                _add(f"coq_hyp_{i}", item.get("hypothesis_tested", ""))
+                _add(f"coq_owner_{i}", item.get("owner", ""))
+                _add(f"coq_timing_{i}", item.get("timing", ""))
+                _add(f"coq_criticality_{i}", item.get("meeting_criticality", ""))
+                _add(f"coq_impact_{i}", item.get("decision_impact", ""))
+        for i, item in enumerate(syn.get("recommended_next_steps", []) or []):
+            if isinstance(item, dict):
+                _add(f"nstep_phase_{i}", item.get("phase", ""))
+                _add(f"nstep_owner_{i}", item.get("owner", ""))
+                _add(f"nstep_action_{i}", item.get("action", ""))
+                _add(f"nstep_target_{i}", item.get("target_person", ""))
+                _add(f"nstep_hyp_{i}", item.get("asset_hypothesis", ""))
+                _add(f"nstep_goal_{i}", item.get("goal", ""))
+                _add(f"nstep_output_{i}", item.get("expected_output", ""))
+                _add(f"nstep_success_{i}", item.get("success_criterion", ""))
+                _add(f"nstep_done_{i}", item.get("definition_of_done", ""))
+                _add(f"nstep_dep_{i}", item.get("dependency", ""))
+        for i, item in enumerate(contacts.get("target_company_contact_cards", []) or []):
+            if isinstance(item, dict):
+                _add(f"card_role_{i}", item.get("role", ""))
+                _add(f"card_org_{i}", item.get("organization_location", ""))
+                _add(f"card_rel_{i}", item.get("relevance_buying_center", ""))
+                _add(f"card_channel_{i}", item.get("profile_contact_channel", ""))
+                _add(f"card_verify_{i}", item.get("source_verification", ""))
+                _add(f"card_rationale_{i}", item.get("outreach_rationale", ""))
+                _add(f"card_objection_{i}", item.get("likely_objection", ""))
+        for i, item in enumerate(contacts.get("target_company_missing_roles", []) or []):
+            if isinstance(item, dict):
+                _add(f"missing_role_{i}", item.get("role_name", ""))
+                _add(f"missing_why_{i}", item.get("why_critical", ""))
+                _add(f"missing_area_{i}", item.get("likely_org_area", ""))
+                _add(f"missing_channel_{i}", item.get("best_search_channel", ""))
+                _add(f"missing_action_{i}", item.get("next_search_action", ""))
+        for i, item in enumerate(contacts.get("target_company_access_path", []) or []):
+            _add(f"access_path_{i}", item)
 
         if not batch:
             return data
@@ -1469,27 +2553,35 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
         # ── single LLM call ─────────────────────────────────────────────────
         from src.config.settings import DEFAULT_MODEL
         lang_name = _LANG_NAMES.get(target_lang, target_lang)
-        client = OpenAI(api_key=api_key)
-        resp = client.chat.completions.create(
-            model=DEFAULT_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are a professional business translator. "
-                        f"Translate all JSON values to {lang_name}. "
-                        f"The input may contain mixed-language content. "
-                        f"Rules: keep company names, brand names, proper nouns, "
-                        f"abbreviations, URLs, and numeric values unchanged. "
-                        f"Return ONLY a valid JSON object with the exact same keys."
-                    ),
-                },
-                {"role": "user", "content": json.dumps(batch, ensure_ascii=False)},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-        )
-        translated: dict[str, str] = json.loads(resp.choices[0].message.content)
+        client = OpenAI(api_key=api_key, timeout=TRANSLATION_TIMEOUT_SECONDS, max_retries=0)
+        translated: dict[str, str] = {}
+        keys = list(batch.keys())
+        chunk_size = 28
+        for start in range(0, len(keys), chunk_size):
+            chunk_keys = keys[start:start + chunk_size]
+            chunk_payload = {key: batch[key] for key in chunk_keys}
+            resp = client.chat.completions.create(
+                model=DEFAULT_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            f"You are a professional business translator. "
+                            f"Translate every JSON value fully into {lang_name}. "
+                            f"The input may contain mixed-language content. "
+                            f"Do not leave source-language sentences unchanged. "
+                            f"Keep company names, brand names, legal entity names, "
+                            f"abbreviations, URLs, and numeric values unchanged. "
+                            f"Return ONLY a valid JSON object with the exact same keys."
+                        ),
+                    },
+                    {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                timeout=TRANSLATION_TIMEOUT_SECONDS,
+            )
+            translated.update(json.loads(resp.choices[0].message.content))
 
         def _get(key: str, original: Any) -> Any:
             return translated.get(key, original)
@@ -1501,6 +2593,28 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
 
         syn["key_risks"]  = [_get(f"risk_{i}", t) for i, t in enumerate(syn.get("key_risks",  []) or [])]
         syn["next_steps"] = [_get(f"step_{i}", t) for i, t in enumerate(syn.get("next_steps", []) or [])]
+        for i, item in enumerate(syn.get("critical_open_questions", []) or []):
+            if isinstance(item, dict):
+                item["label"] = _get(f"coq_label_{i}", item.get("label", ""))
+                item["question"] = _get(f"coq_question_{i}", item.get("question", ""))
+                item["why_critical"] = _get(f"coq_why_{i}", item.get("why_critical", ""))
+                item["hypothesis_tested"] = _get(f"coq_hyp_{i}", item.get("hypothesis_tested", ""))
+                item["owner"] = _get(f"coq_owner_{i}", item.get("owner", ""))
+                item["timing"] = _get(f"coq_timing_{i}", item.get("timing", ""))
+                item["meeting_criticality"] = _get(f"coq_criticality_{i}", item.get("meeting_criticality", ""))
+                item["decision_impact"] = _get(f"coq_impact_{i}", item.get("decision_impact", ""))
+        for i, item in enumerate(syn.get("recommended_next_steps", []) or []):
+            if isinstance(item, dict):
+                item["phase"] = _get(f"nstep_phase_{i}", item.get("phase", ""))
+                item["owner"] = _get(f"nstep_owner_{i}", item.get("owner", ""))
+                item["action"] = _get(f"nstep_action_{i}", item.get("action", ""))
+                item["target_person"] = _get(f"nstep_target_{i}", item.get("target_person", ""))
+                item["asset_hypothesis"] = _get(f"nstep_hyp_{i}", item.get("asset_hypothesis", ""))
+                item["goal"] = _get(f"nstep_goal_{i}", item.get("goal", ""))
+                item["expected_output"] = _get(f"nstep_output_{i}", item.get("expected_output", ""))
+                item["success_criterion"] = _get(f"nstep_success_{i}", item.get("success_criterion", ""))
+                item["definition_of_done"] = _get(f"nstep_done_{i}", item.get("definition_of_done", ""))
+                item["dependency"] = _get(f"nstep_dep_{i}", item.get("dependency", ""))
 
         ind["assessment"]   = _get("ind_assessment", ind.get("assessment", ""))
         ind["demand_outlook"] = _get("ind_demand",   ind.get("demand_outlook", ""))
@@ -1539,6 +2653,25 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
 
         contacts["narrative_summary"] = _get("contacts_narrative", contacts.get("narrative_summary", ""))
         contacts["target_company_summary"] = _get("contacts_target_summary", contacts.get("target_company_summary", ""))
+        for i, item in enumerate(contacts.get("target_company_contact_cards", []) or []):
+            if isinstance(item, dict):
+                item["role"] = _get(f"card_role_{i}", item.get("role", ""))
+                item["organization_location"] = _get(f"card_org_{i}", item.get("organization_location", ""))
+                item["relevance_buying_center"] = _get(f"card_rel_{i}", item.get("relevance_buying_center", ""))
+                item["profile_contact_channel"] = _get(f"card_channel_{i}", item.get("profile_contact_channel", ""))
+                item["source_verification"] = _get(f"card_verify_{i}", item.get("source_verification", ""))
+                item["outreach_rationale"] = _get(f"card_rationale_{i}", item.get("outreach_rationale", ""))
+                item["likely_objection"] = _get(f"card_objection_{i}", item.get("likely_objection", ""))
+        for i, item in enumerate(contacts.get("target_company_missing_roles", []) or []):
+            if isinstance(item, dict):
+                item["role_name"] = _get(f"missing_role_{i}", item.get("role_name", ""))
+                item["why_critical"] = _get(f"missing_why_{i}", item.get("why_critical", ""))
+                item["likely_org_area"] = _get(f"missing_area_{i}", item.get("likely_org_area", ""))
+                item["best_search_channel"] = _get(f"missing_channel_{i}", item.get("best_search_channel", ""))
+                item["next_search_action"] = _get(f"missing_action_{i}", item.get("next_search_action", ""))
+        contacts["target_company_access_path"] = [
+            _get(f"access_path_{i}", t) for i, t in enumerate(contacts.get("target_company_access_path", []) or [])
+        ]
         for prefix, records in (
             ("buyer_contact", contacts.get("prioritized_contacts", []) or contacts.get("contacts", [])),
             ("target_contact", contacts.get("target_company_prioritized_contacts", []) or contacts.get("target_company_contacts", [])),
@@ -1558,7 +2691,7 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
         return data
 
     except Exception:
-        return pipeline_data  # silent fallback — render English on error
+        return _offline_translate_obj(data, target_lang)
 
 
 def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
@@ -1566,8 +2699,17 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     styles  = _styles()
 
     # Translate all narrative content into the requested output language.
-    if lang in _LANG_NAMES:
+    if lang == "de":
+        pipeline_data = copy.deepcopy(pipeline_data)
+        pipeline_data = _offline_translate_obj(pipeline_data, lang)
+    elif lang in _LANG_NAMES:
         pipeline_data = _translate_content(pipeline_data, lang)
+    elif lang in _LANG_NAMES:
+        pipeline_data = _offline_translate_obj(pipeline_data, lang)
+    elif lang in _LANG_NAMES:
+        pipeline_data = _translate_residual_strings(pipeline_data, lang)
+    elif lang in _LANG_NAMES:
+        pipeline_data = _offline_translate_obj(pipeline_data, lang)
 
     pipeline_data = copy.deepcopy(pipeline_data)
     synthesis_payload = dict(pipeline_data.get("synthesis", {}) or {})
@@ -1580,7 +2722,6 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     profile   = pipeline_data.get("company_profile", {}) or {}
     industry  = pipeline_data.get("industry_analysis", {}) or {}
     market    = pipeline_data.get("market_network", {}) or {}
-    quality   = pipeline_data.get("quality_review", {}) or {}
     synthesis = pipeline_data.get("synthesis", {}) or {}
     readiness = pipeline_data.get("research_readiness", {}) or {}
     contacts_section = pipeline_data.get("contact_intelligence", {}) or {}
@@ -1629,12 +2770,10 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         hq = parts[0] if len(parts) >= 2 else hq
     founded   = _safe_text(profile.get("founded"))
     confidence = _display_confidence(_safe_text(synthesis.get("confidence"), "medium"), lang)
-    run_status = _display_run_status(_run_status_from_pipeline(pipeline_data), lang)
+    run_id = _resolve_run_id(pipeline_data)
 
     # Research readiness
     rs_score  = int(readiness.get("score", 0))
-    rs_usable = bool(readiness.get("usable", False))
-    rs_health = _safe_text(quality.get("evidence_health"))
 
     # Company profile table rows
     profile_rows = [
@@ -1648,7 +2787,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     ]
 
     dashboard_kpis = [
-        (labels["run_status"], run_status),
+        (labels["run_id"], run_id),
         (labels["revenue"], revenue),
         (labels["employees"], employees),
         (labels["confidence"], confidence),
@@ -1695,6 +2834,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     )
     if not financial_signals and _safe_text(deep_dive.get("assessment"), ""):
         financial_signals = [_truncate(deep_dive.get("assessment"), 180)]
+    financial_signals = _filter_finance_inventory_signals(financial_signals, lang=lang)
     portfolio_events = _dedupe_items(
         [
             *[_compact_event(item, 118) for item in (transaction_intel.get("strategic_events") or [])],
@@ -1723,29 +2863,171 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     financial_cards = _extract_financial_cards(profile, industry, synthesis, labels)
     target_contacts = contacts_section.get("target_company_prioritized_contacts") or contacts_section.get("target_company_contacts") or []
     buyer_contacts = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts") or []
+    target_contact_cards = contacts_section.get("target_company_contact_cards") or [
+        {
+            "name": _safe_text(contact.get("name"), "—"),
+            "role": _safe_text(contact.get("rolle_titel") or contact.get("funktion"), "—"),
+            "organization_location": _safe_text(contact.get("firma") or contact.get("standort"), "—"),
+            "relevance_buying_center": _safe_text(contact.get("relevance_reason") or contact.get("confidence"), "—"),
+            "profile_contact_channel": _safe_text(contact.get("quelle"), "—"),
+            "source_verification": _safe_text(contact.get("confidence"), "—"),
+            "confidence": _safe_text(contact.get("confidence"), "—"),
+        }
+        for contact in target_contacts[:4]
+        if isinstance(contact, dict)
+    ]
+    missing_roles = contacts_section.get("target_company_missing_roles") or []
+    access_path = contacts_section.get("target_company_access_path") or []
+    critical_questions = synthesis.get("critical_open_questions") or []
+    recommended_steps = synthesis.get("recommended_next_steps") or []
     top_risks = risks[:3]
 
     top_actions = []
-    for action in (pipeline_data.get("meeting_actions") or [])[:3]:
-        if not isinstance(action, dict):
+    for step in recommended_steps[:3]:
+        if not isinstance(step, dict):
             continue
-        title = _safe_text(action.get("title"), "")
-        description = _truncate(action.get("description"), 70, "")
-        if title and description:
-            top_actions.append(f"{title} - {description}")
-        elif title:
-            top_actions.append(title)
+        action_text = _safe_text(step.get("action"), "")
+        goal_text = _truncate(step.get("goal"), 72, "")
+        if action_text and goal_text:
+            top_actions.append(f"{action_text} - {goal_text}")
+        elif action_text:
+            top_actions.append(action_text)
+    if not top_actions:
+        for action in (pipeline_data.get("meeting_actions") or [])[:3]:
+            if not isinstance(action, dict):
+                continue
+            title = _safe_text(action.get("title"), "")
+            description = _truncate(action.get("description"), 70, "")
+            if title and description:
+                top_actions.append(f"{title} - {description}")
+            elif title:
+                top_actions.append(title)
     if not top_actions:
         top_actions = next_steps
     validation_pairs = _validation_pairs(top_risks or risks, top_actions or next_steps, labels)
+
+    if lang == "de":
+        render_payload = {
+            "revenue": revenue,
+            "executive_summary": executive_summary,
+            "products": products,
+            "material_scope": material_scope,
+            "service_relevance": service_relevance,
+            "risks": risks,
+            "next_steps": next_steps,
+            "profile_rows": profile_rows,
+            "dashboard_kpis": dashboard_kpis,
+            "opportunity_reasons": opportunity_reasons,
+            "key_trigger_items": key_trigger_items,
+            "finance_rows": finance_rows,
+            "financial_signals": financial_signals,
+            "portfolio_events": portfolio_events,
+            "narrative_overview": narrative_overview,
+            "why_liquisto": why_liquisto,
+            "business_model": business_model,
+            "divisions": divisions,
+            "financial_position": financial_position,
+            "trigger_events": trigger_events,
+            "financial_cards": financial_cards,
+            "target_contacts": target_contacts,
+            "buyer_contacts": buyer_contacts,
+            "target_contact_cards": target_contact_cards,
+            "missing_roles": missing_roles,
+            "access_path": access_path,
+            "critical_questions": critical_questions,
+            "recommended_steps": recommended_steps,
+            "top_risks": top_risks,
+            "top_actions": top_actions,
+            "validation_pairs": validation_pairs,
+            "primary_label": primary_label,
+            "primary_fit": primary_fit,
+            "primary_reasoning": primary_reasoning,
+        }
+        render_payload = _offline_translate_obj(render_payload, "de")
+        render_payload = _translate_residual_strings(render_payload, "de")
+        render_payload = _offline_translate_obj(render_payload, "de")
+
+        revenue = render_payload["revenue"]
+        executive_summary = render_payload["executive_summary"]
+        products = render_payload["products"]
+        material_scope = render_payload["material_scope"]
+        service_relevance = render_payload["service_relevance"]
+        risks = render_payload["risks"]
+        next_steps = render_payload["next_steps"]
+        profile_rows = render_payload["profile_rows"]
+        dashboard_kpis = render_payload["dashboard_kpis"]
+        opportunity_reasons = render_payload["opportunity_reasons"]
+        key_trigger_items = render_payload["key_trigger_items"]
+        finance_rows = render_payload["finance_rows"]
+        financial_signals = render_payload["financial_signals"]
+        portfolio_events = render_payload["portfolio_events"]
+        narrative_overview = render_payload["narrative_overview"]
+        why_liquisto = render_payload["why_liquisto"]
+        business_model = render_payload["business_model"]
+        divisions = render_payload["divisions"]
+        financial_position = render_payload["financial_position"]
+        trigger_events = render_payload["trigger_events"]
+        financial_cards = render_payload["financial_cards"]
+        target_contacts = render_payload["target_contacts"]
+        buyer_contacts = render_payload["buyer_contacts"]
+        target_contact_cards = render_payload["target_contact_cards"]
+        missing_roles = render_payload["missing_roles"]
+        access_path = render_payload["access_path"]
+        critical_questions = render_payload["critical_questions"]
+        recommended_steps = render_payload["recommended_steps"]
+        top_risks = render_payload["top_risks"]
+        top_actions = render_payload["top_actions"]
+        validation_pairs = render_payload["validation_pairs"]
+        primary_label = render_payload["primary_label"]
+        primary_fit = render_payload["primary_fit"]
+        primary_reasoning = render_payload["primary_reasoning"]
+
+        revenue = _offline_translate_text(revenue, "de")
+        executive_summary = _offline_translate_text(executive_summary, "de")
+        products = [_offline_translate_text(item, "de") for item in products]
+        material_scope = [_offline_translate_text(item, "de") for item in material_scope]
+        risks = [_offline_translate_text(item, "de") for item in risks]
+        next_steps = [_offline_translate_text(item, "de") for item in next_steps]
+        opportunity_reasons = [_offline_translate_text(item, "de") for item in opportunity_reasons]
+        key_trigger_items = [_offline_translate_text(item, "de") for item in key_trigger_items]
+        financial_signals = [_offline_translate_text(item, "de") for item in financial_signals]
+        portfolio_events = [_offline_translate_text(item, "de") for item in portfolio_events]
+        narrative_overview = _offline_translate_text(narrative_overview, "de")
+        why_liquisto = _offline_translate_text(why_liquisto, "de")
+        business_model = _offline_translate_text(business_model, "de")
+        divisions = [_offline_translate_text(item, "de") for item in divisions]
+        financial_position = _offline_translate_text(financial_position, "de")
+        trigger_events = [_offline_translate_text(item, "de") for item in trigger_events]
+        financial_cards = [tuple(_offline_translate_text(part, "de") if isinstance(part, str) else part for part in card) for card in financial_cards]
+        target_contact_cards = _offline_translate_obj(target_contact_cards, "de")
+        missing_roles = _offline_translate_obj(missing_roles, "de")
+        access_path = [_offline_translate_text(item, "de") for item in access_path]
+        critical_questions = _offline_translate_obj(critical_questions, "de")
+        recommended_steps = _offline_translate_obj(recommended_steps, "de")
+        top_risks = [_offline_translate_text(item, "de") for item in top_risks]
+        top_actions = [_offline_translate_text(item, "de") for item in top_actions]
+        profile_rows = [tuple(_offline_translate_text(part, "de") if isinstance(part, str) else part for part in row) for row in profile_rows]
+        dashboard_kpis = [tuple(_offline_translate_text(part, "de") if isinstance(part, str) else part for part in row) for row in dashboard_kpis]
+        finance_rows = [tuple(_offline_translate_text(part, "de") if isinstance(part, str) else part for part in row) for row in finance_rows]
+        validation_pairs = [tuple(_offline_translate_text(part, "de") if isinstance(part, str) else part for part in row) for row in validation_pairs]
+        primary_label = _offline_translate_text(primary_label, "de")
+        primary_fit = _offline_translate_text(primary_fit, "de")
+        primary_reasoning = _offline_translate_text(primary_reasoning, "de")
 
     # ── build story ──────────────────────────────────────────────────────────
 
     story: list[Any] = []
 
     # Cover
-    story.append(_cover_block(company_name, labels["report_subtitle"],
-                              labels["prepared_for"], labels["date_label"], styles))
+    story.append(_cover_block(
+        company_name,
+        labels["report_subtitle"],
+        labels["prepared_for"],
+        labels["date_label"],
+        labels["run_id"],
+        run_id,
+        styles,
+    ))
     story.append(Spacer(1, 5 * mm))
 
     story.append(_section_band(
@@ -1759,11 +3041,6 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     story.append(Spacer(1, 3 * mm))
     story.append(_kpi_grid(dashboard_kpis, styles, columns=3))
     story.append(Spacer(1, 3 * mm))
-
-    # Research readiness bar
-    if rs_score > 0:
-        story.append(_readiness_bar(rs_score, rs_usable, rs_health, labels))
-        story.append(Spacer(1, 4 * mm))
 
     story.append(_summary_callout(
         f"{labels['primary_recommendation']}: {primary_label} ({primary_fit.title()})",
@@ -1798,13 +3075,9 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     story.append(Spacer(1, 3 * mm))
     story.append(_opportunity_table(recommended_paths, service_relevance, labels, styles, lang))
     story.append(Spacer(1, 4 * mm))
-    story.append(Table(
-        [[
-            _bullet_col(labels["key_triggers"], key_trigger_items, styles, 82 * mm, BRAND_TEAL),
-            _bullet_col(labels["why_now"], opportunity_reasons, styles, 82 * mm, BRAND_GREEN),
-        ]],
-        colWidths=[84 * mm, 84 * mm],
-    ))
+    story.append(_bullet_col(labels["key_triggers"], key_trigger_items, styles, 168 * mm, BRAND_TEAL))
+    story.append(Spacer(1, 2.5 * mm))
+    story.append(_bullet_col(labels["why_now"], opportunity_reasons, styles, 168 * mm, BRAND_GREEN))
     story.append(Spacer(1, 3 * mm))
     story.append(_summary_callout(
         labels["why_liquisto"],
@@ -1837,17 +3110,13 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     if prof_table:
         story.append(prof_table)
         story.append(Spacer(1, 4 * mm))
-    story.append(Table(
-        [[_bullet_col(labels["business_model"], [business_model], styles, 82 * mm, BRAND_BLUE),
-          _bullet_col(labels["divisions"], divisions, styles, 82 * mm, BRAND_TEAL)]],
-        colWidths=[84 * mm, 84 * mm],
-    ))
-    story.append(Spacer(1, 3 * mm))
-    story.append(Table(
-        [[_bullet_col(labels["products_scope"], material_scope or products, styles, 82 * mm, BRAND_TEAL),
-          _bullet_col(labels["trigger_events"], trigger_events, styles, 82 * mm, BRAND_AMBER)]],
-        colWidths=[84 * mm, 84 * mm],
-    ))
+    story.append(_bullet_col(labels["business_model"], [business_model], styles, 168 * mm, BRAND_BLUE))
+    story.append(Spacer(1, 2.5 * mm))
+    story.append(_bullet_col(labels["divisions"], divisions, styles, 168 * mm, BRAND_TEAL))
+    story.append(Spacer(1, 2.5 * mm))
+    story.append(_bullet_col(labels["products_scope"], material_scope or products, styles, 168 * mm, BRAND_TEAL))
+    story.append(Spacer(1, 2.5 * mm))
+    story.append(_bullet_col(labels["trigger_events"], trigger_events, styles, 168 * mm, BRAND_AMBER))
     story.append(Spacer(1, 3 * mm))
     story.append(_summary_callout(
         labels["financial_position"],
@@ -1877,13 +3146,9 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     story.append(Spacer(1, 3 * mm))
     story.append(_kpi_grid(financial_cards, styles, columns=2))
     story.append(Spacer(1, 3 * mm))
-    story.append(Table(
-        [[
-            _bullet_col(labels["financial_signals"], financial_signals, styles, 82 * mm, BRAND_AMBER),
-            _bullet_col(labels["portfolio_events"], portfolio_events, styles, 82 * mm, BRAND_BLUE),
-        ]],
-        colWidths=[84 * mm, 84 * mm],
-    ))
+    story.append(_bullet_col(labels["financial_signals"], financial_signals, styles, 168 * mm, BRAND_AMBER))
+    story.append(Spacer(1, 2.5 * mm))
+    story.append(_bullet_col(labels["portfolio_events"], portfolio_events, styles, 168 * mm, BRAND_BLUE))
 
     story.append(PageBreak())
 
@@ -1922,12 +3187,45 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         accent=BRAND_NAVY,
     ))
     story.append(Spacer(1, 3 * mm))
+    story.append(_summary_callout(
+        "Method note" if lang == "en" else "Methodenhinweis",
+        (
+            "Phone numbers and email addresses are shown only when they are publicly evidenced. No placeholder contacts or invented direct channels are generated."
+            if lang == "en" else
+            "Telefonnummern und E-Mail-Adressen werden nur gezeigt, wenn sie öffentlich belastbar belegt sind. Es werden keine Platzhalterkontakte oder erfundenen Direktkanäle erzeugt."
+        ),
+        styles,
+        accent=BRAND_AMBER,
+        background=WHITE,
+    ))
+    story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(labels["target_contacts"], styles["section"]))
-    story.append(_contact_table(target_contacts[:4], labels, styles))
+    if target_contact_cards:
+        for flowable in _target_contact_cards(target_contact_cards[:4], labels, styles, lang):
+            story.append(flowable)
+    else:
+        story.append(_summary_callout(
+            "Critical gap" if lang == "en" else "Kritische Lücke",
+            "No sufficiently verified target-company stakeholders are available for the briefing."
+            if lang == "en" else
+            "Für das Briefing liegen keine ausreichend verifizierten Zielunternehmens-Stakeholder vor.",
+            styles,
+            accent=BRAND_RED,
+            background=WHITE,
+        ))
+    if missing_roles:
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph(labels["missing_roles"], styles["section"]))
+        for flowable in _missing_role_cards(missing_roles[:4], labels, styles, lang):
+            story.append(flowable)
+    if access_path:
+        story.append(Spacer(1, 4 * mm))
+        story.append(_bullet_col(labels["access_path"], access_path[:4], styles, 168 * mm, BRAND_BLUE))
     if buyer_contacts:
         story.append(Spacer(1, 4 * mm))
         story.append(Paragraph(labels["buyer_contacts"], styles["section"]))
-        story.append(_contact_table(buyer_contacts[:3], labels, styles))
+        for flowable in _buyer_contact_cards(buyer_contacts[:3], labels, styles, lang):
+            story.append(flowable)
     cov = _safe_text(contacts_section.get("coverage_quality"), "")
     if cov not in {"", "n/v", "n/a"}:
         story.append(Spacer(1, 2 * mm))
@@ -1944,21 +3242,32 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         accent=BRAND_RED,
     ))
     story.append(Spacer(1, 3 * mm))
-    story.append(Table(
-        [[
-            _bullet_col(labels["open_questions"], top_risks or risks, styles, 82 * mm, BRAND_RED),
-            _bullet_col(labels["validation_plan"], top_actions or next_steps, styles, 82 * mm, BRAND_GREEN),
-        ]],
-        colWidths=[84 * mm, 84 * mm],
-    ))
+    if critical_questions:
+        story.append(_open_question_table(critical_questions[:5], labels, styles, lang))
+    else:
+        story.append(_summary_callout(
+            "Critical gap" if lang == "en" else "Kritische Lücke",
+            "No deal-critical validation questions were produced."
+            if lang == "en" else
+            "Es wurden keine deal-kritischen Validierungsfragen erzeugt.",
+            styles,
+            accent=BRAND_RED,
+            background=WHITE,
+        ))
     story.append(Spacer(1, 4 * mm))
-    validation_rows = [
-        (f"{index + 1}. {_truncate(question, 70)}", _truncate(action, 90))
-        for index, (question, action) in enumerate(validation_pairs)
-    ]
-    validation_table = _info_table(validation_rows, styles, (78 * mm, 92 * mm))
-    if validation_table:
-        story.append(validation_table)
+    story.append(Paragraph(labels["validation_plan"], styles["section"]))
+    if recommended_steps:
+        story.append(_next_step_table(recommended_steps[:6], labels, styles, lang))
+    else:
+        story.append(_summary_callout(
+            "Critical gap" if lang == "en" else "Kritische Lücke",
+            "No operational action plan is available for the next step."
+            if lang == "en" else
+            "Es liegt kein operativer Aktionsplan für den nächsten Schritt vor.",
+            styles,
+            accent=BRAND_RED,
+            background=WHITE,
+        ))
 
     # ── render ───────────────────────────────────────────────────────────────
 

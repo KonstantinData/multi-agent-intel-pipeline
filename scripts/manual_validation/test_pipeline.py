@@ -321,7 +321,7 @@ def test_generate_pdf_focuses_on_briefing_not_run_process():
     pdf_bytes = generate_pdf(payload, lang="de")
     text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
 
-    assert "Management-Dashboard" in text
+    assert "Management-Übersicht" in text
     assert "Primäre Empfehlung" in text
     assert "Zielunternehmen-Kontakte" in text
     assert "Executive Dashboard" not in text
