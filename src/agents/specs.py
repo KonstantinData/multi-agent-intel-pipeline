@@ -6,7 +6,7 @@ from src.agents.registry import AgentSpec
 AGENT_SPECS = {
     "Supervisor": AgentSpec("Supervisor", "🧭", "#0f4c81", "Owns intake normalization, routing, and run control."),
     "CompanyDepartment": AgentSpec("CompanyDepartment", "🏢", "#1b7f5a", "AutoGen group for company facts, asset scope, and economic signals."),
-    "MarketDepartment": AgentSpec("MarketDepartment", "📡", "#cc6f16", "AutoGen group for market context, circularity, and analytics signals."),
+    "MarketDepartment": AgentSpec("MarketDepartment", "📡", "#cc6f16", "AutoGen group for market context, demand pressure, and inventory-relevant market signals."),
     "BuyerDepartment": AgentSpec("BuyerDepartment", "🌐", "#167d7f", "AutoGen group for peers, buyers, and redeployment paths."),
     "ContactDepartment": AgentSpec("ContactDepartment", "👤", "#0e7490", "AutoGen group for contact discovery at prioritized buyer firms."),
     "SynthesisDepartment": AgentSpec("SynthesisDepartment", "🧠", "#7b4bc4", "AG2 group that synthesizes all domain reports into a Liquisto briefing."),

@@ -217,8 +217,7 @@ class SupervisorAgent:
             ]),
             ("MarketDepartment", [
                 ("market", 2), ("markt", 2), ("demand", 3), ("supply", 3),
-                ("capacity", 2), ("circular", 3), ("analytics", 2),
-                ("repurposing", 3), ("overcapacity", 3), ("nachfrage", 3),
+                ("capacity", 2), ("overcapacity", 3), ("nachfrage", 3),
                 ("angebot", 2), ("trend", 1),
             ]),
             ("SynthesisDepartment", [

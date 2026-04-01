@@ -176,7 +176,7 @@ def _market_answer(
     artifact_evidence, artifact_unresolved = _extract_task_evidence(run_state)
 
     matrix_evidence = []
-    for qid in ("q_market_situation", "q_repurposing_circularity", "q_analytics_operational_improvement"):
+    for qid in ("q_market_situation",):
         entry = answer_matrix.get(qid, {})
         if entry.get("answer") and entry["answer"] != "n/v":
             matrix_evidence.append(entry["answer"][:200])
@@ -283,7 +283,7 @@ def _synthesis_answer(
         synthesis.get("executive_summary", ""),
         synthesis.get("opportunity_assessment_summary", ""),
         raw.get("opportunity_assessment", ""),
-        *synthesis.get("next_steps", [])[:2],
+        *(synthesis.get("research_backlog", synthesis.get("next_steps", []))[:2]),
     ]
     unresolved = synthesis.get("key_risks", [])[:3]
     answer = (
@@ -302,13 +302,13 @@ def _cross_domain_answer(
     evidence = [
         synthesis.get("executive_summary", ""),
         synthesis.get("opportunity_assessment_summary", ""),
-        *synthesis.get("next_steps", [])[:2],
+        *(synthesis.get("research_backlog", synthesis.get("next_steps", []))[:2]),
     ]
     unresolved = quality.get("open_gaps", [])[:3]
     answer = (
         f"Cross-domain follow-up for '{question}': "
         f"{synthesis.get('opportunity_assessment_summary', 'n/v')} "
-        f"Recommended next steps: {', '.join(synthesis.get('next_steps', [])[:3]) or 'n/v'}."
+        f"Recommended next steps: {', '.join(synthesis.get('research_backlog', synthesis.get('next_steps', []))[:3]) or 'n/v'}."
     )
     return answer, [item for item in evidence if item], unresolved
 

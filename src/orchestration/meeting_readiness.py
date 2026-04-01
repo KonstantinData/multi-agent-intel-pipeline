@@ -103,6 +103,38 @@ class FinalBriefingComposer:
     ) -> list[MeetingAction]:
         actions: list[MeetingAction] = []
 
+        structured_steps = [
+            step for step in (synthesis.get("recommended_next_steps", []) or [])
+            if isinstance(step, dict) and str(step.get("action", "")).strip()
+        ]
+        structured_questions = [
+            item for item in (synthesis.get("critical_open_questions", []) or [])
+            if isinstance(item, dict) and str(item.get("question", "")).strip()
+        ]
+
+        if structured_steps:
+            for step in structured_steps[:3]:
+                phase = str(step.get("phase", "")).strip().replace("_", " ")
+                actions.append(MeetingAction(
+                    action_type="prepare_meeting" if phase != "post meeting under nda" else "collect_missing_evidence",
+                    title=str(step.get("action", "Further validation required"))[:120],
+                    description=(
+                        f"{step.get('goal', '')} "
+                        f"Hypothesis: {step.get('asset_hypothesis', '')} "
+                        f"Expected output: {step.get('expected_output', '')} "
+                        f"Done when: {step.get('definition_of_done', '')}"
+                    ).strip()[:220] or f"Advance the opportunity with {company_name}.",
+                    owner=str(step.get("owner", "Liquisto Account Lead")),
+                ))
+            for question in structured_questions[:2]:
+                actions.append(MeetingAction(
+                    action_type="collect_missing_evidence",
+                    title=f"Validate: {str(question.get('label', 'Open question'))[:72]}",
+                    description=str(question.get("question", "")).strip()[:220],
+                    owner=str(question.get("owner", "Liquisto Account Lead")),
+                ))
+            return actions
+
         # 1. Primary engagement action from synthesis
         paths = synthesis.get("recommended_engagement_paths", [])
         if paths and paths[0] != "further_validation_required":

@@ -92,18 +92,6 @@ class MarketSituation(BaseModel):
     sources: list[SourceRecord] = Field(default_factory=list)
 
 
-class RepurposingCircularity(BaseModel):
-    """Repurposing and circularity landscape signals."""
-    repurposing_signals: list[str] = Field(default_factory=list)
-    sources: list[SourceRecord] = Field(default_factory=list)
-
-
-class AnalyticsSignals(BaseModel):
-    """Analytics and operational improvement signals."""
-    analytics_signals: list[str] = Field(default_factory=list)
-    sources: list[SourceRecord] = Field(default_factory=list)
-
-
 # ---------------------------------------------------------------------------
 # Buyer department sub-schemas
 # ---------------------------------------------------------------------------
@@ -185,8 +173,6 @@ SCHEMA_REGISTRY: dict[str, type[BaseModel]] = {
     "ProductAssetScope": ProductAssetScope,
     "TransactionEventIntelligenceResult": TransactionEventIntelligenceResult,
     "MarketSituation": MarketSituation,
-    "RepurposingCircularity": RepurposingCircularity,
-    "AnalyticsSignals": AnalyticsSignals,
     "PeerCompanies": PeerCompanies,
     "MonetizationRedeployment": MonetizationRedeployment,
     "ContactDiscoveryResult": ContactDiscoveryResult,

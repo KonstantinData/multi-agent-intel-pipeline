@@ -175,8 +175,8 @@ _VISUAL_FOCUS = {
     ],
     "MarketDepartment": [
         "Demand and supply pressure summary",
-        "Repurposing and circularity opportunities",
-        "Analytics and operational friction signals",
+        "Overcapacity and slowdown signals",
+        "Inventory-relevant market risks",
     ],
     "BuyerDepartment": [
         "Peer company map",
@@ -192,7 +192,7 @@ _VISUAL_FOCUS = {
 
 _CLASSIFICATION_FRAME = {
     "CompanyDepartment": "made_vs_distributed_vs_held_in_stock",
-    "MarketDepartment": "demand_supply_circularity_analytics",
+    "MarketDepartment": "demand_supply_capacity_inventory_pressure",
     "BuyerDepartment": "peers_buyers_redeployment_aftermarket",
     "ContactDepartment": "decision_makers_by_function_and_seniority",
 }
@@ -206,8 +206,8 @@ _INVESTIGATION_FOCUS = {
     ],
     "MarketDepartment": [
         "Define market hypotheses and assess demand / supply pressure",
-        "Evaluate repurposing, circularity, and adjacent reuse paths",
-        "Surface analytics and operational improvement signals",
+        "Surface overcapacity, slowdown, and excess-stock indicators",
+        "Ground the excess-inventory thesis in external market evidence",
     ],
     "BuyerDepartment": [
         "Map peer and competitor companies",
@@ -263,14 +263,6 @@ _TASK_GUIDANCE_TEMPLATES: dict[str, str] = {
     "market_situation": (
         "Assess demand/supply dynamics for {industry}. Surface key trends, capacity signals, "
         "and market pressure relevant to {company}."
-    ),
-    "repurposing_circularity": (
-        "Identify repurposing and circular-economy paths for products in scope: {keywords}. "
-        "Focus on reuse, refurbishment, or materials recovery."
-    ),
-    "analytics_operational_improvement": (
-        "Surface operational and analytics improvement signals for {company}: "
-        "planning gaps, inventory visibility, forecasting bottlenecks."
     ),
     "peer_companies": (
         "Map peer and competitor companies in {industry}. "
@@ -497,10 +489,12 @@ class DepartmentLeadAgent:
                 and task_key not in run_state.revision_requests
             ):
                 latest_decision = run_state.latest_decision(task_key)
+                latest_review = run_state.latest_review(task_key)
                 was_blocked = (
                     latest_decision is not None
                     and latest_decision.outcome == "blocked_by_dependency"
                 )
+                needs_retry = latest_review is not None and not latest_review.approved
                 if was_blocked:
                     # Re-check: if dependency is now satisfied, clear the block and re-run
                     all_deps_ok = all(
@@ -525,6 +519,11 @@ class DepartmentLeadAgent:
                             },
                             ensure_ascii=False,
                         )
+                elif needs_retry:
+                    logger.info(
+                        "run_research: task=%s has rejected latest review — allowing retry",
+                        task_key,
+                    )
                 else:
                     existing = run_state.latest_artifact(task_key)
                     logger.debug("run_research: task=%s already complete — skipping duplicate", task_key)
@@ -778,6 +777,26 @@ class DepartmentLeadAgent:
             Never re-judges tasks that already have an explicit decision.
             Inline fallback is used only for tasks with research+review but no decision.
             """
+            incomplete_tasks = [
+                assignment.task_key
+                for assignment in assignments
+                if run_state.latest_artifact(assignment.task_key) is None
+                and run_state.latest_decision(assignment.task_key) is None
+            ]
+            if incomplete_tasks:
+                logger.warning(
+                    "finalize_package blocked: department=%s incomplete_tasks=%s",
+                    self.department,
+                    incomplete_tasks,
+                )
+                return json.dumps(
+                    {
+                        "error": "Cannot finalize package before all assigned tasks have at least one research result.",
+                        "incomplete_tasks": incomplete_tasks,
+                    },
+                    ensure_ascii=False,
+                )
+
             task_summaries: list[dict[str, Any]] = []
             accepted_points: list[str] = []
             open_questions: list[str] = []

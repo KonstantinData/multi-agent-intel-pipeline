@@ -59,9 +59,35 @@ class ContactPerson(BaseModel):
     senioritaet: str = "n/v"
     standort: str = "n/v"
     quelle: str = "n/v"
+    verified_channel_type: str = "n/v"
+    verification_status: str = "partially_verified"
+    buying_center_role: str = "n/v"
     confidence: str = "inferred"
     relevance_reason: str = "n/v"
     suggested_outreach_angle: str = "n/v"
+
+
+class TargetContactCard(BaseModel):
+    name: str = "n/v"
+    role: str = "n/v"
+    organization_location: str = "n/v"
+    relevance_buying_center: str = "n/v"
+    profile_contact_channel: str = "n/v"
+    source_verification: str = "n/v"
+    verified_channel_type: str = "n/v"
+    verification_status: str = "partially_verified"
+    buying_center_role: str = "n/v"
+    outreach_rationale: str = "n/v"
+    likely_objection: str = "n/v"
+    confidence: str = "n/v"
+
+
+class MissingTargetRole(BaseModel):
+    role_name: str = "n/v"
+    why_critical: str = "n/v"
+    likely_org_area: str = "n/v"
+    best_search_channel: str = "n/v"
+    next_search_action: str = "n/v"
 
 
 class ContactIntelligenceSection(BaseModel):
@@ -69,6 +95,9 @@ class ContactIntelligenceSection(BaseModel):
     prioritized_contacts: list[ContactPerson] = Field(default_factory=list)
     target_company_contacts: list[ContactPerson] = Field(default_factory=list)
     target_company_prioritized_contacts: list[ContactPerson] = Field(default_factory=list)
+    target_company_contact_cards: list[TargetContactCard] = Field(default_factory=list)
+    target_company_missing_roles: list[MissingTargetRole] = Field(default_factory=list)
+    target_company_access_path: list[str] = Field(default_factory=list)
     firms_searched: int = 0
     contacts_found: int = 0
     coverage_quality: str = "n/v"
@@ -153,8 +182,6 @@ class IndustryAnalysis(BaseModel):
     overcapacity_signals: list[str] = Field(default_factory=list)
     excess_stock_indicators: str = "n/v"
     demand_outlook: str = "n/v"
-    repurposing_signals: list[str] = Field(default_factory=list)
-    analytics_signals: list[str] = Field(default_factory=list)
     assessment: str = "n/v"
     sources: list[SourceRecord] = Field(default_factory=list)
 
@@ -180,6 +207,7 @@ class MarketNetwork(BaseModel):
     cross_industry_buyers: MarketTier = Field(default_factory=MarketTier)
     monetization_paths: list[str] = Field(default_factory=list)
     redeployment_paths: list[str] = Field(default_factory=list)
+    sources: list[SourceRecord] = Field(default_factory=list)
 
 
 class GapDetail(BaseModel):
@@ -217,6 +245,30 @@ class CaseAssessment(BaseModel):
     summary: str = "n/v"
 
 
+class CriticalOpenQuestion(BaseModel):
+    label: str = "n/v"
+    question: str = "n/v"
+    why_critical: str = "n/v"
+    hypothesis_tested: str = "n/v"
+    owner: str = "Liquisto Account Lead"
+    timing: str = "n/v"
+    meeting_criticality: str = "n/v"
+    decision_impact: str = "n/v"
+
+
+class RecommendedNextStep(BaseModel):
+    phase: str = "n/v"
+    owner: str = "Liquisto Account Lead"
+    action: str = "n/v"
+    target_person: str = "n/v"
+    asset_hypothesis: str = "n/v"
+    goal: str = "n/v"
+    expected_output: str = "n/v"
+    success_criterion: str = "n/v"
+    definition_of_done: str = "n/v"
+    dependency: str = "n/v"
+
+
 class Synthesis(BaseModel):
     target_company: str = "n/v"
     executive_summary: str = "n/v"
@@ -231,6 +283,9 @@ class Synthesis(BaseModel):
     total_cross_industry_buyers: int = 0
     key_risks: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)
+    research_backlog: list[str] = Field(default_factory=list)
+    critical_open_questions: list[CriticalOpenQuestion] = Field(default_factory=list)
+    recommended_next_steps: list[RecommendedNextStep] = Field(default_factory=list)
     sources: list[SourceRecord] = Field(default_factory=list)
     # Tracks how this synthesis was produced (orthogonal to confidence)
     generation_mode: str = "normal"

@@ -66,8 +66,6 @@ QUESTION_ORDER = (
     "q_economic_commercial_situation",
     "q_product_asset_scope",
     "q_market_situation",
-    "q_repurposing_circularity",
-    "q_analytics_operational_improvement",
     "q_peer_companies",
     "q_monetization_redeployment",
     "q_contact_intelligence",

@@ -35,8 +35,6 @@ TASK_TOOL_OVERRIDES: dict[tuple[str, str], tuple[str, ...]] = {
     ("CompanyResearcher", "economic_commercial_situation"): ("search", "page_fetch", "llm_structured"),
     ("CompanyResearcher", "product_asset_scope"): ("search", "page_fetch", "llm_structured"),
     ("MarketResearcher", "market_situation"): ("search", "page_fetch", "llm_structured"),
-    ("MarketResearcher", "repurposing_circularity"): ("search", "page_fetch", "llm_structured"),
-    ("MarketResearcher", "analytics_operational_improvement"): ("search", "page_fetch", "llm_structured"),
     ("BuyerResearcher", "peer_companies"): ("search", "page_fetch", "llm_structured"),
     ("BuyerResearcher", "monetization_redeployment"): ("search", "page_fetch", "llm_structured"),
     ("ContactResearcher", "contact_discovery"): ("search", "page_fetch", "llm_structured"),

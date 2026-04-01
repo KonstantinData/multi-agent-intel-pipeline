@@ -38,9 +38,11 @@ from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
     assess_research_readiness,
+    build_contact_briefing_assets,
+    build_playbook_assets,
     build_quality_review,
-    build_report_package,
     build_synthesis_context,
+    harmonize_synthesis_output,
 )
 from src.research.normalize import normalize_domain
 
@@ -500,19 +502,47 @@ def run_pipeline(
                 "sources": [],
             }
 
+        contact_intelligence = dict(sections.get("contact_intelligence", {}) or {})
+        contact_intelligence.update(
+            build_contact_briefing_assets(
+                company_profile=sections.get("company_profile", {}),
+                contact_intelligence=contact_intelligence,
+            )
+        )
+        sections["contact_intelligence"] = contact_intelligence
+
+        synthesis = harmonize_synthesis_output(
+            synthesis=synthesis,
+            company_profile=sections.get("company_profile", {}),
+            industry_analysis=sections.get("industry_analysis", {}),
+            market_network=sections.get("market_network", {}),
+            contact_intelligence=contact_intelligence,
+            quality_review=quality_review,
+        )
+
+        synthesis.update(
+            build_playbook_assets(
+                company_profile=sections.get("company_profile", {}),
+                market_network=sections.get("market_network", {}),
+                contact_intelligence=contact_intelligence,
+                synthesis=synthesis,
+            )
+        )
+
         readiness = assess_research_readiness(
             company_profile=sections.get("company_profile", {}),
             industry_analysis=sections.get("industry_analysis", {}),
             market_network=sections.get("market_network", {}),
-            contact_intelligence=sections.get("contact_intelligence", {}),
+            contact_intelligence=contact_intelligence,
             quality_review=quality_review,
+            synthesis=synthesis,
         )
         pipeline_data = validate_pipeline_data(
             {
                 "company_profile": assemble_section("company_profile", sections.get("company_profile", {})),
                 "industry_analysis": assemble_section("industry_analysis", sections.get("industry_analysis", {})),
                 "market_network": assemble_section("market_network", sections.get("market_network", {})),
-                "contact_intelligence": assemble_section("contact_intelligence", sections.get("contact_intelligence", {})),
+                "contact_intelligence": assemble_section("contact_intelligence", contact_intelligence),
                 "quality_review": quality_review,
                 "synthesis": synthesis,
                 "research_readiness": readiness,
@@ -529,18 +559,13 @@ def run_pipeline(
         run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
         run_context.resolution_state["resolution_plan"] = resolution_plan
 
-        report_package = build_report_package(
+        report_package, report_messages = agents["report_writer"].run(
             pipeline_data=pipeline_data,
             department_packages=department_packages,
+            on_message=on_message,
         )
         run_context.report_package = report_package
-        messages.append(
-            emit_message(
-                on_message,
-                agent="ReportWriter",
-                content=json.dumps({"section": "report_package", "payload": report_package}, ensure_ascii=False),
-            )
-        )
+        messages.extend(report_messages)
 
         # RA-06: Meeting-readiness gate — enforced before finalization
         readiness_gate = MeetingReadinessGate()

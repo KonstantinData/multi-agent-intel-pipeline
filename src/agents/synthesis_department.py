@@ -394,6 +394,10 @@ You do NOT conduct research yourself. You read, integrate, and judge.
 ## Rules
 - Always address the next agent explicitly by name
 - Executive summary must be briefing-ready: concrete, specific, actionable
+- Think decision-first, not completeness-first
+- Prioritize deal logic over generic coverage language
+- Open questions must be 3-5 deal-critical validation questions, not a raw data-gap dump
+- Next steps must read like a first-meeting playbook / mutual action plan with owners, timing, and outcomes
 - Do not guess — base everything on what the segments contain
 """
 
@@ -411,6 +415,8 @@ Look for:
 - Buyer candidates that match company product scope
 - Contact intelligence that enables concrete outreach
 - Contradictions or gaps that weaken the overall picture
+- Which few open questions would actually change the lead path, stakeholder plan, or NDA request
+- Which next steps are commercial actions versus mere research backlog
 """
 
     def _critic_system_prompt(self) -> str:
@@ -425,6 +431,9 @@ After {self.analyst_name} presents findings:
 4. Report: APPROVED (synthesis is solid) or REJECTED with specific issues
 
 If rejected, clearly name which department's segment is the problem and why.
+- Reject generic "search for more data" next steps and generic market gaps that do not change the deal path.
+- Do NOT accept a synthesis as meeting-ready when the only remaining path would require an ungrounded alternative service angle.
+- Missing buyer-side contacts may be tolerated only when the excess-inventory case is otherwise strongly grounded by financial evidence and target-company stakeholder coverage is sufficient.
 """
 
     def _judge_system_prompt(self) -> str:
