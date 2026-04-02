@@ -6,6 +6,9 @@ from typing import Any
 
 
 MODEL_PRICING_PER_1M: dict[str, dict[str, float]] = {
+    "gpt-5": {"input": 1.25, "output": 10.00},
+    "gpt-5-mini": {"input": 0.25, "output": 2.00},
+    "gpt-5-nano": {"input": 0.05, "output": 0.40},
     "gpt-4.1": {"input": 2.00, "output": 8.00},
     "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
     "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
@@ -45,6 +48,32 @@ def estimate_cost_usd(*, model_name: str, prompt_tokens: int, completion_tokens:
     prompt_cost = (max(prompt_tokens, 0) / 1_000_000) * pricing["input"]
     completion_cost = (max(completion_tokens, 0) / 1_000_000) * pricing["output"]
     return round(prompt_cost + completion_cost, 10)
+
+
+def _is_reasoning_model(model_name: str) -> bool:
+    normalized = (model_name or "").strip().lower()
+    return normalized.startswith("gpt-5") or normalized.startswith("o")
+
+
+def estimate_web_search_preview_call_cost_usd(*, search_calls: int, model_name: str) -> float:
+    """Estimate fixed web_search_preview call fees.
+
+    Pricing defaults follow OpenAI API pricing:
+    - reasoning models: $10 / 1K calls
+    - non-reasoning models: $25 / 1K calls
+    Values can be overridden via env vars:
+    - OPENAI_PRICE_WEB_SEARCH_PREVIEW_REASONING_PER_1K_CALLS
+    - OPENAI_PRICE_WEB_SEARCH_PREVIEW_NON_REASONING_PER_1K_CALLS
+    """
+    calls = int(search_calls or 0)
+    if calls <= 0:
+        return 0.0
+
+    if _is_reasoning_model(model_name):
+        per_1k = float(os.getenv("OPENAI_PRICE_WEB_SEARCH_PREVIEW_REASONING_PER_1K_CALLS", "10.0"))
+    else:
+        per_1k = float(os.getenv("OPENAI_PRICE_WEB_SEARCH_PREVIEW_NON_REASONING_PER_1K_CALLS", "25.0"))
+    return round((calls / 1000.0) * per_1k, 10)
 
 
 def summarize_worker_report_costs(worker_reports: list[dict[str, Any]]) -> dict[str, Any]:

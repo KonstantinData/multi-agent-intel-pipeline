@@ -54,6 +54,13 @@ Each department contains:
 - optional `Judge`
 - optional `Coding Specialist`
 
+Department-specific knowledge base inputs:
+- `knowledge/sources/<department>.yaml` (free-source priorities, search patterns)
+- `knowledge/policies/<department>.yaml` (required fields, evidence minima, gate rules)
+
+These KB files guide investigation quality and final package acceptance.
+They do not enforce turn order or scripted dialogue.
+
 Department groups are responsible for:
 - domain research
 - domain-level interpretation
@@ -338,6 +345,13 @@ Closure results feed back into the answer matrix.
 - required dashboard decisions are missing
 - evidence quality is below threshold
 - non-contact questions are still pending/blocked
+- department policy-gate blockers remain unresolved
+- minimum execution package is not met (verified decision-maker + hard financial/inventory signals)
+
+Status behavior:
+- `meeting_ready`: all hard gates passed
+- `discovery_ready_not_execution_ready`: public research sufficient, but hard blockers are internal-customer data/contact gaps
+- `blocked_not_meeting_ready`: public hard blockers still open
 
 `FinalBriefingComposer.compose()` produces `MeetingAction` list as the primary
 action output, replacing generic `next_steps`.
@@ -372,5 +386,6 @@ compatibility but are not the authoritative action model.
 | State-machine speaker selector (`workflow_step`) | Guardrail-only selector, Lead drives workflow (CHG-04) |
 | Mutable dict payload as working artifact | Explicit `TaskArtifact` / `TaskReviewArtifact` / `TaskDecisionArtifact` (CHG-01/CHG-05) |
 | Hidden re-judging in `finalize_package` | Assembly from stored decisions only (CHG-07) |
+| Global one-size-fits-all completion semantics | Department-specific KB policy gates at acceptance time |
 | Shallow follow-up heuristics | Run brain rehydration from `department_run_states` (CHG-08) |
 | Unguarded company facts in long-term memory | Scrubbed structural patterns only (CHG-09) |

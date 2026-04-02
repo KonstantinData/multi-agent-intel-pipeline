@@ -35,6 +35,17 @@ Praktisch bedeutet das:
 - Jeder größere Kasten in der DRAWIO hat hier einen passenden Erklärblock.
 - Wenn im Diagramm ein Pfeil weitergeht, erklärt der nächste Abschnitt, **warum** dieser Pfeil jetzt genommen wird.
 
+### 1.1 Update-Addendum (2026-04-02)
+
+Seit dieser Fassung gilt zusätzlich:
+- jedes Department hat eine eigene Knowledge Base:
+  - `knowledge/sources/<department>.yaml`
+  - `knowledge/policies/<department>.yaml`
+- die GroupChat-Kommunikation bleibt frei (kein starres Skript)
+- die Policy-Prüfung passiert erst bei Package-Abnahme/Finalisierung
+- fehlende öffentlich auffindbare Kontakte werden explizit als `keine freien Quellen` markiert
+- Readiness berücksichtigt Department-Policy-Gates zusätzlich zur bisherigen Mindestpaket-Logik
+
 ---
 
 ## 2. Das System in einem einfachen Gesamtbild
@@ -52,9 +63,10 @@ Bevor wir in die Details gehen, hier der gesamte Lauf in ganz einfacher Sprache:
 9. Jedes Department arbeitet intern mit einem kleinen Agententeam: Lead, Researcher, Critic, Judge, Coding Assistant.
 10. Jedes Department liefert am Ende ein offizielles Department-Paket zurück.
 11. Der Supervisor entscheidet, ob dieses Paket downstream sichtbar ist, nur mit Lücken sichtbar ist oder verworfen wird.
-12. Danach liest die Synthesis die freigegebenen Department-Ergebnisse und baut die Gesamtbewertung.
-13. Anschließend baut die Pipeline daraus das finale `pipeline_data`-Objekt, das `report_package` und die Exportdateien.
-14. Zum Schluss wird der komplette Lauf so gespeichert, dass man ihn später mit derselben `run_id` erneut laden und Folgefragen beantworten kann.
+12. Zusätzlich wird je Department ein Policy-Gate ausgewertet (Pflichtfelder, Mindest-Evidenz, Blocker).
+13. Danach liest die Synthesis die freigegebenen Department-Ergebnisse und baut die Gesamtbewertung.
+14. Anschließend baut die Pipeline daraus das finale `pipeline_data`-Objekt, das `report_package` und die Exportdateien.
+15. Zum Schluss wird der komplette Lauf so gespeichert, dass man ihn später mit derselben `run_id` erneut laden und Folgefragen beantworten kann.
 
 ---
 

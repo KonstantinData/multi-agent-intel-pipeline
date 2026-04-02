@@ -51,7 +51,13 @@ def _build_executive_kpis(
         KpiCard(
             title="Run Status",
             value=_nv(status, "—"),
-            color="#16B688" if status == "meeting_ready" else "#c47f00",
+            color=(
+                "#16B688"
+                if status == "meeting_ready"
+                else "#0D95C5"
+                if status == "discovery_ready_not_execution_ready"
+                else "#c47f00"
+            ),
             source="run_context.status",
         ),
         KpiCard(
@@ -190,6 +196,8 @@ def _build_actions_section(
     *,
     meeting_actions: list[dict[str, Any]],
     resolution_state: dict[str, Any],
+    data_request_sheet: dict[str, Any],
+    outreach_playbook: dict[str, Any],
 ) -> DashboardSection:
     callouts = []
     _icons = {
@@ -218,6 +226,36 @@ def _build_actions_section(
             severity="warning",
             source="resolution_plan.unresolved.customer_confirmation_items",
         ))
+
+    if str(data_request_sheet.get("status", "")).lower() == "required":
+        fields = [
+            str(item.get("label", "")).strip()
+            for item in (data_request_sheet.get("request_fields", []) or [])
+            if isinstance(item, dict) and str(item.get("label", "")).strip()
+        ]
+        callouts.append(
+            InsightCallout(
+                callout_id="data_request_sheet",
+                icon="🧾",
+                title="Data Request Sheet required",
+                body=" | ".join(fields[:3]) if fields else "Internal customer data required for execution readiness.",
+                severity="warning",
+                source="data_request_sheet",
+            )
+        )
+
+    if outreach_playbook.get("steps"):
+        first_step = outreach_playbook["steps"][0]
+        callouts.append(
+            InsightCallout(
+                callout_id="outreach_playbook",
+                icon="📬",
+                title="Outreach playbook",
+                body=_nv(first_step.get("action", "")),
+                severity="info",
+                source="outreach_playbook.steps",
+            )
+        )
 
     return DashboardSection(section_id="actions", title="Meeting Actions", callouts=callouts)
 
@@ -330,6 +368,8 @@ def compose_dashboard(
     memory = run_context.get("short_term_memory", {})
     resolution_state = run_context.get("resolution_state", {})
     meeting_actions = pipeline_data.get("meeting_actions", []) or memory.get("meeting_actions", [])
+    data_request_sheet = pipeline_data.get("data_request_sheet", {})
+    outreach_playbook = pipeline_data.get("outreach_playbook", {})
 
     sections = [
         _build_executive_kpis(
@@ -344,6 +384,8 @@ def compose_dashboard(
         _build_actions_section(
             meeting_actions=meeting_actions,
             resolution_state=resolution_state,
+            data_request_sheet=data_request_sheet,
+            outreach_playbook=outreach_playbook,
         ),
         _build_geo_map(pipeline_data),
     ]

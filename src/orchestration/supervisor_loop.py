@@ -22,7 +22,12 @@ from src.orchestration.task_router import (
     build_synthesis_assignments,
     evaluate_run_conditions,
 )
-from src.orchestration.synthesis import build_synthesis_context, build_quality_review
+from src.orchestration.synthesis import (
+    build_contact_enrichment_stage,
+    build_primary_source_stage,
+    build_synthesis_context,
+    build_quality_review,
+)
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import BlockedArtifact
 from src.orchestration.resolution_controller import ResolutionController
@@ -556,6 +561,45 @@ def run_supervisor_loop(
         )
         # Build synthesis context as structured input for the AG2 GroupChat
         quality_review = build_quality_review(run_context.short_term_memory.snapshot())
+        primary_source_stage = build_primary_source_stage(
+            company_profile=sections.get("company_profile", {}),
+            industry_analysis=sections.get("industry_analysis", {}),
+            market_network=sections.get("market_network", {}),
+        )
+        contact_enrichment_stage = build_contact_enrichment_stage(
+            company_profile=sections.get("company_profile", {}),
+            contact_intelligence=sections.get("contact_intelligence", {}),
+        )
+        sections["primary_source_stage"] = primary_source_stage
+        sections["contact_enrichment_stage"] = contact_enrichment_stage
+        messages.append(
+            emit_message(
+                on_message,
+                agent="Supervisor",
+                content=json.dumps(
+                    {
+                        "status": "primary_source_stage_completed",
+                        "coverage_quality": primary_source_stage.get("coverage_quality", "weak"),
+                        "hard_signal_count": primary_source_stage.get("hard_financial_inventory_signal_count", 0),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        messages.append(
+            emit_message(
+                on_message,
+                agent="Supervisor",
+                content=json.dumps(
+                    {
+                        "status": "contact_enrichment_stage_completed",
+                        "verified_decision_makers": contact_enrichment_stage.get("verified_decision_makers_count", 0),
+                        "public_search_exhausted": bool(contact_enrichment_stage.get("public_search_exhausted")),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
         synthesis_ctx = build_synthesis_context(
             company_profile=sections.get("company_profile", {}),
             industry_analysis=sections.get("industry_analysis", {}),
@@ -563,6 +607,8 @@ def run_supervisor_loop(
             contact_intelligence=sections.get("contact_intelligence", {}),
             quality_review=quality_review,
             memory_snapshot=run_context.short_term_memory.snapshot(),
+            primary_source_stage=primary_source_stage,
+            contact_enrichment_stage=contact_enrichment_stage,
         )
         synthesis_result, synthesis_messages = agents["synthesis"].run(
             brief=brief,

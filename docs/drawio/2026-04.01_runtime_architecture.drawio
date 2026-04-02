@@ -7,7 +7,7 @@
                 <mxCell id="title" value="Liquisto Runtime Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
                     <mxGeometry x="40" y="24" width="620" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
+                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · department-specific source/policy KB + acceptance gates · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
                     <mxGeometry x="40" y="58" width="1800" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="lane_entry" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
@@ -49,17 +49,20 @@
                 <mxCell id="runner" value="&lt;b&gt;Pipeline Runner&lt;/b&gt;&lt;br&gt;creates run_id, initializes memory/artifacts, orchestrates Company+Market parallel first pass, Buyer→Contact sequence, synthesis, report_writer, and final export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
                     <mxGeometry x="380" y="180" width="260" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="supervisor" value="&lt;b&gt;Supervisor&lt;/b&gt;&lt;br&gt;builds intake brief · dispatches department briefs · applies admission gates · manages resolution buckets and finalization readiness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                <mxCell id="supervisor" value="&lt;b&gt;Supervisor&lt;/b&gt;&lt;br&gt;builds intake brief · dispatches department briefs · applies admission + policy gates · manages resolution buckets and finalization readiness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
                     <mxGeometry x="380" y="340" width="260" height="130" as="geometry"/>
                 </mxCell>
-                <mxCell id="supervisor_note" value="&lt;b&gt;Supervisor Rule&lt;/b&gt;&lt;br&gt;Does not judge domain facts. Enforces package admission, question coverage, resolution state, and meeting-readiness gates." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                <mxCell id="supervisor_note" value="&lt;b&gt;Supervisor Rule&lt;/b&gt;&lt;br&gt;Does not judge domain facts or script turn-by-turn group chat. Enforces package admission, department policy gates, question coverage, resolution state, and meeting-readiness gates." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
                     <mxGeometry x="380" y="530" width="260" height="90" as="geometry"/>
                 </mxCell>
                 <mxCell id="global_run_memory" value="&lt;b&gt;ShortTermMemoryStore&lt;/b&gt;&lt;br&gt;evidence_packets · gap_candidates · answer_matrix_updates · task_statuses · meeting_actions · department_run_states · snapshot()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
                     <mxGeometry x="380" y="690" width="260" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="handoff" value="&lt;b&gt;Department Handoffs&lt;/b&gt;&lt;br&gt;each department returns a package; Supervisor writes admission envelope (admission, raw_package, admitted_payload)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                <mxCell id="handoff" value="&lt;b&gt;Department Handoffs&lt;/b&gt;&lt;br&gt;each department returns a package; Supervisor writes admission envelope (admission, raw_package, admitted_payload) and stores policy_gate result per department" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
                     <mxGeometry x="380" y="870" width="260" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="department_kb" value="&lt;b&gt;Department Knowledge Base&lt;/b&gt;&lt;br&gt;knowledge/sources/*.yaml + knowledge/policies/*.yaml&lt;br&gt;department-specific source priorities, required fields, evidence minima, blocker templates&lt;br&gt;guidance only; conversation remains free inside GroupChat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="1035" width="260" height="130" as="geometry"/>
                 </mxCell>
                 <mxCell id="dept_company" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#86efac;strokeWidth=2;" parent="1" vertex="1">
                     <mxGeometry x="760" y="160" width="960" height="380" as="geometry"/>
@@ -67,7 +70,7 @@
                 <mxCell id="company_header" value="Company Department  →  section: company_profile" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#14532d;" parent="1" vertex="1">
                     <mxGeometry x="785" y="170" width="620" height="20" as="geometry"/>
                 </mxCell>
-                <mxCell id="company_scope" value="Scope: company fundamentals · legal form · revenue · products · economic signals · visible goods and inventory positions" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#166534;" parent="1" vertex="1">
+                <mxCell id="company_scope" value="Scope: company fundamentals · legal form · revenue · products · economic signals · visible goods and inventory positions · primary-source financial signals" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#166534;" parent="1" vertex="1">
                     <mxGeometry x="785" y="189" width="760" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="company_lead" value="&lt;b&gt;CompanyLead&lt;/b&gt;&lt;br&gt;builds investigation plan · classifies goods · owns domain package · calls finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1">
@@ -100,7 +103,7 @@
                 <mxCell id="market_header" value="Market Department  →  section: industry_analysis" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#9a3412;" parent="1" vertex="1">
                     <mxGeometry x="785" y="570" width="620" height="20" as="geometry"/>
                 </mxCell>
-                <mxCell id="market_scope" value="Scope: market situation · demand pressure · overcapacity · excess-stock-relevant market signals" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#9a3412;" parent="1" vertex="1">
+                <mxCell id="market_scope" value="Scope: market situation · demand pressure · overcapacity · excess-stock-relevant market signals · official statistics first" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#9a3412;" parent="1" vertex="1">
                     <mxGeometry x="785" y="594" width="700" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="market_lead" value="&lt;b&gt;MarketLead&lt;/b&gt;&lt;br&gt;defines market hypotheses · owns assessment of market and inventory-pressure signals · finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=12;spacing=8;fontColor=#9a3412;" parent="1" vertex="1">
@@ -166,7 +169,7 @@
                 <mxCell id="contact_header" value="Contact Department  →  section: contact_intelligence" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#701a75;" parent="1" vertex="1">
                     <mxGeometry x="785" y="1352" width="680" height="20" as="geometry"/>
                 </mxCell>
-                <mxCell id="contact_scope" value="Scope: target-company stakeholders + buyer-side contacts · procurement/operations coverage · runs after BuyerDepartment" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#701a75;" parent="1" vertex="1">
+                <mxCell id="contact_scope" value="Scope: target-company stakeholders + buyer-side contacts · procurement/operations coverage · runs after BuyerDepartment · explicit label for &quot;keine freien Quellen&quot; gaps" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#701a75;" parent="1" vertex="1">
                     <mxGeometry x="785" y="1376" width="760" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="contact_lead" value="&lt;b&gt;ContactLead&lt;/b&gt;&lt;br&gt;reads buyer_candidates from market_network · builds contact queries per firm · finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fae8ff;strokeColor=#c026d3;fontSize=12;spacing=8;fontColor=#701a75;" parent="1" vertex="1">
@@ -196,7 +199,7 @@
                 <mxCell id="synth_analyst" value="&lt;b&gt;Synthesis Department (AG2)&lt;/b&gt;&lt;br&gt;SynthesisLead/Analyst/Critic/Judge connect admitted domain packages · detect cross-domain tensions · produce synthesis framing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=13;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
                     <mxGeometry x="1810" y="220" width="280" height="130" as="geometry"/>
                 </mxCell>
-                <mxCell id="synth_functions" value="&lt;b&gt;Synthesis + Finalization Functions&lt;/b&gt;&lt;br&gt;build_quality_review() + build_synthesis_context() + harmonize_synthesis_output()&lt;br&gt;build_playbook_assets() + assess_research_readiness() + MeetingReadinessGate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
+                <mxCell id="synth_functions" value="&lt;b&gt;Synthesis + Finalization Functions&lt;/b&gt;&lt;br&gt;build_quality_review() + build_synthesis_context() + harmonize_synthesis_output()&lt;br&gt;build_playbook_assets() + assess_research_readiness() + MeetingReadinessGate&lt;br&gt;includes department_gate_overview and policy-gate blockers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
                     <mxGeometry x="1810" y="400" width="280" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="synth_output" value="&lt;b&gt;Strategic Synthesis Output&lt;/b&gt;&lt;br&gt;synthesis section + quality_review + research_readiness + meeting_actions input for final export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
@@ -205,7 +208,7 @@
                 <mxCell id="report_writer" value="&lt;b&gt;Report Writer Runtime&lt;/b&gt;&lt;br&gt;run() builds report_package from validated pipeline_data + department envelopes · emits ReportWriter telemetry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=13;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
                     <mxGeometry x="1810" y="730" width="280" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="synth_note" value="&lt;b&gt;Synthesis + Readiness Rule&lt;/b&gt;&lt;br&gt;Works only with admitted packages. Does not invent domain facts. Finalization is blocked when meeting-critical public gaps remain unresolved." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                <mxCell id="synth_note" value="&lt;b&gt;Synthesis + Readiness Rule&lt;/b&gt;&lt;br&gt;Works only with admitted packages. Does not invent domain facts. Finalization is blocked when meeting-critical public gaps or policy-gate blockers remain unresolved.&lt;br&gt;Status split: meeting_ready vs discovery_ready_not_execution_ready vs blocked_not_meeting_ready." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
                     <mxGeometry x="1810" y="900" width="280" height="110" as="geometry"/>
                 </mxCell>
                 <mxCell id="pdf" value="&lt;b&gt;PDF Report&lt;/b&gt;&lt;br&gt;generate_pdf(lang=&quot;de&quot;/&quot;en&quot;) via UI export path&lt;br&gt;DE: _translate_content() via OpenAI gpt-4.1-mini&lt;br&gt;Executive dashboard · primary recommendation · finance/inventory page · stakeholder map&lt;br&gt;Persisted under artifacts/runs/{run_id}/reports/ · no evidence appendix in PDF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1">
@@ -318,6 +321,40 @@
                         <Array as="points">
                             <mxPoint x="710" y="405"/>
                             <mxPoint x="710" y="1490"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_kb" value="load KB policies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="supervisor" target="department_kb" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_kb_company" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="company_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="740" y="1100"/>
+                            <mxPoint x="740" y="290"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_kb_market" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="market_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="755" y="1100"/>
+                            <mxPoint x="755" y="690"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_kb_buyer" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="buyer_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="760" y="1115"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_kb_contact" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="contact_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="745" y="1115"/>
+                            <mxPoint x="745" y="1480"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>

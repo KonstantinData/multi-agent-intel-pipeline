@@ -428,6 +428,41 @@ def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
     assert "Prepare CFO-first outreach" not in text_de
 
 
+def test_pdf_german_has_no_nv_placeholders_and_no_truncated_action_text():
+    from src.exporters.pdf_report import generate_pdf
+
+    pd = _make_pipeline_data()
+    long_action = (
+        "Schließe die operative Kontaktlücke rund um Werkleitung Polen über LinkedIn-Recherche, "
+        "Assistenz und zentrale Telefonvermittlung vollständig vor dem Erstgespräch ohne Kürzung Endemarker."
+    )
+    pd["synthesis"]["recommended_engagement_paths"] = []
+    pd["synthesis"]["liquisto_service_relevance"] = []
+    pd["synthesis"]["recommended_next_steps"] = [
+        {
+            "phase": "pre_meeting",
+            "owner": "Liquisto Account Lead",
+            "action": long_action,
+            "target_person": "Werkleitung Polen",
+            "asset_hypothesis": "Hypothese vorhanden",
+            "goal": "Gespräch sichern",
+            "expected_output": "Nächster Termin bestätigt",
+            "success_criterion": "Konkreter Folgetermin",
+            "definition_of_done": "Folgetermin fixiert",
+            "dependency": "Kontaktpfad geklärt",
+        }
+    ]
+    pd["meeting_actions"] = [{"title": "Follow-up", "description": long_action}]
+
+    pdf_de = generate_pdf(pd, lang="de")
+    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
+    text_de_lower = text_de.lower()
+
+    assert "n/v" not in text_de_lower
+    assert " endemarker" in text_de_lower
+    assert "keine belastbaren öffentlichen quellen verfügbar." in text_de_lower
+
+
 def test_compose_dashboard_bundle_is_json_serializable():
     bundle = compose_dashboard(
         run_id="r-test", status="meeting_ready",

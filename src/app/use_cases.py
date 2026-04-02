@@ -306,6 +306,7 @@ def build_standard_backlog() -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 SUCCESS_RUN_STATUS = "meeting_ready"
+DISCOVERY_READY_RUN_STATUS = "discovery_ready_not_execution_ready"
 BLOCKED_RUN_STATUS = "blocked_not_meeting_ready"
 SELECTION_REQUIRED_RUN_STATUS = "needs_user_selection"
 
@@ -390,13 +391,18 @@ def determine_final_status(
     readiness_usable: bool,
     first_round_resolution: dict[str, Any],
     remaining_public_gaps: list[str],
+    discovery_ready: bool = False,
 ) -> str:
     """Final readiness gate status before export."""
-    if not readiness_usable or remaining_public_gaps:
-        return BLOCKED_RUN_STATUS
     if str(first_round_resolution.get("bucket", "")).upper() == "USER_DECISION_REQUIRED":
         return SELECTION_REQUIRED_RUN_STATUS
-    return SUCCESS_RUN_STATUS
+    if remaining_public_gaps:
+        return BLOCKED_RUN_STATUS
+    if readiness_usable:
+        return SUCCESS_RUN_STATUS
+    if discovery_ready:
+        return DISCOVERY_READY_RUN_STATUS
+    return BLOCKED_RUN_STATUS
 
 
 def sanitize_success_unresolved(unresolved: dict[str, Any]) -> dict[str, list[str]]:

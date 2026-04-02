@@ -21,7 +21,7 @@ from typing import Annotated, Any, Callable
 
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
-from src.config.settings import get_openai_api_key, get_role_model_selection
+from src.config.settings import get_openai_api_key, get_role_model_selection, resolve_model_temperature
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
 from src.orchestration.envelope import resolve_raw_package, resolve_report_segment, resolve_confidence
@@ -297,6 +297,8 @@ class SynthesisDepartmentAgent:
                 "opportunity_summary": synthesis_context.get("opportunity_assessment_summary", "n/v"),
                 "key_risks": synthesis_context.get("key_risks", []),
                 "buyer_market_summary": synthesis_context.get("buyer_market_summary", "n/v"),
+                "primary_source_stage": synthesis_context.get("primary_source_stage", {}),
+                "contact_enrichment_stage": synthesis_context.get("contact_enrichment_stage", {}),
             }
         initiation_message = json.dumps(
             {
@@ -456,7 +458,10 @@ When {self.name} asks for a final decision:
         api_key = get_openai_api_key()
         if not api_key:
             return False  # type: ignore[return-value]
-        return {
+        cfg: dict[str, Any] = {
             "config_list": [{"model": model, "api_key": api_key}],
-            "temperature": 0.1,
         }
+        temperature = resolve_model_temperature(model, 0.1)
+        if temperature is not None:
+            cfg["temperature"] = temperature
+        return cfg

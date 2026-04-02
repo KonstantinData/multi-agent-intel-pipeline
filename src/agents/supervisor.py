@@ -21,6 +21,8 @@ class DepartmentAcceptanceResult(TypedDict):
     substantive_content: bool
     accepted_tasks: int
     total_tasks: int
+    policy_gate_passed: bool
+    policy_gate_blockers: int
 
 
 class SynthesisAcceptanceResult(TypedDict):
@@ -103,6 +105,15 @@ class SupervisorAgent:
         open_questions = package.get("open_questions", [])
         section_payload = package.get("section_payload", {})
         has_payload = bool(section_payload)
+        policy_gate = package.get("policy_gate", {}) if isinstance(package.get("policy_gate"), dict) else {}
+        policy_gate_passed = bool(policy_gate.get("passed", True))
+        policy_gate_blockers = len(
+            [
+                item
+                for item in policy_gate.get("blockers", [])
+                if isinstance(item, dict)
+            ]
+        )
 
         # Substantive content check: payload must contain non-empty data
         # beyond just default/skeleton fields
@@ -133,12 +144,25 @@ class SupervisorAgent:
         all_rejected = rejected_tasks == len(completed_tasks) and len(completed_tasks) > 0
 
         # Admission decision: explicit three-outcome gate
-        if has_payload and substantive and bool(completed_tasks) and not all_rejected and accepted_tasks > 0:
+        if (
+            has_payload
+            and substantive
+            and bool(completed_tasks)
+            and not all_rejected
+            and accepted_tasks > 0
+            and policy_gate_passed
+        ):
             decision = "accepted"
             reason = f"{department} package accepted for synthesis ({accepted_tasks}/{len(completed_tasks)} tasks accepted)."
         elif has_payload and substantive and not all_rejected:
             decision = "accepted_with_gaps"
-            reason = f"{department} package accepted with gaps ({accepted_tasks}/{len(completed_tasks)} tasks accepted)."
+            if not policy_gate_passed:
+                reason = (
+                    f"{department} package accepted with policy gaps "
+                    f"({policy_gate_blockers} blocker(s) on department gate)."
+                )
+            else:
+                reason = f"{department} package accepted with gaps ({accepted_tasks}/{len(completed_tasks)} tasks accepted)."
         else:
             decision = "rejected"
             if all_rejected:
@@ -154,6 +178,8 @@ class SupervisorAgent:
             "substantive_content": substantive,
             "accepted_tasks": accepted_tasks,
             "total_tasks": len(completed_tasks),
+            "policy_gate_passed": policy_gate_passed,
+            "policy_gate_blockers": policy_gate_blockers,
         }
 
     def accept_synthesis(self, *, synthesis_payload: dict) -> SynthesisAcceptanceResult:

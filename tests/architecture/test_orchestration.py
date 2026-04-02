@@ -479,6 +479,59 @@ class TestSynthesisContext:
         )
         assert synthesis["recommended_engagement_paths"][0] == "further_validation_required"
 
+    def test_build_synthesis_context_normalizes_structured_next_actions(self):
+        synthesis = build_synthesis_context(
+            company_profile={"company_name": "ACME GmbH", "industry": "Manufacturing"},
+            industry_analysis={"key_trends": []},
+            market_network={
+                "peer_competitors": {"companies": []},
+                "downstream_buyers": {"companies": [], "assessment": "n/v"},
+                "service_providers": {"companies": []},
+                "cross_industry_buyers": {"companies": []},
+                "monetization_paths": [],
+                "redeployment_paths": [],
+            },
+            contact_intelligence={},
+            quality_review={"evidence_health": "medium", "open_gaps": []},
+            memory_snapshot={
+                "sources": [],
+                "next_actions": [
+                    {"priority": 1, "action": "Prepare NDA", "goal": "Access inventory data"},
+                    {"action": "Book discovery call"},
+                ],
+            },
+        )
+        assert synthesis["next_steps"] == [
+            "Prepare NDA - Access inventory data",
+            "Book discovery call",
+        ]
+
+    def test_harmonize_synthesis_output_normalizes_dict_next_steps(self):
+        synthesis = harmonize_synthesis_output(
+            synthesis={
+                "recommended_engagement_paths": ["excess_inventory"],
+                "next_steps": [
+                    {"action": "Collect filings", "goal": "Extract inventory notes"},
+                    {"title": "Validate contacts"},
+                ],
+                "research_backlog": [
+                    {"action": "Check Bundesanzeiger", "expected_output": "FY filings"},
+                ],
+            },
+            company_profile={"company_name": "Ziehl-Abegg"},
+            industry_analysis={},
+            market_network={},
+            contact_intelligence={},
+            quality_review={"evidence_health": "medium"},
+        )
+        assert synthesis["next_steps"] == [
+            "Collect filings - Extract inventory notes",
+            "Validate contacts",
+        ]
+        assert synthesis["research_backlog"] == [
+            "Check Bundesanzeiger - FY filings",
+        ]
+
     def test_buyer_routes_can_still_support_excess_inventory_when_inventory_keyword_is_negated(self):
         synthesis = build_synthesis_context(
             company_profile={
@@ -521,13 +574,37 @@ class TestSynthesisContext:
 
     def test_curated_critical_questions_prevent_ui_gap_backlog_from_blocking_readiness(self):
         readiness = assess_research_readiness(
-            company_profile={"company_name": "ACME"},
+            company_profile={
+                "company_name": "ACME",
+                "financial_deep_dive": {
+                    "key_financials": ["EBIT down 14% YoY"],
+                    "inventory_positions": ["Inventory increased 10% YoY"],
+                    "sources": [
+                        {"title": "Annual Report 2025", "url": "https://example.com/annual-report-2025.pdf", "source_type": "primary"},
+                    ],
+                },
+                "sources": [
+                    {"title": "SEC filing", "url": "https://example.com/10-k", "source_type": "primary"},
+                ],
+            },
             industry_analysis={"industry_name": "Industrials"},
             market_network={"target_company": "ACME"},
             contact_intelligence={
                 "target_company_contacts": [
-                    {"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"},
-                    {"name": "John Doe", "firma": "ACME", "rolle_titel": "Head of Supply Chain"},
+                    {
+                        "name": "Jane Doe",
+                        "firma": "ACME",
+                        "rolle_titel": "CFO",
+                        "quelle": "https://example.com/jane-doe",
+                        "confidence": "high",
+                    },
+                    {
+                        "name": "John Doe",
+                        "firma": "ACME",
+                        "rolle_titel": "Head of Supply Chain",
+                        "quelle": "https://example.com/john-doe",
+                        "confidence": "high",
+                    },
                 ],
                 "coverage_quality": "medium",
             },
@@ -813,8 +890,20 @@ class TestResearchReadiness:
             market_network={"target_company": "ACME"},
             contact_intelligence={
                 "target_company_contacts": [
-                    {"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"},
-                    {"name": "John Doe", "firma": "ACME", "rolle_titel": "Head of Supply Chain"},
+                    {
+                        "name": "Jane Doe",
+                        "firma": "ACME",
+                        "rolle_titel": "CFO",
+                        "quelle": "https://example.com/jane-doe",
+                        "confidence": "high",
+                    },
+                    {
+                        "name": "John Doe",
+                        "firma": "ACME",
+                        "rolle_titel": "Head of Supply Chain",
+                        "quelle": "https://example.com/john-doe",
+                        "confidence": "high",
+                    },
                 ],
                 "coverage_quality": "medium",
             },
@@ -853,8 +942,20 @@ class TestResearchReadiness:
             market_network={"target_company": "ACME"},
             contact_intelligence={
                 "target_company_contacts": [
-                    {"name": "Jane Doe", "firma": "ACME", "rolle_titel": "CFO"},
-                    {"name": "John Doe", "firma": "ACME", "rolle_titel": "Head of Supply Chain"},
+                    {
+                        "name": "Jane Doe",
+                        "firma": "ACME",
+                        "rolle_titel": "CFO",
+                        "quelle": "https://example.com/jane-doe",
+                        "confidence": "high",
+                    },
+                    {
+                        "name": "John Doe",
+                        "firma": "ACME",
+                        "rolle_titel": "Head of Supply Chain",
+                        "quelle": "https://example.com/john-doe",
+                        "confidence": "high",
+                    },
                 ],
                 "coverage_quality": "medium",
             },

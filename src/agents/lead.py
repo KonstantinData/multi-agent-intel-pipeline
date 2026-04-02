@@ -91,16 +91,27 @@ from src.orchestration.speaker_selector import build_department_selector
 from src.agents.critic import CriticAgent
 from src.agents.judge import JudgeAgent
 from src.agents.worker import ResearchWorker
-from src.config.settings import get_openai_api_key, get_role_model_selection, MAX_TASK_RETRIES
+from src.config.settings import (
+    MAX_TASK_RETRIES,
+    get_openai_api_key,
+    get_role_model_selection,
+    resolve_model_temperature,
+)
 from src.domain.intake import SupervisorBrief
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import DepartmentPackage, DomainReportSegment
 from src.orchestration.contracts import (
     ContractViolation,
+    DepartmentPolicy,
     DepartmentRunState,
     TaskArtifact,
     TaskDecisionArtifact,
     TaskReviewArtifact,
+)
+from src.orchestration.department_knowledge import (
+    evaluate_department_policy_gate,
+    load_department_policy,
+    load_department_source_profile,
 )
 from src.orchestration.task_router import Assignment, DEPARTMENT_RESEARCHERS
 from src.orchestration.tool_policy import resolve_allowed_tools
@@ -108,6 +119,13 @@ from src.models.registry import resolve_output_schema
 from src.research.extract import extract_product_keywords, infer_industry
 
 logger = logging.getLogger(__name__)
+
+_FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT = {
+    "CompanyDepartment": "company_profile",
+    "MarketDepartment": "industry_analysis",
+    "BuyerDepartment": "market_network",
+    "ContactDepartment": "contact_intelligence",
+}
 
 
 def _validate_payload_against_task_schema(
@@ -299,6 +317,8 @@ class DepartmentLeadAgent:
         self.critic = CriticAgent(self.critic_name)
         self.judge = JudgeAgent(self.judge_name)
         self.coding_assistant = CodingAssistantAgent(self.coding_name)
+        self.department_policy: DepartmentPolicy = load_department_policy(department)
+        self.source_profile: dict[str, Any] = load_department_source_profile(department)
 
         self._completed_package: dict[str, Any] | None = None
 
@@ -340,6 +360,18 @@ class DepartmentLeadAgent:
             "company_name": brief.company_name,
             "industry_hint": industry_hint or "n/v",
             "product_keywords": product_keywords[:6],
+            "source_priority": list(self.source_profile.get("source_priority", [])),
+            "recommended_sources": [
+                {
+                    "name": str(item.get("name", "n/v")),
+                    "priority": str(item.get("priority", "secondary")),
+                    "evidence_type": str(item.get("evidence_type", "indicative")),
+                }
+                for item in (self.source_profile.get("sources", []) or [])
+                if isinstance(item, dict)
+            ][:8],
+            "policy_required_fields": list(self.department_policy.required_fields),
+            "policy_min_evidence_rules": dict(self.department_policy.min_evidence_rules),
         }
 
     def autogen_group_spec(self) -> dict[str, Any]:
@@ -427,6 +459,7 @@ class DepartmentLeadAgent:
             code_execution_config=False,
             llm_config=self._llm_config(self.name),
         )
+        blocked_finalize_attempts = 0
 
         # ── Tool closures ──────────────────────────────────────────────────
 
@@ -777,6 +810,7 @@ class DepartmentLeadAgent:
             Never re-judges tasks that already have an explicit decision.
             Inline fallback is used only for tasks with research+review but no decision.
             """
+            nonlocal blocked_finalize_attempts
             incomplete_tasks = [
                 assignment.task_key
                 for assignment in assignments
@@ -784,15 +818,19 @@ class DepartmentLeadAgent:
                 and run_state.latest_decision(assignment.task_key) is None
             ]
             if incomplete_tasks:
+                blocked_finalize_attempts += 1
                 logger.warning(
-                    "finalize_package blocked: department=%s incomplete_tasks=%s",
+                    "finalize_package blocked: department=%s incomplete_tasks=%s attempt=%d",
                     self.department,
                     incomplete_tasks,
+                    blocked_finalize_attempts,
                 )
                 return json.dumps(
                     {
                         "error": "Cannot finalize package before all assigned tasks have at least one research result.",
                         "incomplete_tasks": incomplete_tasks,
+                        "next_required_task": incomplete_tasks[0],
+                        "next_required_action": f"run_research(task_key='{incomplete_tasks[0]}')",
                     },
                     ensure_ascii=False,
                 )
@@ -1034,6 +1072,26 @@ class DepartmentLeadAgent:
                 }
             ).model_dump(mode="json")
 
+            policy_gate = evaluate_department_policy_gate(
+                department=self.department,
+                policy=self.department_policy,
+                section_payload=run_state.current_payload,
+                completed_tasks=task_summaries,
+                sources=sources,
+                open_questions=_dedup(open_questions),
+            )
+            package["department_policy"] = self.department_policy.to_dict()
+            package["policy_gate"] = policy_gate
+            if not policy_gate.get("passed", True):
+                gate_notes = [
+                    str(item.get("reason", "")).strip()
+                    for item in policy_gate.get("blockers", [])
+                    if isinstance(item, dict) and str(item.get("reason", "")).strip()
+                ]
+                package["open_questions"] = _dedup(
+                    list(package.get("open_questions", [])) + gate_notes[:6]
+                )
+
             # Append tool error traces as open_questions for traceability
             for err in run_state.tool_errors:
                 package["open_questions"] = _dedup(
@@ -1210,15 +1268,18 @@ class DepartmentLeadAgent:
     ) -> dict[str, Any]:
         """Run a focused mini-GroupChat to answer a specific follow-up question."""
         run_state = DepartmentRunState(department=f"{self.department}_followup")
+        followup_target_section = _FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT.get(
+            self.department, "company_profile"
+        )
 
         followup_assignment = Assignment(
             task_key="followup_question",
             assignee=self.researcher_name,
-            target_section="followup",
+            target_section=followup_target_section,
             label="Follow-up investigation",
             objective=f"{question}. Context: {context}",
             model_name=self.model_name,
-            allowed_tools=("web_search", "page_fetch"),
+            allowed_tools=("search", "page_fetch", "llm_structured"),
         )
 
         if memory_store is not None:
@@ -1244,6 +1305,7 @@ class DepartmentLeadAgent:
         )
 
         result_holder: dict[str, Any] = {}
+        blocked_finalize_attempts = 0
 
         def run_research(task_key: Annotated[str, "task key"]) -> str:
             attempt = run_state.attempts.get(task_key, 0) + 1
@@ -1251,9 +1313,11 @@ class DepartmentLeadAgent:
             report = self.worker.run(
                 brief=brief,
                 task_key=task_key,
-                target_section="followup",
+                target_section=followup_assignment.target_section,
                 objective=followup_assignment.objective,
-                current_sections={},
+                current_sections={
+                    followup_assignment.target_section: run_state.current_payload
+                },
                 query_overrides=None,
                 allowed_tools=list(followup_assignment.allowed_tools),
                 model_name=followup_assignment.model_name,
@@ -1270,23 +1334,98 @@ class DepartmentLeadAgent:
                 "open_questions": artifact.open_questions[:3],
             }, ensure_ascii=False)
 
+        def review_research(task_key: Annotated[str, "task key"]) -> str:
+            artifact = run_state.latest_artifact(task_key)
+            if artifact is None:
+                return json.dumps(
+                    {
+                        "error": f"No research artifact found for task '{task_key}'.",
+                        "next_required_action": f"Run run_research(task_key='{task_key}') first.",
+                    },
+                    ensure_ascii=False,
+                )
+            review_dict = self.critic.review(
+                task_key=task_key,
+                section=followup_assignment.target_section,
+                objective=followup_assignment.objective,
+                payload=artifact.payload,
+                report=artifact.to_dict(),
+            )
+            review = TaskReviewArtifact.from_critic_review(
+                review_dict,
+                task_key=task_key,
+                attempt=artifact.attempt,
+                reviewer=self.critic_name,
+            )
+            run_state.record_review_artifact(review)
+            return json.dumps(
+                {
+                    "task_key": task_key,
+                    "approved": review.approved,
+                    "issues": review.issues[:4],
+                },
+                ensure_ascii=False,
+            )
+
         def finalize_followup(
             summary: Annotated[str, "Updated findings that answer the follow-up question"],
         ) -> str:
+            nonlocal blocked_finalize_attempts
             artifact = run_state.latest_artifact("followup_question")
+            review = run_state.latest_review("followup_question")
+            if artifact is None:
+                blocked_finalize_attempts += 1
+                if blocked_finalize_attempts >= 2:
+                    result_holder["report_segment"] = {
+                        "department": self.department,
+                        "narrative_summary": f"Follow-up for '{question}' remains unresolved after repeated finalize attempts without evidence.",
+                        "confidence": "low",
+                        "key_findings": [],
+                        "open_questions": [question],
+                        "sources": [],
+                    }
+                    return "FOLLOWUP_READY\nTERMINATE"
+                return json.dumps(
+                    {
+                        "error": "Cannot finalize follow-up before running research.",
+                        "next_required_action": "Call run_research(task_key='followup_question').",
+                    },
+                    ensure_ascii=False,
+                )
+            if review is None:
+                blocked_finalize_attempts += 1
+                if blocked_finalize_attempts >= 2:
+                    result_holder["report_segment"] = {
+                        "department": self.department,
+                        "narrative_summary": summary,
+                        "confidence": "low",
+                        "key_findings": artifact.facts[:6],
+                        "open_questions": artifact.open_questions[:4],
+                        "sources": artifact.sources[:8],
+                    }
+                    return "FOLLOWUP_READY\nTERMINATE"
+                return json.dumps(
+                    {
+                        "error": "Cannot finalize follow-up before critic review.",
+                        "next_required_action": "Call review_research(task_key='followup_question').",
+                    },
+                    ensure_ascii=False,
+                )
             facts = artifact.facts if artifact else []
             result_holder["report_segment"] = {
                 "department": self.department,
                 "narrative_summary": summary,
-                "confidence": "medium" if facts else "low",
+                "confidence": "medium" if facts and review.approved else "low",
                 "key_findings": facts[:8],
                 "open_questions": artifact.open_questions[:4] if artifact else [],
-                "sources": [],
+                "sources": artifact.sources[:8] if artifact else [],
             }
             return "FOLLOWUP_READY\nTERMINATE"
 
         register_function(run_research, caller=researcher_ca, executor=researcher_ca,
                           name="run_research", description="Run research for the follow-up question.")
+        register_function(review_research, caller=critic_ca, executor=critic_ca,
+                          name="review_research", description="Review follow-up research quality.")
         register_function(finalize_followup, caller=lead_ca, executor=lead_ca,
                           name="finalize_followup", description="Submit the follow-up answer.")
 
@@ -1347,6 +1486,15 @@ class DepartmentLeadAgent:
         domain_hypothesis = investigation_plan.get("domain_hypothesis", "")
         classification_frame = investigation_plan.get("classification_frame", "")
         mandatory_count = len(assignments)
+        source_priority = ", ".join(investigation_plan.get("source_priority", [])) or "n/v"
+        recommended_source_lines = "\n".join(
+            f"- {item.get('name', 'n/v')} [{item.get('priority', 'secondary')}]"
+            for item in investigation_plan.get("recommended_sources", [])[:6]
+        ) or "- n/v"
+        required_field_lines = "\n".join(
+            f"- {field_name}"
+            for field_name in investigation_plan.get("policy_required_fields", [])[:8]
+        ) or "- n/v"
         return f"""You are {self.name}, the Lead of the {self.department} in the Liquisto intelligence platform.
 
 ## Your contract (fixed by Supervisor)
@@ -1365,6 +1513,19 @@ You choose:
 - how to summarise and package the results
 
 The Supervisor sees only the contract handoff and the final package. It does NOT participate in your internal decisions.
+
+## Source knowledge base (guidance only, not mandatory)
+- Recommended source priority: {source_priority}
+- Suggested free sources:
+{recommended_source_lines}
+- You may use any additional source if it improves evidence quality.
+- No fixed dialog script is imposed by this guidance.
+
+## Acceptance gate (checked at finalize only)
+- Required output fields:
+{required_field_lines}
+- Minimum evidence rules are checked on package finalization, not per turn.
+- If public information is exhausted, document the gap explicitly (for contacts: "keine freien Quellen").
 
 ## Your group members
 - {self.researcher_name}: Runs web research. Calls run_research(task_key).
@@ -1505,10 +1666,13 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
         api_key = get_openai_api_key()
         if not api_key:
             return False
-        return {
+        cfg: dict[str, Any] = {
             "config_list": [{"model": model, "api_key": api_key}],
-            "temperature": 0.1,
         }
+        temperature = resolve_model_temperature(model, 0.1)
+        if temperature is not None:
+            cfg["temperature"] = temperature
+        return cfg
 
     # ------------------------------------------------------------------
     # Investigation plan helpers

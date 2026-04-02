@@ -13,6 +13,7 @@ RunStatus = Literal[
     "completed_but_not_usable",
     "failed",
     "meeting_ready",
+    "discovery_ready_not_execution_ready",
     "blocked_not_meeting_ready",
     "needs_user_selection",
 ]
@@ -60,10 +61,31 @@ class ResolutionPlan(BaseModel):
     owner: str = "Supervisor"
 
 
+class ReadinessBlocker(BaseModel):
+    blocker_id: str = "n/v"
+    field_key: str = "n/v"
+    availability: Literal["public", "internal_customer"] = "public"
+    severity: Literal["hard", "soft"] = "hard"
+    reason: str = "n/v"
+    owner: str = "Supervisor"
+    next_step: str = "n/v"
+
+
+class MinimumPackageStatus(BaseModel):
+    required_verified_decision_makers: int = 1
+    verified_decision_makers: int = 0
+    required_hard_financial_inventory_signals: int = 2
+    hard_financial_inventory_signals: int = 0
+    met: bool = False
+
+
 class MeetingReadinessAssessment(BaseModel):
     run_status: RunStatus = "running"
     meeting_ready: bool = False
+    discovery_ready: bool = False
     blocked_reasons: list[str] = Field(default_factory=list)
+    blockers: list[ReadinessBlocker] = Field(default_factory=list)
+    minimum_package: MinimumPackageStatus = Field(default_factory=MinimumPackageStatus)
     unresolved_gaps: list[GapCandidate] = Field(default_factory=list)
     confidence: Literal["high", "medium", "low"] = "low"
 

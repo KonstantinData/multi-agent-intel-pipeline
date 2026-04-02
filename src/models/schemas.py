@@ -299,8 +299,51 @@ class Synthesis(BaseModel):
 
 class ResearchReadiness(BaseModel):
     usable: bool = False
+    discovery_ready: bool = False
     score: int = 0
     reasons: list[str] = Field(default_factory=list)
+    minimum_package: dict[str, Any] = Field(default_factory=dict)
+    readiness_blockers: list[dict[str, Any]] = Field(default_factory=list)
+    department_gate_overview: dict[str, Any] = Field(default_factory=dict)
+    component_scores: dict[str, Any] = Field(default_factory=dict)
+    partial: bool = False
+
+
+class PrimarySourceStage(BaseModel):
+    stage: str = "primary_source_validation"
+    required_source_families: list[str] = Field(default_factory=list)
+    source_families_covered: list[str] = Field(default_factory=list)
+    public_primary_sources_available: bool = False
+    coverage_quality: str = "weak"
+    primary_sources_used: list[SourceRecord] = Field(default_factory=list)
+    hard_financial_inventory_signals: list[str] = Field(default_factory=list)
+    hard_financial_inventory_signal_count: int = 0
+
+
+class ContactEnrichmentStage(BaseModel):
+    stage: str = "contact_enrichment"
+    role_search_patterns: list[dict[str, Any]] = Field(default_factory=list)
+    target_contacts_enriched: list[dict[str, Any]] = Field(default_factory=list)
+    verified_decision_makers: list[dict[str, Any]] = Field(default_factory=list)
+    verified_decision_makers_count: int = 0
+    missing_critical_roles: list[dict[str, Any]] = Field(default_factory=list)
+    public_search_exhausted: bool = False
+
+
+class DataRequestSheet(BaseModel):
+    status: str = "not_required"
+    company_name: str = "n/v"
+    scope: str = "n/v"
+    request_fields: list[dict[str, Any]] = Field(default_factory=list)
+    submission_format: list[str] = Field(default_factory=list)
+    owner: str = "Liquisto Account Lead"
+
+
+class OutreachPlaybook(BaseModel):
+    status: str = "blocked_by_contact_gap"
+    company_name: str = "n/v"
+    entry_contact: dict[str, Any] = Field(default_factory=dict)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ValidationErrorRecord(BaseModel):
@@ -336,6 +379,8 @@ class DepartmentPackage(BaseModel):
     evidence_packages: list[EvidencePacket] = Field(default_factory=list)
     gap_candidates: list[GapCandidate] = Field(default_factory=list)
     answer_matrix_updates: list[AnswerMatrixUpdate] = Field(default_factory=list)
+    department_policy: dict[str, Any] = Field(default_factory=dict)
+    policy_gate: dict[str, Any] = Field(default_factory=dict)
 
 
 class FollowUpAnswer(BaseModel):
@@ -356,6 +401,10 @@ class PipelineData(BaseModel):
     quality_review: QualityReview = Field(default_factory=QualityReview)
     synthesis: Synthesis = Field(default_factory=Synthesis)
     research_readiness: ResearchReadiness = Field(default_factory=ResearchReadiness)
+    primary_source_stage: PrimarySourceStage = Field(default_factory=PrimarySourceStage)
+    contact_enrichment_stage: ContactEnrichmentStage = Field(default_factory=ContactEnrichmentStage)
+    data_request_sheet: DataRequestSheet = Field(default_factory=DataRequestSheet)
+    outreach_playbook: OutreachPlaybook = Field(default_factory=OutreachPlaybook)
     validation_errors: list[ValidationErrorRecord] = Field(default_factory=list)
     meeting_readiness_assessment: MeetingReadinessAssessment = Field(default_factory=MeetingReadinessAssessment)
     final_briefing: FinalBriefing = Field(default_factory=FinalBriefing)

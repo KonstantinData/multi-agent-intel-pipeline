@@ -445,6 +445,23 @@ class TestShortTermMemoryMerge:
         assert delta.usage_totals["llm_calls"] == 3
         assert "new_task" in delta.task_statuses
 
+    def test_delta_from_handles_dict_items_in_list_fields(self):
+        """Parallel merge must not fail when list fields contain dict payloads."""
+        main = ShortTermMemoryStore()
+        main.open_questions.append({"question": "baseline", "owner": "company"})
+        main.next_actions.append({"action": "baseline"})
+
+        ws = main.create_working_set()
+        baseline = main.create_working_set()
+
+        ws.open_questions.append({"question": "new", "owner": "market"})
+        ws.next_actions.append({"action": "new"})
+
+        delta = ws.delta_from(baseline)
+        assert {"question": "new", "owner": "market"} in delta.open_questions
+        assert {"question": "baseline", "owner": "company"} not in delta.open_questions
+        assert {"action": "new"} in delta.next_actions
+
 
 import contextlib
 

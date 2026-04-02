@@ -7,7 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.app.use_cases import SUCCESS_RUN_STATUS, sanitize_success_unresolved
+from src.app.use_cases import (
+    DISCOVERY_READY_RUN_STATUS,
+    SUCCESS_RUN_STATUS,
+    sanitize_success_unresolved,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +24,9 @@ def _sanitize_pipeline_data_for_status(
 ) -> dict[str, Any]:
     data = dict(pipeline_data)
     if isinstance(run_context, dict):
+        report_package = run_context.get("report_package")
+        if isinstance(report_package, dict) and report_package:
+            data["report_package"] = report_package
         meeting_readiness = run_context.get("meeting_readiness_assessment")
         if isinstance(meeting_readiness, dict) and meeting_readiness:
             data["meeting_readiness_assessment"] = meeting_readiness
@@ -35,15 +42,21 @@ def _sanitize_pipeline_data_for_status(
 
 
 def _extract_export_unresolved(*, status: str, run_context: dict[str, Any]) -> dict[str, list[str]]:
-    if status != SUCCESS_RUN_STATUS:
-        return {}
     resolution_plan = (
         (run_context or {}).get("resolution_state", {}).get("resolution_plan", {})
         if isinstance(run_context, dict)
         else {}
     )
     unresolved = resolution_plan.get("unresolved", {}) if isinstance(resolution_plan, dict) else {}
-    return sanitize_success_unresolved(unresolved)
+    if status == SUCCESS_RUN_STATUS:
+        return sanitize_success_unresolved(unresolved)
+    if status == DISCOVERY_READY_RUN_STATUS:
+        cleaned: dict[str, list[str]] = {}
+        for key, value in (unresolved or {}).items():
+            if isinstance(value, list):
+                cleaned[key] = [str(item).strip() for item in value if str(item).strip()]
+        return cleaned
+    return {}
 
 
 def export_run(

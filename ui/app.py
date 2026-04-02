@@ -211,6 +211,8 @@ def _build_pdf_export(lang: str) -> tuple[bytes, str]:
     lang_suffix = lang.upper()
     file_name = f"liquisto_briefing_{st.session_state.run_id}_{lang_suffix}.pdf"
     pdf_payload = dict(st.session_state.pipeline_data)
+    if isinstance(st.session_state.run_context.get("report_package"), dict):
+        pdf_payload.setdefault("report_package", st.session_state.run_context.get("report_package", {}))
     pdf_payload.setdefault("run_id", st.session_state.run_id)
     pdf_bytes = generate_pdf(pdf_payload, lang=lang)
     export_binary_artifact(

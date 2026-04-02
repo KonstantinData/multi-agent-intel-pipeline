@@ -64,6 +64,11 @@ Each department group contains:
 | Judge (optional) | gpt-4.1 | `judge_decision` |
 | Coding Specialist (optional) | gpt-4.1-mini | `suggest_refined_queries` |
 
+Department execution stays conversation-driven. Quality enforcement is
+department-specific and checked at package finalization via Knowledge Base:
+- `knowledge/sources/<department>.yaml` (free-source priorities, search patterns)
+- `knowledge/policies/<department>.yaml` (required fields, evidence minimums, gate rules)
+
 ### Synthesis Plane
 
 - **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment.
@@ -127,6 +132,7 @@ The runtime plans around **meeting questions**, not only departments.
 | [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, answer-matrix-grounded follow-up |
 | [src/orchestration/contracts.py](src/orchestration/contracts.py) | Typed runtime contracts: TaskArtifact, TaskReviewArtifact, TaskDecisionArtifact, DepartmentRunState |
 | [src/orchestration/speaker_selector.py](src/orchestration/speaker_selector.py) | Guardrail-only speaker selectors |
+| [src/orchestration/department_knowledge.py](src/orchestration/department_knowledge.py) | Department KB loading + policy-gate evaluation (acceptance-time) |
 | [src/models/meeting_ready.py](src/models/meeting_ready.py) | Typed models: EvidencePacket, GapCandidate, AnswerMatrixUpdate, MeetingAction, MeetingReadinessAssessment, FinalBriefing |
 | [src/agents/lead.py](src/agents/lead.py) | DepartmentLeadAgent — evidence-first AG2 group lifecycle |
 | [src/agents/worker.py](src/agents/worker.py) | ResearchWorker — evidence packets as primary output |
@@ -168,8 +174,20 @@ A successful run does **not** contain:
 ## Configuration
 
 - **API key**: set `OPENAI_API_KEY` in `.env` or as environment variable
-- **Model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` env vars
+- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env or `.env`)
+- **Role env key format**: preferred snake-case (for example `OPENAI_MODEL_COMPANY_RESEARCHER`), legacy compact keys (for example `OPENAI_MODEL_COMPANYRESEARCHER`) are still supported
+- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env or `.env`)
+- **OpenAI request controls**: `LIQUISTO_OPENAI_TIMEOUT_SECONDS`, `LIQUISTO_OPENAI_MAX_RETRIES`
+- **Runtime cost calculation**: `estimated_cost_usd` in `run_meta.json` is computed from
+  tracked LLM token usage plus `web_search_preview` call fees
 - **Defaults**: defined in `src/config/settings.py` → `ROLE_MODEL_DEFAULTS`
+- **Pricing defaults**: defined in `src/config/pricing.py` (`gpt-5*` and `gpt-4.1*`)
+- **Per-model pricing overrides**:
+  `OPENAI_PRICE_INPUT_PER_1M_<MODEL>` and `OPENAI_PRICE_OUTPUT_PER_1M_<MODEL>`
+  (example: `OPENAI_PRICE_INPUT_PER_1M_GPT_5_MINI`)
+- **Web search call pricing overrides**:
+  `OPENAI_PRICE_WEB_SEARCH_PREVIEW_REASONING_PER_1K_CALLS` and
+  `OPENAI_PRICE_WEB_SEARCH_PREVIEW_NON_REASONING_PER_1K_CALLS`
 - **Max retries**: `LIQUISTO_MAX_TASK_RETRIES` env var (default: 3)
 - **Token budgets**: `LIQUISTO_SOFT_TOKEN_BUDGET` and `LIQUISTO_HARD_TOKEN_CAP` env vars
 - **Phase budgets**: `LIQUISTO_FIRST_PASS_TOKEN_BUDGET`, `LIQUISTO_CLOSURE_TOKEN_BUDGET`, `LIQUISTO_OPTIONAL_DEPTH_TOKEN_BUDGET`

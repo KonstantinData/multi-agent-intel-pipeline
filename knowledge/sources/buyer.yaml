@@ -1,0 +1,46 @@
+{
+  "department": "BuyerDepartment",
+  "source_priority": [
+    "company_disclosures",
+    "trade_sources",
+    "marketplaces"
+  ],
+  "sources": [
+    {
+      "name": "Company Websites / Press",
+      "url": "https://",
+      "department": "BuyerDepartment",
+      "priority": "company_disclosures",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.85,
+      "search_patterns_de": [
+        "<buyer> pressemitteilung lager",
+        "<buyer> ankauf restposten"
+      ],
+      "search_patterns_en": [
+        "<buyer> inventory acquisition",
+        "<buyer> surplus parts"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Trade Publications",
+      "url": "https://",
+      "department": "BuyerDepartment",
+      "priority": "trade_sources",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.65,
+      "search_patterns_de": [
+        "<branche> händler netzwerk",
+        "<branche> aftermarket partner"
+      ],
+      "search_patterns_en": [
+        "<industry> aftermarket distributors",
+        "<industry> secondary market buyers"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}

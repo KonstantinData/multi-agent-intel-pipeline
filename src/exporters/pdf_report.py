@@ -41,6 +41,7 @@ BORDER       = colors.HexColor("#B0C4C5")
 SURFACE      = colors.HexColor("#F4F8F7")
 SURFACE_WARM = colors.HexColor("#FFF8F0")
 WHITE        = colors.white
+_PLACEHOLDER_TOKENS = {"", "n/v", "n/a", "unknown", "none", "null", "—", "-"}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -48,6 +49,59 @@ WHITE        = colors.white
 def _safe_text(value: Any, default: str = "n/v") -> str:
     text = str(value or "").strip()
     return text if text else default
+
+
+def _is_placeholder_token(value: Any) -> bool:
+    return str(value or "").strip().lower() in _PLACEHOLDER_TOKENS
+
+
+def _missing_reason(lang: str, *, context: str = "general") -> str:
+    if context == "contact":
+        return (
+            "No free public sources available."
+            if lang == "en"
+            else "Keine freien Quellen verfügbar."
+        )
+    if context == "identifier":
+        return "RunID unavailable." if lang == "en" else "RunID nicht verfügbar."
+    return (
+        "No reliable public sources available."
+        if lang == "en"
+        else "Keine belastbaren öffentlichen Quellen verfügbar."
+    )
+
+
+def _display_text(value: Any, *, lang: str, context: str = "general") -> str:
+    rendered = str(value or "").strip()
+    if not rendered or _is_placeholder_token(rendered):
+        return _missing_reason(lang, context=context)
+    missing_text = _missing_reason(lang, context=context)
+    rendered = re.sub(r"(?i)\bn\/v\b", missing_text, rendered)
+    rendered = re.sub(r"(?i)\bn\/a\b", missing_text, rendered)
+    return rendered
+
+
+def _sanitize_display_payload(value: Any, *, lang: str, context: str = "general") -> Any:
+    if isinstance(value, dict):
+        result: dict[Any, Any] = {}
+        for key, item in value.items():
+            key_str = str(key).lower()
+            key_context = context
+            if any(token in key_str for token in ("run_id",)):
+                key_context = "identifier"
+            elif any(token in key_str for token in ("contact", "quelle", "source", "channel", "stakeholder", "access_path")):
+                key_context = "contact"
+            result[key] = _sanitize_display_payload(item, lang=lang, context=key_context)
+        return result
+    if isinstance(value, list):
+        return [_sanitize_display_payload(item, lang=lang, context=context) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_display_payload(item, lang=lang, context=context) for item in value)
+    if value is None:
+        return _missing_reason(lang, context=context)
+    if isinstance(value, str):
+        return _display_text(value, lang=lang, context=context)
+    return value
 
 
 def _safe_join(values: Any, default: str = "n/v") -> str:
@@ -66,6 +120,33 @@ def _top_items(values: Any, limit: int = 5) -> list[str]:
         return []
     rendered = [_safe_text(item, "").strip() for item in values]
     return [item for item in rendered if item][:limit]
+
+
+def _is_missing_text(value: Any) -> bool:
+    text = _safe_text(value, "").strip().lower()
+    return text in {"", "n/v", "n/a", "unknown", "none", "null"}
+
+
+def _select_composed_report(report_package: Any, lang: str) -> dict[str, Any]:
+    if not isinstance(report_package, dict):
+        return {}
+    composed = report_package.get("composed_report")
+    if not isinstance(composed, dict):
+        return {}
+    validation = report_package.get("composition_validation")
+    validation_by_lang = validation if isinstance(validation, dict) else {}
+    preferred = composed.get(lang)
+    if isinstance(preferred, dict) and preferred:
+        return preferred
+    for candidate in ("en", "de"):
+        draft = composed.get(candidate)
+        if not isinstance(draft, dict) or not draft:
+            continue
+        checks = validation_by_lang.get(candidate)
+        if isinstance(checks, dict) and checks.get("passed") is False:
+            continue
+        return draft
+    return {}
 
 
 def _display_domain(value: str) -> str:
@@ -722,6 +803,9 @@ def _offline_translate_text(text: str, target_lang: str) -> str:
     )
     for source, target in replacements:
         rendered = rendered.replace(source, target)
+    if target_lang == "de":
+        rendered = re.sub(r"\b(über|mit|und|für|von|im|ins|am|an|zu)([A-ZÄÖÜ])", r"\1 \2", rendered)
+        rendered = re.sub(r"\s{2,}", " ", rendered).strip()
     return rendered
 
 
@@ -785,13 +869,14 @@ def _display_confidence(value: str, lang: str) -> str:
         "de": {"high": "Hoch", "medium": "Mittel", "low": "Niedrig"},
     }
     lookup = mapping.get(lang, mapping["en"])
-    return lookup.get((value or "").strip().lower(), _safe_text(value, "n/v"))
+    return lookup.get((value or "").strip().lower(), _display_text(value, lang=lang))
 
 
 def _display_run_status(value: str, lang: str) -> str:
     mapping = {
         "en": {
             "meeting_ready": "Meeting ready",
+            "discovery_ready_not_execution_ready": "Discovery ready (not execution ready)",
             "blocked_not_meeting_ready": "Blocked",
             "needs_user_selection": "User selection required",
             "running": "Running",
@@ -799,6 +884,7 @@ def _display_run_status(value: str, lang: str) -> str:
         },
         "de": {
             "meeting_ready": "Gesprächsbereit",
+            "discovery_ready_not_execution_ready": "Recherchebereit (nicht umsetzungsbereit)",
             "blocked_not_meeting_ready": "Blockiert",
             "needs_user_selection": "Nutzerauswahl erforderlich",
             "running": "Läuft",
@@ -806,7 +892,7 @@ def _display_run_status(value: str, lang: str) -> str:
         },
     }
     lookup = mapping.get(lang, mapping["en"])
-    return lookup.get((value or "").strip().lower(), _safe_text(value, "n/v"))
+    return lookup.get((value or "").strip().lower(), _display_text(value, lang=lang))
 
 
 def _accent_surface(accent: colors.Color) -> colors.Color:
@@ -1177,8 +1263,6 @@ def _opportunity_tiles(items: list[dict[str, Any]], styles: dict[str, ParagraphS
         label = _safe_text(item.get("service_area", "")).replace("_", " ").title()
         relevance = _safe_text(item.get("relevance", "unclear"))
         reasoning = _safe_text(item.get("reasoning", ""))
-        if len(reasoning) > 100:
-            reasoning = reasoning[:97] + "…"
         _, bar_color = _relevance_to_score(relevance)
         rel_style = _rel_style.get(relevance.lower(), styles["tile_unclear"])
         tile = Table(
@@ -1246,11 +1330,7 @@ def _info_table(rows: list[tuple[str, str]], styles: dict[str, ParagraphStyle],
 
 def _truncate(text: Any, limit: int = 180, default: str = "n/v") -> str:
     rendered = _safe_text(text, default)
-    if rendered == default:
-        return rendered
-    if len(rendered) <= limit:
-        return rendered
-    return f"{rendered[: limit - 1].rstrip()}…"
+    return rendered
 
 
 def _dedupe_items(values: list[str], limit: int = 5) -> list[str]:
@@ -1285,6 +1365,7 @@ def _service_area_label(value: str, lang: str) -> str:
     mapping = {
         "excess_inventory": "Excess Inventory" if lang == "en" else "Bestandsabbau",
         "further_validation_required": "Further validation required" if lang == "en" else "Weitere Validierung nötig",
+        "further_validation_requiered": "Further validation required" if lang == "en" else "Weitere Validierung nötig",
     }
     key = (value or "").strip().lower()
     if key in mapping:
@@ -1332,10 +1413,10 @@ def _summary_callout(title: str, body: str, styles: dict[str, ParagraphStyle],
 
 
 def _kpi_grid(kpis: list[tuple[str, str]], styles: dict[str, ParagraphStyle],
-              *, columns: int = 3) -> Table:
+              *, columns: int = 3, lang: str = "en") -> Table:
     usable = [(label, value) for label, value in kpis if value and value != "n/v"]
     if not usable:
-        usable = [("n/v", "n/v")]
+        usable = [("Note" if lang == "en" else "Hinweis", _missing_reason(lang))]
     rows: list[list[Any]] = []
     row: list[Any] = []
     cell_width = (170 * mm) / columns
@@ -1569,6 +1650,7 @@ def _first_matching_sentence(texts: list[str], patterns: list[str], default: str
 
 
 def _extract_financial_cards(profile: dict[str, Any], industry: dict[str, Any], synthesis: dict[str, Any],
+                             lang: str,
                              labels: dict[str, str]) -> list[tuple[str, str]]:
     econ = profile.get("economic_situation", {}) or {}
     deep_dive = profile.get("financial_deep_dive", {}) or {}
@@ -1588,7 +1670,7 @@ def _extract_financial_cards(profile: dict[str, Any], industry: dict[str, Any], 
     ]
     signal_texts = [sentence for sentence in _sentence_candidates(texts) if _is_finance_inventory_signal(sentence)]
     signal_source = signal_texts if signal_texts else texts
-    open_value = labels.get("open_value", "Open")
+    open_value = _missing_reason(lang)
     return [
         (labels["revenue_trend"], _truncate(econ.get("revenue_trend"), 72, open_value)),
         (labels["ebit"], _first_matching_sentence(signal_source, [r"\bebit\b"], open_value)),
@@ -1633,7 +1715,7 @@ def _extract_divisions(profile: dict[str, Any], contacts_section: dict[str, Any]
     return cleaned or _top_items(profile.get("products_and_services"), 3)
 
 
-def _validation_pairs(risks: list[str], actions: list[str], labels: dict[str, str]) -> list[tuple[str, str]]:
+def _validation_pairs(risks: list[str], actions: list[str], labels: dict[str, str], *, lang: str) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
     for index, risk in enumerate(risks[:4]):
         action = (
@@ -1641,7 +1723,7 @@ def _validation_pairs(risks: list[str], actions: list[str], labels: dict[str, st
             if index < len(actions)
             else actions[-1]
             if actions
-            else ("Validate directly in the meeting." if labels.get("date_label") == "Report date" else "Direkt im Gespräch validieren.")
+            else ("Validate directly in the meeting." if lang == "en" else "Direkt im Gespräch validieren.")
         )
         pairs.append((_truncate(risk, 88), _truncate(action, 100)))
     return pairs
@@ -1682,18 +1764,23 @@ def _opportunity_table(recommended_paths: list[str], service_relevance: list[dic
     ]]
     for rank, path in enumerate(ranked_paths[:3], start=1):
         item = items_by_key.get(path.lower(), {})
+        raw_relevance = _safe_text(item.get("relevance"), "")
+        fit_text = _display_text(raw_relevance, lang=lang)
+        raw_reasoning = item.get("reasoning") or item.get("summary")
+        why_now_text = _display_text(raw_reasoning, lang=lang)
         data.append([
             Paragraph(str(rank), styles["table_cell"]),
-            Paragraph(_service_area_label(path, lang), styles["table_cell"]),
-            Paragraph(_safe_text(item.get("relevance"), "n/v").title(), styles["table_cell"]),
-            Paragraph(_truncate(item.get("reasoning") or item.get("summary"), 180), styles["table_cell"]),
+            Paragraph(_display_text(_service_area_label(path, lang), lang=lang), styles["table_cell"]),
+            Paragraph(fit_text.title() if fit_text else _missing_reason(lang), styles["table_cell"]),
+            Paragraph(why_now_text, styles["table_cell"]),
         ])
     if len(data) == 1:
+        missing_text = _missing_reason(lang)
         data.append([
             Paragraph("1", styles["table_cell"]),
-            Paragraph("n/v", styles["table_cell"]),
-            Paragraph("n/v", styles["table_cell"]),
-            Paragraph("n/v", styles["table_cell"]),
+            Paragraph("Weitere Validierung nötig" if lang == "de" else "Further validation required", styles["table_cell"]),
+            Paragraph(missing_text, styles["table_cell"]),
+            Paragraph(missing_text, styles["table_cell"]),
         ])
     table = Table(data, colWidths=[14 * mm, 38 * mm, 24 * mm, 94 * mm], repeatRows=1)
     table.setStyle(TableStyle([
@@ -1737,14 +1824,14 @@ def _contact_profile_card(
     lang: str,
     likely_objection: Any = "",
 ) -> Table:
-    resolved_name = _safe_text(name, "—")
-    resolved_role = _safe_text(role, "—")
-    resolved_org = _safe_text(organization_location, "—")
-    resolved_relevance = _safe_text(relevance, "—")
-    resolved_angle = _safe_text(outreach_angle, "—")
-    resolved_channel = _safe_text(profile_channel, "—")
-    resolved_source = _safe_text(source_verification, "—")
-    resolved_confidence = _safe_text(confidence, "—")
+    resolved_name = _display_text(name, lang=lang, context="contact")
+    resolved_role = _display_text(role, lang=lang, context="contact")
+    resolved_org = _display_text(organization_location, lang=lang, context="contact")
+    resolved_relevance = _display_text(relevance, lang=lang, context="contact")
+    resolved_angle = _display_text(outreach_angle, lang=lang, context="contact")
+    resolved_channel = _display_text(profile_channel, lang=lang, context="contact")
+    resolved_source = _display_text(source_verification, lang=lang, context="contact")
+    resolved_confidence = _display_text(confidence, lang=lang, context="contact")
     objection_text = _safe_text(likely_objection, "")
     objection_label = "Likely objection" if lang == "en" else "Wahrscheinlicher Einwand"
 
@@ -1764,7 +1851,7 @@ def _contact_profile_card(
         f"• <b>{labels['contact_relevance']}:</b> {resolved_relevance}",
         f"• <b>{labels['contact_angle']}:</b> {resolved_angle}",
     ]
-    if objection_text and objection_text not in {"n/v", "n/a", "—"}:
+    if objection_text and not _is_placeholder_token(objection_text):
         body_lines.append(f"• <b>{objection_label}:</b> {objection_text}")
     body_html = "<br/>".join(body_lines)
     footer_html = (
@@ -2017,7 +2104,7 @@ def _phase_label(value: str, lang: str) -> str:
         return lang_map["during_meeting"]
     if "post" in normalized or normalized.startswith("nach_"):
         return lang_map["post_meeting"]
-    return _safe_text(value, "—")
+    return _display_text(value, lang=lang)
 
 
 def _next_step_table(steps: list[dict[str, Any]], labels: dict[str, str],
@@ -2063,8 +2150,10 @@ def _next_step_table(steps: list[dict[str, Any]], labels: dict[str, str],
 # ── two-column bullets ────────────────────────────────────────────────────────
 
 def _bullet_col(title: str, items: list[str], styles: dict[str, ParagraphStyle],
-                col_w: float, accent: colors.Color = BRAND_BLUE) -> Table:
-    body = "<br/>".join(f"- {item}" for item in (items or ["n/v"])[:6])
+                col_w: float, accent: colors.Color = BRAND_BLUE,
+                *, lang: str = "en", empty_text: str | None = None) -> Table:
+    fallback = empty_text or _missing_reason(lang)
+    body = "<br/>".join(f"- {item}" for item in (items or [fallback])[:6])
     box = Table(
         [[Paragraph(f"<b>{title}</b>", styles["body"])],
          [Paragraph(body, styles["body"])]],
@@ -2093,7 +2182,7 @@ def _relevance_color(label: str) -> colors.Color:
 
 
 def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
-                     styles: dict[str, ParagraphStyle]) -> list[Any]:
+                     styles: dict[str, ParagraphStyle], *, lang: str) -> list[Any]:
     """
     One table per tier (if companies exist), each showing individual company rows.
     Tier header (navy) → one row per company: Name | Country | Relevance
@@ -2117,7 +2206,7 @@ def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
 
     def _fmt_relevance(raw: str) -> str:
         r = (raw or "").strip()
-        return _rel_label.get(r.lower(), r) if r not in {"n/v", ""} else "—"
+        return _rel_label.get(r.lower(), r) if r not in {"n/v", ""} else _missing_reason(lang)
 
     flowables: list[Any] = []
 
@@ -2143,7 +2232,7 @@ def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
             bg = WHITE if i % 2 == 0 else SURFACE
             data.append([
                 Paragraph(name, styles["table_cell"]),
-                Paragraph(country if country not in {"n/v", ""} else "—", styles["table_cell"]),
+                Paragraph(country if country not in {"n/v", ""} else _missing_reason(lang), styles["table_cell"]),
                 Paragraph(f'<font color="#{int(rel_color.red*255):02x}{int(rel_color.green*255):02x}{int(rel_color.blue*255):02x}"><b>{rel_txt}</b></font>',
                           styles["table_cell"]),
             ])
@@ -2170,7 +2259,7 @@ def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
         flowables.append(table)
         flowables.append(Spacer(1, 3 * mm))
 
-    return flowables if flowables else [Paragraph("n/v", styles["body"])]
+    return flowables if flowables else [Paragraph(_missing_reason(lang), styles["body"])]
 
 
 # ── risk table ────────────────────────────────────────────────────────────────
@@ -2178,7 +2267,7 @@ def _buyer_landscape(market: dict[str, Any], labels: dict[str, str],
 def _risk_table(risks: list[str], styles: dict[str, ParagraphStyle]) -> Table:
     data = [[Paragraph(f"▸  {risk}", styles["body"])] for risk in risks[:5]]
     if not data:
-        data = [[Paragraph("n/v", styles["body"])]]
+        data = [[Paragraph("No reliable public sources available.", styles["body"])]]
     table = Table(data, colWidths=[170 * mm])
     table.setStyle(TableStyle([
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [WHITE, SURFACE_WARM]),
@@ -2199,7 +2288,7 @@ def _steps_table(steps: list[str], styles: dict[str, ParagraphStyle]) -> Table:
     data = [[Paragraph(f"{i + 1}.  {step}", styles["body"])]
             for i, step in enumerate(steps[:5])]
     if not data:
-        data = [[Paragraph("n/v", styles["body"])]]
+        data = [[Paragraph("No reliable public sources available.", styles["body"])]]
     table = Table(data, colWidths=[170 * mm])
     table.setStyle(TableStyle([
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [WHITE, SURFACE]),
@@ -2223,14 +2312,14 @@ def _source_table(sources: list[dict[str, Any]], labels: dict[str, str],
         Paragraph(f"<b>{labels['source_type']}</b>",  styles["table_header"]),
     ]]
     if not sources:
-        data.append([Paragraph("n/v", styles["table_cell"]),
+        data.append([Paragraph("No reliable public sources available.", styles["table_cell"]),
                      Paragraph("—", styles["table_cell"])])
     else:
         for item in sources[:14]:
             title = _safe_text(item.get("title") or item.get("publisher") or item.get("url"))
             url   = _safe_text(item.get("url", ""))
             stype = _safe_text(item.get("source_type") or "source")
-            url_display = url[:90] + ("…" if len(url) > 90 else "") if url != "n/v" else ""
+            url_display = url if url != "n/v" else ""
             cell_text = title
             if url_display and url_display != title:
                 cell_text = f"{title}<br/><font size='7' color='#1f5aa6'>{url_display}</font>"
@@ -2269,6 +2358,9 @@ _ENGLISH_MARKERS = {
     "would", "should", "there", "enough", "strongest", "opportunity", "landscape", "path",
     "paths", "next", "step", "steps", "report", "preparation", "commercial", "support",
     "fit", "demand", "supply", "chain", "procurement",
+    "prepare", "close", "validate", "send", "request", "open", "quantified", "impact",
+    "first", "response", "leadership", "ownership", "visibility", "gap",
+    "criticality", "decision", "ownership", "partner", "outreach",
 }
 
 
@@ -2331,11 +2423,12 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
         return payload
     try:
         from openai import OpenAI
-        from src.config.settings import DEFAULT_MODEL, get_openai_api_key
+        from src.config.settings import get_openai_api_key, get_translation_model, temperature_param
 
         api_key = get_openai_api_key()
         if not api_key:
             return payload
+        translation_model = get_translation_model()
 
         pending: dict[str, str] = {}
         paths: dict[str, tuple[Any, ...]] = {}
@@ -2370,7 +2463,7 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
             chunk_payload = {token: pending[token] for token in chunk_tokens}
             try:
                 resp = client.chat.completions.create(
-                    model=DEFAULT_MODEL,
+                    model=translation_model,
                     messages=[
                         {
                             "role": "system",
@@ -2385,8 +2478,8 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
                         {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0,
                     timeout=TRANSLATION_TIMEOUT_SECONDS,
+                    **temperature_param(translation_model, 0),
                 )
                 translated: dict[str, str] = json.loads(resp.choices[0].message.content)
             except Exception:
@@ -2397,6 +2490,24 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
         return payload
     except Exception:
         return payload
+
+
+def _force_german_strings(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _force_german_strings(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_force_german_strings(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_force_german_strings(item) for item in value)
+    if isinstance(value, str):
+        rendered = str(value or "").strip()
+        if not rendered:
+            return rendered
+        translated = _offline_translate_text(rendered, "de")
+        if _looks_untranslated_for_german(translated):
+            return "Öffentlich nicht belastbar formuliert; zusätzliche Primärquellen erforderlich."
+        return translated
+    return value
 
 
 def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[str, Any]:
@@ -2423,7 +2534,7 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
 
         def _add(key: str, text: Any) -> None:
             s = str(text or "").strip()
-            if s and s not in {"n/v", "n/a"}:
+            if s and s not in {"n/v", "n/a", "—", "-"}:
                 batch[key] = s
 
         # Synthesis
@@ -2551,9 +2662,10 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
             return data
 
         # ── single LLM call ─────────────────────────────────────────────────
-        from src.config.settings import DEFAULT_MODEL
+        from src.config.settings import get_translation_model, temperature_param
         lang_name = _LANG_NAMES.get(target_lang, target_lang)
         client = OpenAI(api_key=api_key, timeout=TRANSLATION_TIMEOUT_SECONDS, max_retries=0)
+        translation_model = get_translation_model()
         translated: dict[str, str] = {}
         keys = list(batch.keys())
         chunk_size = 28
@@ -2561,7 +2673,7 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
             chunk_keys = keys[start:start + chunk_size]
             chunk_payload = {key: batch[key] for key in chunk_keys}
             resp = client.chat.completions.create(
-                model=DEFAULT_MODEL,
+                model=translation_model,
                 messages=[
                     {
                         "role": "system",
@@ -2578,8 +2690,8 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
                     {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.1,
                 timeout=TRANSLATION_TIMEOUT_SECONDS,
+                **temperature_param(translation_model, 0.1),
             )
             translated.update(json.loads(resp.choices[0].message.content))
 
@@ -2697,19 +2809,41 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
 def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     labels  = _translation(lang)
     styles  = _styles()
+    source_payload = copy.deepcopy(pipeline_data)
+    composed_override = _select_composed_report(source_payload.get("report_package"), lang)
+    if composed_override:
+        validation = (
+            (source_payload.get("report_package") or {})
+            .get("composition_validation", {})
+            .get(lang, {})
+        )
+        blob = json.dumps(composed_override, ensure_ascii=False).lower()
+        has_quality_red_flags = any(token in blob for token in ("n/v", "...", "…"))
+        if lang == "de":
+            has_quality_red_flags = has_quality_red_flags or any(
+                marker in blob
+                for marker in (
+                    " the ",
+                    " and ",
+                    " with ",
+                    " for ",
+                    "decision-first",
+                    "next step",
+                    "recommended",
+                    "proceed",
+                )
+            )
+        if (isinstance(validation, dict) and validation.get("passed") is False) or has_quality_red_flags:
+            composed_override = {}
 
     # Translate all narrative content into the requested output language.
     if lang == "de":
-        pipeline_data = copy.deepcopy(pipeline_data)
+        pipeline_data = _translate_content(pipeline_data, lang)
+        pipeline_data = _offline_translate_obj(pipeline_data, lang)
+        pipeline_data = _translate_residual_strings(pipeline_data, lang)
         pipeline_data = _offline_translate_obj(pipeline_data, lang)
     elif lang in _LANG_NAMES:
         pipeline_data = _translate_content(pipeline_data, lang)
-    elif lang in _LANG_NAMES:
-        pipeline_data = _offline_translate_obj(pipeline_data, lang)
-    elif lang in _LANG_NAMES:
-        pipeline_data = _translate_residual_strings(pipeline_data, lang)
-    elif lang in _LANG_NAMES:
-        pipeline_data = _offline_translate_obj(pipeline_data, lang)
 
     pipeline_data = copy.deepcopy(pipeline_data)
     synthesis_payload = dict(pipeline_data.get("synthesis", {}) or {})
@@ -2762,7 +2896,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
 
     # KPI facts
     revenue   = _extract_revenue_display(profile, industry)
-    employees = _safe_text(profile.get("employees")).replace("Approximately ", "~").replace("approximately ", "~")
+    employees = _display_text(profile.get("employees"), lang=lang).replace("Approximately ", "~").replace("approximately ", "~")
     hq        = _safe_text(profile.get("headquarters"))
     if hq != "n/v" and "," in hq:
         # Keep only city: works for "City, Country" and "City, State, Country"
@@ -2771,6 +2905,25 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     founded   = _safe_text(profile.get("founded"))
     confidence = _display_confidence(_safe_text(synthesis.get("confidence"), "medium"), lang)
     run_id = _resolve_run_id(pipeline_data)
+    run_id = _display_text(run_id, lang=lang, context="identifier")
+
+    composed_next_steps: list[str] = []
+    composed_top_risks: list[str] = []
+    if composed_override:
+        executive_summary = _safe_text(composed_override.get("executive_summary"), executive_summary)
+        primary_path = _safe_text(composed_override.get("primary_opportunity_path"), "")
+        if not _is_missing_text(primary_path):
+            primary_label = primary_path
+        primary_reason = _safe_text(composed_override.get("primary_opportunity_reasoning"), "")
+        if not _is_missing_text(primary_reason):
+            primary_reasoning = primary_reason
+        confidence_override = _safe_text(composed_override.get("confidence"), "")
+        if not _is_missing_text(confidence_override):
+            confidence = confidence_override
+        composed_next_steps = _top_items(composed_override.get("next_steps"), 5)
+        if composed_next_steps:
+            next_steps = composed_next_steps
+        composed_top_risks = _top_items(composed_override.get("top_risks"), 3)
 
     # Research readiness
     rs_score  = int(readiness.get("score", 0))
@@ -2793,7 +2946,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         (labels["confidence"], confidence),
         (labels["hq_short"], hq),
         (labels["primary_path"], primary_label),
-        (labels["research_score"], f"{rs_score}/100" if rs_score else "n/v"),
+        (labels["research_score"], f"{rs_score}/100"),
     ]
     opportunity_reasons = _dedupe_items(
         [
@@ -2860,7 +3013,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         ],
         limit=4,
     )
-    financial_cards = _extract_financial_cards(profile, industry, synthesis, labels)
+    financial_cards = _extract_financial_cards(profile, industry, synthesis, lang, labels)
     target_contacts = contacts_section.get("target_company_prioritized_contacts") or contacts_section.get("target_company_contacts") or []
     buyer_contacts = contacts_section.get("prioritized_contacts") or contacts_section.get("contacts") or []
     target_contact_cards = contacts_section.get("target_company_contact_cards") or [
@@ -2880,18 +3033,21 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     access_path = contacts_section.get("target_company_access_path") or []
     critical_questions = synthesis.get("critical_open_questions") or []
     recommended_steps = synthesis.get("recommended_next_steps") or []
-    top_risks = risks[:3]
+    top_risks = composed_top_risks or risks[:3]
 
     top_actions = []
-    for step in recommended_steps[:3]:
-        if not isinstance(step, dict):
-            continue
-        action_text = _safe_text(step.get("action"), "")
-        goal_text = _truncate(step.get("goal"), 72, "")
-        if action_text and goal_text:
-            top_actions.append(f"{action_text} - {goal_text}")
-        elif action_text:
-            top_actions.append(action_text)
+    if composed_next_steps:
+        top_actions = composed_next_steps[:3]
+    else:
+        for step in recommended_steps[:3]:
+            if not isinstance(step, dict):
+                continue
+            action_text = _safe_text(step.get("action"), "")
+            goal_text = _truncate(step.get("goal"), 72, "")
+            if action_text and goal_text:
+                top_actions.append(f"{action_text} - {goal_text}")
+            elif action_text:
+                top_actions.append(action_text)
     if not top_actions:
         for action in (pipeline_data.get("meeting_actions") or [])[:3]:
             if not isinstance(action, dict):
@@ -2904,7 +3060,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
                 top_actions.append(title)
     if not top_actions:
         top_actions = next_steps
-    validation_pairs = _validation_pairs(top_risks or risks, top_actions or next_steps, labels)
+    validation_pairs = _validation_pairs(top_risks or risks, top_actions or next_steps, labels, lang=lang)
 
     if lang == "de":
         render_payload = {
@@ -3014,6 +3170,94 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         primary_fit = _offline_translate_text(primary_fit, "de")
         primary_reasoning = _offline_translate_text(primary_reasoning, "de")
 
+    display_payload = _sanitize_display_payload(
+        {
+            "company_name": company_name,
+            "run_id": run_id,
+            "confidence": confidence,
+            "hq": hq,
+            "founded": founded,
+            "revenue": revenue,
+            "executive_summary": executive_summary,
+            "products": products,
+            "material_scope": material_scope,
+            "service_relevance": service_relevance,
+            "risks": risks,
+            "next_steps": next_steps,
+            "profile_rows": profile_rows,
+            "dashboard_kpis": dashboard_kpis,
+            "opportunity_reasons": opportunity_reasons,
+            "key_trigger_items": key_trigger_items,
+            "finance_rows": finance_rows,
+            "financial_signals": financial_signals,
+            "portfolio_events": portfolio_events,
+            "narrative_overview": narrative_overview,
+            "why_liquisto": why_liquisto,
+            "business_model": business_model,
+            "divisions": divisions,
+            "financial_position": financial_position,
+            "trigger_events": trigger_events,
+            "financial_cards": financial_cards,
+            "target_contacts": target_contacts,
+            "buyer_contacts": buyer_contacts,
+            "target_contact_cards": target_contact_cards,
+            "missing_roles": missing_roles,
+            "access_path": access_path,
+            "critical_questions": critical_questions,
+            "recommended_steps": recommended_steps,
+            "top_risks": top_risks,
+            "top_actions": top_actions,
+            "validation_pairs": validation_pairs,
+            "primary_label": primary_label,
+            "primary_fit": primary_fit,
+            "primary_reasoning": primary_reasoning,
+            "market": market,
+        },
+        lang=lang,
+    )
+    if lang == "de":
+        display_payload = _force_german_strings(display_payload)
+    company_name = display_payload["company_name"]
+    run_id = display_payload["run_id"]
+    confidence = display_payload["confidence"]
+    hq = display_payload["hq"]
+    founded = display_payload["founded"]
+    revenue = display_payload["revenue"]
+    executive_summary = display_payload["executive_summary"]
+    products = display_payload["products"]
+    material_scope = display_payload["material_scope"]
+    service_relevance = display_payload["service_relevance"]
+    risks = display_payload["risks"]
+    next_steps = display_payload["next_steps"]
+    profile_rows = display_payload["profile_rows"]
+    dashboard_kpis = display_payload["dashboard_kpis"]
+    opportunity_reasons = display_payload["opportunity_reasons"]
+    key_trigger_items = display_payload["key_trigger_items"]
+    finance_rows = display_payload["finance_rows"]
+    financial_signals = display_payload["financial_signals"]
+    portfolio_events = display_payload["portfolio_events"]
+    narrative_overview = display_payload["narrative_overview"]
+    why_liquisto = display_payload["why_liquisto"]
+    business_model = display_payload["business_model"]
+    divisions = display_payload["divisions"]
+    financial_position = display_payload["financial_position"]
+    trigger_events = display_payload["trigger_events"]
+    financial_cards = display_payload["financial_cards"]
+    target_contacts = display_payload["target_contacts"]
+    buyer_contacts = display_payload["buyer_contacts"]
+    target_contact_cards = display_payload["target_contact_cards"]
+    missing_roles = display_payload["missing_roles"]
+    access_path = display_payload["access_path"]
+    critical_questions = display_payload["critical_questions"]
+    recommended_steps = display_payload["recommended_steps"]
+    top_risks = display_payload["top_risks"]
+    top_actions = display_payload["top_actions"]
+    validation_pairs = display_payload["validation_pairs"]
+    primary_label = display_payload["primary_label"]
+    primary_fit = display_payload["primary_fit"]
+    primary_reasoning = display_payload["primary_reasoning"]
+    market = display_payload["market"]
+
     # ── build story ──────────────────────────────────────────────────────────
 
     story: list[Any] = []
@@ -3039,7 +3283,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         accent=BRAND_TEAL,
     ))
     story.append(Spacer(1, 3 * mm))
-    story.append(_kpi_grid(dashboard_kpis, styles, columns=3))
+    story.append(_kpi_grid(dashboard_kpis, styles, columns=3, lang=lang))
     story.append(Spacer(1, 3 * mm))
 
     story.append(_summary_callout(
@@ -3075,9 +3319,9 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     story.append(Spacer(1, 3 * mm))
     story.append(_opportunity_table(recommended_paths, service_relevance, labels, styles, lang))
     story.append(Spacer(1, 4 * mm))
-    story.append(_bullet_col(labels["key_triggers"], key_trigger_items, styles, 168 * mm, BRAND_TEAL))
+    story.append(_bullet_col(labels["key_triggers"], key_trigger_items, styles, 168 * mm, BRAND_TEAL, lang=lang))
     story.append(Spacer(1, 2.5 * mm))
-    story.append(_bullet_col(labels["why_now"], opportunity_reasons, styles, 168 * mm, BRAND_GREEN))
+    story.append(_bullet_col(labels["why_now"], opportunity_reasons, styles, 168 * mm, BRAND_GREEN, lang=lang))
     story.append(Spacer(1, 3 * mm))
     story.append(_summary_callout(
         labels["why_liquisto"],
@@ -3110,13 +3354,13 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     if prof_table:
         story.append(prof_table)
         story.append(Spacer(1, 4 * mm))
-    story.append(_bullet_col(labels["business_model"], [business_model], styles, 168 * mm, BRAND_BLUE))
+    story.append(_bullet_col(labels["business_model"], [business_model], styles, 168 * mm, BRAND_BLUE, lang=lang))
     story.append(Spacer(1, 2.5 * mm))
-    story.append(_bullet_col(labels["divisions"], divisions, styles, 168 * mm, BRAND_TEAL))
+    story.append(_bullet_col(labels["divisions"], divisions, styles, 168 * mm, BRAND_TEAL, lang=lang))
     story.append(Spacer(1, 2.5 * mm))
-    story.append(_bullet_col(labels["products_scope"], material_scope or products, styles, 168 * mm, BRAND_TEAL))
+    story.append(_bullet_col(labels["products_scope"], material_scope or products, styles, 168 * mm, BRAND_TEAL, lang=lang))
     story.append(Spacer(1, 2.5 * mm))
-    story.append(_bullet_col(labels["trigger_events"], trigger_events, styles, 168 * mm, BRAND_AMBER))
+    story.append(_bullet_col(labels["trigger_events"], trigger_events, styles, 168 * mm, BRAND_AMBER, lang=lang))
     story.append(Spacer(1, 3 * mm))
     story.append(_summary_callout(
         labels["financial_position"],
@@ -3144,11 +3388,11 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         accent=BRAND_AMBER,
     ))
     story.append(Spacer(1, 3 * mm))
-    story.append(_kpi_grid(financial_cards, styles, columns=2))
+    story.append(_kpi_grid(financial_cards, styles, columns=2, lang=lang))
     story.append(Spacer(1, 3 * mm))
-    story.append(_bullet_col(labels["financial_signals"], financial_signals, styles, 168 * mm, BRAND_AMBER))
+    story.append(_bullet_col(labels["financial_signals"], financial_signals, styles, 168 * mm, BRAND_AMBER, lang=lang))
     story.append(Spacer(1, 2.5 * mm))
-    story.append(_bullet_col(labels["portfolio_events"], portfolio_events, styles, 168 * mm, BRAND_BLUE))
+    story.append(_bullet_col(labels["portfolio_events"], portfolio_events, styles, 168 * mm, BRAND_BLUE, lang=lang))
 
     story.append(PageBreak())
 
@@ -3161,7 +3405,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         accent=BRAND_GREEN,
     ))
     story.append(Spacer(1, 3 * mm))
-    for flowable in _buyer_landscape(market, labels, styles):
+    for flowable in _buyer_landscape(market, labels, styles, lang=lang):
         story.append(flowable)
 
     # Monetization & redeployment paths
@@ -3170,9 +3414,9 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
     if monet_paths or redep_paths:
         story.append(Table(
             [[_bullet_col("Monetization Paths" if lang == "en" else "Monetarisierungspfade",
-                          monet_paths or ["n/v"], styles, 82 * mm, BRAND_GREEN),
+                          monet_paths, styles, 82 * mm, BRAND_GREEN, lang=lang),
               _bullet_col("Redeployment Paths" if lang == "en" else "Weiterverwendungspfade",
-                          redep_paths or ["n/v"], styles, 82 * mm, BRAND_TEAL)]],
+                          redep_paths, styles, 82 * mm, BRAND_TEAL, lang=lang)]],
             colWidths=[84 * mm, 84 * mm],
         ))
         story.append(Spacer(1, 3 * mm))
@@ -3220,7 +3464,7 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
             story.append(flowable)
     if access_path:
         story.append(Spacer(1, 4 * mm))
-        story.append(_bullet_col(labels["access_path"], access_path[:4], styles, 168 * mm, BRAND_BLUE))
+        story.append(_bullet_col(labels["access_path"], access_path[:4], styles, 168 * mm, BRAND_BLUE, lang=lang))
     if buyer_contacts:
         story.append(Spacer(1, 4 * mm))
         story.append(Paragraph(labels["buyer_contacts"], styles["section"]))

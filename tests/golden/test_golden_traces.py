@@ -21,7 +21,7 @@ def test_golden_run_meta_has_required_keys():
     assert "run_id" in meta
     assert "status" in meta
     assert meta["status"] in {
-        "meeting_ready", "blocked_not_meeting_ready", "needs_user_selection",
+        "meeting_ready", "discovery_ready_not_execution_ready", "blocked_not_meeting_ready", "needs_user_selection",
         "completed", "completed_partial", "completed_but_not_usable", "failed",
     }
 

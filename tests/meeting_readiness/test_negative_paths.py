@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from src.app.use_cases import (
     BLOCKED_RUN_STATUS,
+    DISCOVERY_READY_RUN_STATUS,
     SELECTION_REQUIRED_RUN_STATUS,
     SUCCESS_RUN_STATUS,
     determine_final_status,
@@ -69,6 +70,16 @@ def test_user_decision_required_bucket_produces_selection_status():
         remaining_public_gaps=[],
     )
     assert status == SELECTION_REQUIRED_RUN_STATUS
+
+
+def test_discovery_ready_status_when_internal_only_blockers_remain():
+    status = determine_final_status(
+        readiness_usable=False,
+        first_round_resolution={"bucket": "NOT_MEETING_CRITICAL"},
+        remaining_public_gaps=[],
+        discovery_ready=True,
+    )
+    assert status == DISCOVERY_READY_RUN_STATUS
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +185,43 @@ def test_low_evidence_does_not_block_when_coverage_is_strong():
     )
     # Strong answered/partial coverage should NOT be blocked by low evidence alone
     assert result.meeting_ready
+
+
+def test_gate_returns_discovery_ready_for_internal_customer_blockers():
+    gate = MeetingReadinessGate()
+    result = gate.evaluate(
+        answer_matrix={
+            "q_company_fundamentals": {"status": "answered"},
+            "q_market_situation": {"status": "answered"},
+            "q_peer_companies": {"status": "answered"},
+            "q_monetization_redeployment": {"status": "answered"},
+        },
+        resolution_state={"auto_close": {"remaining_public_gaps": []}, "dashboard_state": {}},
+        evidence_health="medium",
+        readiness_usable=False,
+        discovery_ready=True,
+        minimum_package={
+            "required_verified_decision_makers": 1,
+            "verified_decision_makers": 0,
+            "required_hard_financial_inventory_signals": 2,
+            "hard_financial_inventory_signals": 1,
+            "met": False,
+        },
+        blockers=[
+            {
+                "blocker_id": "b1",
+                "field_key": "minimum_package.verified_decision_makers",
+                "availability": "internal_customer",
+                "severity": "hard",
+                "reason": "No public sources for direct contact.",
+                "owner": "Customer Sponsor",
+                "next_step": "Provide intro path.",
+            }
+        ],
+    )
+    assert result.run_status == "discovery_ready_not_execution_ready"
+    assert result.discovery_ready is True
+    assert result.meeting_ready is False
 
 
 # ---------------------------------------------------------------------------

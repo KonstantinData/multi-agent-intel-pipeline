@@ -401,3 +401,12 @@ Diese Sektion ist als Analyse des alten Delta-Runs abgeschlossen.
 ## 11. Aktuelle Restblocker
 
 - [x] Keine offenen Restblocker mehr fuer den Zielzustand in diesem Repo-Stand.
+
+## 12. Runtime-Update 2026-04-02 (Department-KB + Policy-Gates)
+
+- [x] Department-spezifische Source-KB eingefuehrt (`knowledge/sources/*.yaml`).
+- [x] Department-spezifische Policy-KB eingefuehrt (`knowledge/policies/*.yaml`).
+- [x] Acceptance-time Policy-Gates pro Department in der Runtime verdrahtet.
+- [x] Gate-Blocker werden in Readiness-Blocker ueberfuehrt.
+- [x] Kontaktluecken werden explizit als `keine freien Quellen` markiert.
+- [x] Conversable-Autonomie bleibt erhalten (kein starrer Turn-by-Turn-Workflow).

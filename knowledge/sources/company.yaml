@@ -1,0 +1,61 @@
+{
+  "department": "CompanyDepartment",
+  "source_priority": [
+    "primary",
+    "official_secondary",
+    "industry_secondary"
+  ],
+  "sources": [
+    {
+      "name": "Unternehmensregister",
+      "url": "https://www.unternehmensregister.de/",
+      "department": "CompanyDepartment",
+      "priority": "primary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 1.0,
+      "search_patterns_de": [
+        "<firma> unternehmensregister jahresabschluss",
+        "<firma> bilanz unternehmensregister"
+      ],
+      "search_patterns_en": [
+        "<company> annual filing register"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Bundesanzeiger",
+      "url": "https://www.bundesanzeiger.de/",
+      "department": "CompanyDepartment",
+      "priority": "primary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.95,
+      "search_patterns_de": [
+        "<firma> bundesanzeiger jahresabschluss",
+        "<firma> inventar abschreibung"
+      ],
+      "search_patterns_en": [
+        "<company> federal gazette filing"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Investor Relations",
+      "url": "https://",
+      "department": "CompanyDepartment",
+      "priority": "official_secondary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.9,
+      "search_patterns_de": [
+        "<firma> investor relations geschäftsbericht",
+        "<firma> annual report pdf"
+      ],
+      "search_patterns_en": [
+        "<company> investor relations annual report"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}

@@ -11,13 +11,18 @@ from src.agents.specs import AGENT_SPECS
 from src.agents.runtime_factory import create_runtime_agents
 from src.app.use_cases import (
     BLOCKED_RUN_STATUS,
+    DISCOVERY_READY_RUN_STATUS,
     SELECTION_REQUIRED_RUN_STATUS,
     SUCCESS_RUN_STATUS,
     build_dashboard_state,
     build_resolution_plan,
     determine_final_status,
 )
-from src.config import summarize_worker_report_costs
+from src.config import (
+    estimate_web_search_preview_call_cost_usd,
+    get_search_model,
+    summarize_worker_report_costs,
+)
 from src.domain.intake import IntakeRequest
 from src.exporters.json_export import export_run
 from src.memory.backfill import backfill_long_term_memory_from_runs
@@ -38,8 +43,10 @@ from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
     assess_research_readiness,
+    build_contact_enrichment_stage,
     build_contact_briefing_assets,
     build_playbook_assets,
+    build_primary_source_stage,
     build_quality_review,
     build_synthesis_context,
     harmonize_synthesis_output,
@@ -133,7 +140,7 @@ def _sync_finalization_artifacts(
         ((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low")
     )
     blocked_reasons = list(run_context.meeting_readiness_assessment.blocked_reasons or [])
-    if status == BLOCKED_RUN_STATUS and not blocked_reasons:
+    if status in {BLOCKED_RUN_STATUS, DISCOVERY_READY_RUN_STATUS} and not blocked_reasons:
         readiness_reasons = [
             str(reason).strip()
             for reason in ((pipeline_data.get("research_readiness") or {}).get("reasons") or [])
@@ -148,17 +155,20 @@ def _sync_finalization_artifacts(
                 blocked_reasons = ["Meeting-critical public gaps remain open."]
             elif finalization_reason == "meeting_not_ready":
                 blocked_reasons = ["Research output is not yet meeting-ready."]
+            elif finalization_reason == "internal_customer_data_required":
+                blocked_reasons = ["Execution requires internal customer data that is not publicly available."]
 
     readiness = run_context.meeting_readiness_assessment.model_copy(
         update={
             "run_status": status,
             "meeting_ready": status == SUCCESS_RUN_STATUS,
+            "discovery_ready": status == DISCOVERY_READY_RUN_STATUS,
             "blocked_reasons": [] if status == SUCCESS_RUN_STATUS else blocked_reasons,
             "confidence": (
                 "high"
                 if status == SUCCESS_RUN_STATUS and evidence_health == "high"
                 else "medium"
-                if status == SUCCESS_RUN_STATUS
+                if status in {SUCCESS_RUN_STATUS, DISCOVERY_READY_RUN_STATUS}
                 else "low"
             ),
         }
@@ -270,12 +280,16 @@ def resume_pipeline(
         resolution_state=run_context.resolution_state,
         evidence_health=str((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low"),
         readiness_usable=bool(readiness.get("usable")),
+        discovery_ready=bool(readiness.get("discovery_ready")),
+        minimum_package=dict(readiness.get("minimum_package", {}) or {}),
+        blockers=list(readiness.get("readiness_blockers", []) or []),
     )
     run_context.meeting_readiness_assessment = meeting_assessment
     status = determine_final_status(
         readiness_usable=bool(readiness.get("usable")),
         first_round_resolution=first_round_resolution,
         remaining_public_gaps=[],  # user resolved the selection requirement
+        discovery_ready=bool(readiness.get("discovery_ready")),
     )
     if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
         status = meeting_assessment.run_status
@@ -510,6 +524,19 @@ def run_pipeline(
             )
         )
         sections["contact_intelligence"] = contact_intelligence
+        primary_source_stage = dict(
+            sections.get("primary_source_stage", {}) or build_primary_source_stage(
+                company_profile=sections.get("company_profile", {}),
+                industry_analysis=sections.get("industry_analysis", {}),
+                market_network=sections.get("market_network", {}),
+            )
+        )
+        contact_enrichment_stage = dict(
+            sections.get("contact_enrichment_stage", {}) or build_contact_enrichment_stage(
+                company_profile=sections.get("company_profile", {}),
+                contact_intelligence=contact_intelligence,
+            )
+        )
 
         synthesis = harmonize_synthesis_output(
             synthesis=synthesis,
@@ -536,6 +563,9 @@ def run_pipeline(
             contact_intelligence=contact_intelligence,
             quality_review=quality_review,
             synthesis=synthesis,
+            primary_source_stage=primary_source_stage,
+            contact_enrichment_stage=contact_enrichment_stage,
+            department_packages=department_packages,
         )
         pipeline_data = validate_pipeline_data(
             {
@@ -546,9 +576,19 @@ def run_pipeline(
                 "quality_review": quality_review,
                 "synthesis": synthesis,
                 "research_readiness": readiness,
+                "primary_source_stage": readiness.get("primary_source_stage", primary_source_stage),
+                "contact_enrichment_stage": readiness.get("contact_enrichment_stage", contact_enrichment_stage),
+                "data_request_sheet": readiness.get("data_request_sheet", {}),
+                "outreach_playbook": readiness.get("outreach_playbook", {}),
                 "validation_errors": [],
             }
         )
+        run_context.resolution_state["readiness_contract"] = {
+            "minimum_package": dict(readiness.get("minimum_package", {}) or {}),
+            "readiness_blockers": list(readiness.get("readiness_blockers", []) or []),
+            "department_gate_overview": dict(readiness.get("department_gate_overview", {}) or {}),
+            "discovery_ready": bool(readiness.get("discovery_ready")),
+        }
 
         remaining_public_gaps = run_context.resolution_state.get("auto_close", {}).get("remaining_public_gaps", [])
         resolution_plan = build_resolution_plan(
@@ -556,6 +596,32 @@ def run_pipeline(
             first_round_resolution=first_round_resolution,
             remaining_public_gaps=list(remaining_public_gaps),
         )
+
+        if resolution_plan.get("unresolved") is None or not isinstance(resolution_plan.get("unresolved"), dict):
+            resolution_plan["unresolved"] = {}
+        if bool(readiness.get("discovery_ready")):
+            data_request_fields = [
+                str(item.get("label", "")).strip()
+                for item in (readiness.get("data_request_sheet", {}).get("request_fields", []) or [])
+                if isinstance(item, dict) and str(item.get("label", "")).strip()
+            ]
+            if data_request_fields:
+                resolution_plan["unresolved"]["internal_customer_data_request"] = data_request_fields
+            resolution_plan["decision"] = {
+                "decision": "accept_gap",
+                "rationale": "Public research is complete for discovery scope; execution requires internal customer data.",
+                "selected_gap_ids": [
+                    str(item.get("blocker_id", "")).strip()
+                    for item in (readiness.get("readiness_blockers", []) or [])
+                    if isinstance(item, dict) and str(item.get("blocker_id", "")).strip()
+                ],
+            }
+            resolution_plan["steps"] = [
+                "Provide Data Request Sheet fields under NDA.",
+                "Confirm target-company stakeholder owner and intro path.",
+                "Resume execution readiness validation once customer data is available.",
+            ]
+
         run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
         run_context.resolution_state["resolution_plan"] = resolution_plan
 
@@ -565,6 +631,7 @@ def run_pipeline(
             on_message=on_message,
         )
         run_context.report_package = report_package
+        pipeline_data["report_package"] = report_package
         messages.extend(report_messages)
 
         # RA-06: Meeting-readiness gate — enforced before finalization
@@ -574,6 +641,9 @@ def run_pipeline(
             resolution_state=run_context.resolution_state,
             evidence_health=quality_review.get("evidence_health", "low"),
             readiness_usable=bool(readiness.get("usable")),
+            discovery_ready=bool(readiness.get("discovery_ready")),
+            minimum_package=dict(readiness.get("minimum_package", {}) or {}),
+            blockers=list(readiness.get("readiness_blockers", []) or []),
         )
         run_context.meeting_readiness_assessment = meeting_assessment
 
@@ -600,6 +670,7 @@ def run_pipeline(
             readiness_usable=bool(readiness.get("usable")),
             first_round_resolution=first_round_resolution,
             remaining_public_gaps=list(remaining_public_gaps),
+            discovery_ready=bool(readiness.get("discovery_ready")),
         )
         if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
             status = meeting_assessment.run_status
@@ -619,6 +690,15 @@ def run_pipeline(
             run_context.resolution_state["finalization_blocked"] = {
                 "reason": "meeting_critical_public_gaps_open" if remaining_public_gaps else "meeting_not_ready",
                 "open_gaps": list(remaining_public_gaps),
+            }
+        elif status == DISCOVERY_READY_RUN_STATUS:
+            run_context.resolution_state["finalization_blocked"] = {
+                "reason": "internal_customer_data_required",
+                "open_gaps": [
+                    str(item.get("reason", "")).strip()
+                    for item in (readiness.get("readiness_blockers", []) or [])
+                    if isinstance(item, dict) and str(item.get("reason", "")).strip()
+                ],
             }
         run_context.status = status
         _sync_finalization_artifacts(
@@ -641,6 +721,19 @@ def run_pipeline(
         usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))
         usage_total = usage.get("total", {})
         usage_totals = memory_snapshot.get("usage_totals", {})
+        search_calls_used = int(usage_totals.get("search_calls", 0) or 0)
+        web_search_preview_call_cost = estimate_web_search_preview_call_cost_usd(
+            search_calls=search_calls_used,
+            model_name=get_search_model(),
+        )
+        if web_search_preview_call_cost > 0:
+            usage_total["web_search_preview_call_cost"] = web_search_preview_call_cost
+            usage_total["total_cost"] = round(float(usage_total.get("total_cost", 0.0) or 0.0) + web_search_preview_call_cost, 10)
+            usage_actual = usage.get("actual", {})
+            usage_actual["web_search_preview_call_cost"] = web_search_preview_call_cost
+            usage_actual["total_cost"] = usage_total["total_cost"]
+            usage["actual"] = usage_actual
+            usage["total"] = usage_total
         budget = {
             "total_pipeline_events": len(messages),
             "tool_calls_used": int(
@@ -652,7 +745,7 @@ def run_pipeline(
             "max_department_attempts": 3,
             "resume_entrypoint": resume_entrypoint,
             "llm_calls_used": int(usage_totals.get("llm_calls", 0) or 0),
-            "search_calls_used": int(usage_totals.get("search_calls", 0) or 0),
+            "search_calls_used": search_calls_used,
             "page_fetches_used": int(usage_totals.get("page_fetches", 0) or 0),
             "estimated_cost_usd": float(usage_total.get("total_cost", 0.0) or 0.0),
             "elapsed_seconds": elapsed_seconds,

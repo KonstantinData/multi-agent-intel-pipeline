@@ -1,0 +1,34 @@
+{
+  "department": "CompanyDepartment",
+  "required_fields": [
+    "company_name",
+    "description",
+    "product_asset_scope",
+    "financial_deep_dive.assessment",
+    "financial_deep_dive.key_financials",
+    "financial_deep_dive.inventory_positions"
+  ],
+  "source_priority": [
+    "primary",
+    "official_secondary",
+    "industry_secondary"
+  ],
+  "min_evidence_rules": {
+    "min_sources": 3,
+    "min_primary_sources": 1,
+    "min_completed_tasks": 3
+  },
+  "gate_rules": {
+    "require_any_accepted_task": true,
+    "missing_field_availability": "public",
+    "missing_field_owner": "Company Department",
+    "missing_field_next_step": "Run focused primary-source follow-up for missing company/financial fields."
+  },
+  "blocker_templates": {
+    "missing_required_field": "Required field '{field}' is missing or placeholder.",
+    "insufficient_sources": "Insufficient source coverage ({actual}/{required}).",
+    "insufficient_primary_sources": "Insufficient primary-source coverage ({actual}/{required}).",
+    "insufficient_completed_tasks": "Insufficient completed tasks ({actual}/{required}).",
+    "no_accepted_task": "No task reached accepted status."
+  }
+}

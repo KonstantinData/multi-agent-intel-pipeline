@@ -1,0 +1,28 @@
+{
+  "department": "ContactDepartment",
+  "required_fields": [
+    "target_company_summary",
+    "target_company_contacts",
+    "target_company_access_path"
+  ],
+  "source_priority": [
+    "official_people_pages",
+    "linkedin_public",
+    "trade_mentions"
+  ],
+  "min_evidence_rules": {
+    "min_sources": 1,
+    "min_completed_tasks": 2
+  },
+  "gate_rules": {
+    "require_any_accepted_task": false,
+    "missing_field_availability": "public",
+    "missing_field_owner": "Contact Department",
+    "missing_field_next_step": "Apply DE/EN role-based search patterns and verify at least one channel."
+  },
+  "blocker_templates": {
+    "missing_required_field": "Required contact field '{field}' is missing; if public search is exhausted, mark as 'keine freien Quellen'.",
+    "insufficient_sources": "Insufficient contact-source coverage ({actual}/{required}).",
+    "insufficient_completed_tasks": "Insufficient completed contact tasks ({actual}/{required})."
+  }
+}

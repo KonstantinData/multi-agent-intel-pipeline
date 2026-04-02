@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from src.orchestration.envelope import resolve_raw_package
 from src.utils import dedup_safe as _dedup_safe
 
 
@@ -78,6 +79,303 @@ TARGET_ROLE_SPECS = [
     },
 ]
 
+_PRIMARY_SOURCE_KEYWORDS = (
+    "annual report",
+    "geschaeftsbericht",
+    "geschäftsbericht",
+    "10-k",
+    "20-f",
+    "sec",
+    "bundesanzeiger",
+    "filing",
+    "handelsregister",
+    "companies house",
+    "investor relations",
+)
+
+_HARD_FINANCIAL_SIGNAL_KEYWORDS = (
+    "inventory",
+    "bestand",
+    "write-down",
+    "write down",
+    "abschreibung",
+    "dio",
+    "days inventory",
+    "net debt",
+    "working capital",
+    "ebit",
+    "net loss",
+    "lager",
+)
+
+_DECISION_ROLE_TOKENS = (
+    "cfo", "ceo", "coo", "vorstand", "geschaeftsfuehrer", "geschäftsführer",
+    "managing director", "head", "leiter", "director", "vp", "vice president",
+)
+
+_FUNCTION_RELEVANCE_TOKENS = (
+    "procurement", "purchasing", "einkauf", "supply chain", "logistics",
+    "operations", "plant", "werk", "finance", "controlling", "aftermarket",
+)
+
+
+def _flatten_sources(*sections: dict[str, Any]) -> list[dict[str, Any]]:
+    flat: list[dict[str, Any]] = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        for item in section.get("sources", []) or []:
+            if isinstance(item, dict):
+                flat.append(item)
+    return flat
+
+
+def _is_primary_source_record(source: dict[str, Any]) -> bool:
+    source_type = str(source.get("source_type", "") or "").strip().lower()
+    if source_type == "primary":
+        return True
+    text = " ".join(
+        str(source.get(key, "") or "").strip().lower()
+        for key in ("title", "url", "summary")
+    )
+    return any(token in text for token in _PRIMARY_SOURCE_KEYWORDS)
+
+
+def _source_family(source: dict[str, Any]) -> str:
+    text = " ".join(
+        str(source.get(key, "") or "").strip().lower()
+        for key in ("title", "url", "summary")
+    )
+    if any(token in text for token in ("annual report", "geschaeftsbericht", "geschäftsbericht", "10-k", "20-f")):
+        return "annual_docs"
+    if any(token in text for token in ("sec", "bundesanzeiger", "filing", "ad-hoc")):
+        return "filings"
+    if any(token in text for token in ("handelsregister", "companies house", "registry")):
+        return "registries"
+    return "other_primary"
+
+
+def _collect_hard_financial_inventory_signals(company_profile: dict[str, Any]) -> list[str]:
+    financial = (company_profile or {}).get("financial_deep_dive", {}) or {}
+    buckets = [
+        *list(financial.get("key_financials", []) or []),
+        *list(financial.get("inventory_positions", []) or []),
+        *list(financial.get("inventory_risks", []) or []),
+        *list(financial.get("balance_sheet_signals", []) or []),
+    ]
+    signals: list[str] = []
+    seen: set[str] = set()
+    for item in _confident_signals([str(entry) for entry in buckets]):
+        low = item.lower()
+        if not any(token in low for token in _HARD_FINANCIAL_SIGNAL_KEYWORDS):
+            continue
+        key = item.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        signals.append(item.strip())
+    return signals
+
+
+def build_primary_source_stage(
+    *,
+    company_profile: dict[str, Any],
+    industry_analysis: dict[str, Any],
+    market_network: dict[str, Any],
+) -> dict[str, Any]:
+    """Dedicated stage before synthesis: validate primary-source grounding."""
+    financial = (company_profile or {}).get("financial_deep_dive", {}) or {}
+    event_intel = (company_profile or {}).get("transaction_event_intelligence", {}) or {}
+    all_sources = _flatten_sources(
+        company_profile,
+        financial,
+        event_intel,
+        industry_analysis,
+        market_network,
+    )
+    primary_sources = [src for src in all_sources if _is_primary_source_record(src)]
+    families = sorted({_source_family(src) for src in primary_sources})
+    hard_signals = _collect_hard_financial_inventory_signals(company_profile)
+    return {
+        "stage": "primary_source_validation",
+        "required_source_families": ["annual_docs", "filings", "registries"],
+        "source_families_covered": families,
+        "public_primary_sources_available": bool(primary_sources),
+        "coverage_quality": (
+            "strong"
+            if len(families) >= 2 and len(primary_sources) >= 2
+            else "partial"
+            if primary_sources
+            else "weak"
+        ),
+        "primary_sources_used": primary_sources[:10],
+        "hard_financial_inventory_signals": hard_signals,
+        "hard_financial_inventory_signal_count": len(hard_signals),
+    }
+
+
+def _contact_confidence_score(contact: dict[str, Any]) -> int:
+    role = f"{contact.get('rolle_titel', '')} {contact.get('funktion', '')}".strip().lower()
+    source = _non_placeholder(contact.get("quelle"))
+    confidence = str(contact.get("confidence", "") or "").strip().lower()
+    seniority = str(contact.get("senioritaet", "") or "").strip().lower()
+    score = 0
+    if any(token in role for token in _DECISION_ROLE_TOKENS):
+        score += 35
+    if source:
+        score += 25
+    if confidence in {"high", "verified"}:
+        score += 20
+    elif confidence in {"medium", "inferred"}:
+        score += 10
+    if any(token in seniority for token in ("c-level", "executive", "director", "head", "leiter", "senior")):
+        score += 10
+    if any(token in role for token in _FUNCTION_RELEVANCE_TOKENS):
+        score += 10
+    return min(score, 100)
+
+
+def build_contact_enrichment_stage(
+    *,
+    company_profile: dict[str, Any],
+    contact_intelligence: dict[str, Any],
+) -> dict[str, Any]:
+    """Role-based contact enrichment with DE/EN patterns and confidence scoring."""
+    target_contacts = (
+        contact_intelligence.get("target_company_prioritized_contacts")
+        or contact_intelligence.get("target_company_contacts")
+        or []
+    )
+    role_text = " ".join(
+        f"{item.get('rolle_titel', '')} {item.get('funktion', '')}"
+        for item in target_contacts
+        if isinstance(item, dict)
+    ).lower()
+
+    role_patterns: list[dict[str, Any]] = []
+    for spec in TARGET_ROLE_SPECS:
+        role_name = str(spec.get("role_name", "") or "")
+        tokens = [str(token) for token in spec.get("tokens", []) if str(token).strip()]
+        role_patterns.append(
+            {
+                "role_name": role_name,
+                "patterns_de": [
+                    f"{_non_placeholder(company_profile.get('company_name'))} {token} kontakt"
+                    for token in tokens[:2]
+                ],
+                "patterns_en": [
+                    f"{_non_placeholder(company_profile.get('company_name'))} {token} contact"
+                    for token in tokens[:2]
+                ],
+            }
+        )
+
+    enriched_contacts: list[dict[str, Any]] = []
+    verified_decision_makers: list[dict[str, Any]] = []
+    for item in target_contacts:
+        if not isinstance(item, dict):
+            continue
+        score = _contact_confidence_score(item)
+        enriched = {
+            **item,
+            "confidence_score": score,
+            "decision_role_match": any(
+                token in f"{item.get('rolle_titel', '')} {item.get('funktion', '')}".lower()
+                for token in _DECISION_ROLE_TOKENS
+            ),
+        }
+        if not _non_placeholder(item.get("quelle")):
+            enriched["source_availability_note"] = "keine freien Quellen"
+        enriched_contacts.append(enriched)
+        if enriched["decision_role_match"] and score >= 60:
+            verified_decision_makers.append(enriched)
+
+    missing_role_specs = [
+        spec for spec in TARGET_ROLE_SPECS
+        if not any(token in role_text for token in spec.get("tokens", ()))
+    ]
+    public_search_exhausted = bool(role_patterns) and not verified_decision_makers
+    return {
+        "stage": "contact_enrichment",
+        "role_search_patterns": role_patterns,
+        "target_contacts_enriched": enriched_contacts[:12],
+        "verified_decision_makers": verified_decision_makers[:5],
+        "verified_decision_makers_count": len(verified_decision_makers),
+        "missing_critical_roles": [
+            {
+                "role_name": spec.get("role_name", "n/v"),
+                "why_critical": spec.get("why_critical", "n/v"),
+            }
+            for spec in missing_role_specs[:6]
+        ],
+        "public_search_exhausted": public_search_exhausted,
+    }
+
+
+def _department_policy_gate_overview(
+    department_packages: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(department_packages, dict):
+        return {}
+    overview: dict[str, Any] = {}
+    for department in (
+        "CompanyDepartment",
+        "MarketDepartment",
+        "BuyerDepartment",
+        "ContactDepartment",
+    ):
+        raw = resolve_raw_package(department_packages.get(department, {}))
+        policy_gate = raw.get("policy_gate", {}) if isinstance(raw, dict) else {}
+        if not isinstance(policy_gate, dict):
+            continue
+        blockers = [
+            item
+            for item in policy_gate.get("blockers", [])
+            if isinstance(item, dict)
+        ]
+        overview[department] = {
+            "passed": bool(policy_gate.get("passed", True)),
+            "blocker_count": len(blockers),
+            "missing_required_fields": list(policy_gate.get("missing_required_fields", [])),
+        }
+    return overview
+
+
+def _department_policy_gate_blockers(
+    department_packages: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(department_packages, dict):
+        return []
+    blockers: list[dict[str, Any]] = []
+    for department in (
+        "CompanyDepartment",
+        "MarketDepartment",
+        "BuyerDepartment",
+        "ContactDepartment",
+    ):
+        raw = resolve_raw_package(department_packages.get(department, {}))
+        policy_gate = raw.get("policy_gate", {}) if isinstance(raw, dict) else {}
+        if not isinstance(policy_gate, dict):
+            continue
+        if bool(policy_gate.get("passed", True)):
+            continue
+        for item in policy_gate.get("blockers", []):
+            if not isinstance(item, dict):
+                continue
+            blockers.append(
+                {
+                    "blocker_id": str(item.get("blocker_id", f"{department}_policy_gate")).strip() or f"{department}_policy_gate",
+                    "field_key": str(item.get("field_key", "department_policy_gate")).strip() or "department_policy_gate",
+                    "availability": str(item.get("availability", "public")).strip() or "public",
+                    "severity": str(item.get("severity", "hard")).strip() or "hard",
+                    "reason": str(item.get("reason", f"{department} policy gate failed.")).strip() or f"{department} policy gate failed.",
+                    "owner": str(item.get("owner", department)).strip() or department,
+                    "next_step": str(item.get("next_step", "Close mandatory department fields and rerun gate.")).strip()
+                    or "Close mandatory department fields and rerun gate.",
+                }
+            )
+    return blockers
+
 
 def _positive_signals(items: list[str]) -> list[str]:
     positives: list[str] = []
@@ -105,6 +403,62 @@ def _confident_signals(items: list[str]) -> list[str]:
 def _non_placeholder(value: Any) -> str:
     text = str(value or "").strip()
     return "" if text.lower() in {"", "n/v", "n/a", "unknown"} else text
+
+
+def _step_to_text(value: Any) -> str:
+    """Normalize synthesis step payloads to a concise string.
+
+    Agents may emit structured step objects (dicts) while the runtime contract
+    for ``synthesis.next_steps`` expects ``list[str]``. This helper preserves
+    key action semantics and prevents schema failures.
+    """
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        action = _non_placeholder(
+            value.get("action")
+            or value.get("step")
+            or value.get("title")
+            or value.get("summary")
+            or value.get("question")
+            or value.get("label")
+        )
+        detail = _non_placeholder(
+            value.get("goal")
+            or value.get("expected_output")
+            or value.get("output")
+            or value.get("reason")
+        )
+        if action and detail:
+            return f"{action} - {detail}"
+        if action:
+            return action
+        scalar_parts: list[str] = []
+        for item in value.values():
+            if isinstance(item, (str, int, float, bool)):
+                text = _non_placeholder(item)
+                if text:
+                    scalar_parts.append(text)
+        return " | ".join(scalar_parts[:2])
+    if isinstance(value, (list, tuple)):
+        parts = [_step_to_text(item) for item in value]
+        return " | ".join(part for part in parts if part)
+    return str(value or "").strip()
+
+
+def _normalize_text_items(values: Any) -> list[str]:
+    if isinstance(values, list):
+        raw = values
+    elif values is None:
+        raw = []
+    else:
+        raw = [values]
+    normalized = [_step_to_text(item) for item in raw]
+    return [
+        str(item).strip()
+        for item in _dedup_safe(normalized)
+        if str(item).strip()
+    ]
 
 
 def _sentence_has_pressure_signal(text: str) -> bool:
@@ -311,7 +665,7 @@ def _render_profile_channel(source: str, verification_status: str) -> str:
         return "Assistant / switchboard route only until direct channel is verified."
     if source:
         return f"{_channel_label(source)}: {source}"
-    return "Top-down introduction via company switchboard or network."
+    return "No direct public channel (keine freien Quellen); use switchboard/network intro path."
 
 
 def _contact_priority_score(contact: dict[str, Any]) -> int:
@@ -496,7 +850,7 @@ def build_contact_briefing_assets(
             "source_verification": (
                 f"{'Verified' if str(contact.get('confidence', '')).lower() == 'high' else 'Partially verified'} via {source}"
                 if source else
-                "Role inferred from public company evidence."
+                "No public sources for direct channel (keine freien Quellen); role inferred from public evidence."
             ),
             "verified_channel_type": channel_type,
             "verification_status": verification_status,
@@ -935,6 +1289,8 @@ def build_synthesis_context(
     contact_intelligence: dict[str, Any],
     quality_review: dict[str, Any],
     memory_snapshot: dict[str, Any],
+    primary_source_stage: dict[str, Any] | None = None,
+    contact_enrichment_stage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Prepare a synthesis context payload from department outputs.
 
@@ -950,6 +1306,15 @@ def build_synthesis_context(
         market_network,
         company_profile,
         contact_intelligence,
+    )
+    primary_stage = primary_source_stage or build_primary_source_stage(
+        company_profile=company_profile,
+        industry_analysis=industry_analysis,
+        market_network=market_network,
+    )
+    contact_stage = contact_enrichment_stage or build_contact_enrichment_stage(
+        company_profile=company_profile,
+        contact_intelligence=contact_intelligence,
     )
     if quality_review.get("evidence_health") == "low":
         service_relevance = [
@@ -1027,7 +1392,7 @@ def build_synthesis_context(
     # LEGACY (RA-10): next_steps exists for backward compatibility with PDF/UI
     # fallback rendering. The authoritative action model is meeting_actions
     # produced by FinalBriefingComposer. Do not add new consumers of next_steps.
-    research_backlog = _dedup_safe(memory_snapshot.get("next_actions", [])) or [
+    research_backlog = _normalize_text_items(memory_snapshot.get("next_actions", [])) or [
         "Validate buyer paths and inventory pressure directly with the prospect."
     ]
 
@@ -1087,6 +1452,8 @@ def build_synthesis_context(
         "sources": memory_snapshot.get("sources", []),
         # Confidence derived from input package quality (orthogonal to generation_mode)
         "confidence": quality_review.get("evidence_health", "low"),
+        "primary_source_stage": primary_stage,
+        "contact_enrichment_stage": contact_stage,
     }
 
 
@@ -1126,9 +1493,130 @@ def harmonize_synthesis_output(
                 "financial pressure signals are strong enough to support an inventory-to-cash conversation."
             )
 
+    merged["key_risks"] = _normalize_text_items(merged.get("key_risks", []))
+    merged["next_steps"] = _normalize_text_items(merged.get("next_steps", []))
+    merged["research_backlog"] = _normalize_text_items(
+        merged.get("research_backlog", merged.get("next_steps", []))
+    )
+
     if top_path == "excess_inventory" and quality_review.get("evidence_health") in {"medium", "high"}:
         merged["confidence"] = quality_review.get("evidence_health", merged.get("confidence", "medium"))
     return merged
+
+
+def _build_data_request_sheet(
+    *,
+    company_name: str,
+    blockers: list[dict[str, Any]],
+) -> dict[str, Any]:
+    internal_hard = [
+        item for item in blockers
+        if str(item.get("availability", "")) == "internal_customer"
+        and str(item.get("severity", "")) == "hard"
+    ]
+    required_fields: list[dict[str, Any]] = []
+    if any(item.get("field_key") == "minimum_package.hard_financial_inventory_signals" for item in internal_hard):
+        required_fields.extend(
+            [
+                {
+                    "field_key": "inventory_aging_by_site_sku",
+                    "label": "Lageralterung je Standort/SKU",
+                    "why_needed": "Belegt, ob ein materialer Excess-Inventory-Fall vorliegt.",
+                    "owner": "Customer Controlling / Finance",
+                    "nda_required": True,
+                    "availability": "internal_customer",
+                },
+                {
+                    "field_key": "dio_by_division",
+                    "label": "DIO (Days Inventory Outstanding) je Division",
+                    "why_needed": "Ermoeglicht Working-Capital-basierte Priorisierung.",
+                    "owner": "Customer Finance",
+                    "nda_required": True,
+                    "availability": "internal_customer",
+                },
+                {
+                    "field_key": "write_down_history",
+                    "label": "Write-downs / Abschreibungen der letzten 8 Quartale",
+                    "why_needed": "Zeigt Dringlichkeit und wirtschaftlichen Druck auf den Bestand.",
+                    "owner": "Customer Finance",
+                    "nda_required": True,
+                    "availability": "internal_customer",
+                },
+            ]
+        )
+    if any(item.get("field_key") == "minimum_package.verified_decision_makers" for item in internal_hard):
+        required_fields.append(
+            {
+                "field_key": "target_stakeholder_map",
+                "label": "Ansprechpartnerliste mit Rolle, Verantwortungsbereich, Intro-Pfad",
+                "why_needed": "Ohne verifizierten Entscheider bleibt das Briefing nur Discovery-ready.",
+                "owner": "Customer Sponsor / Sales Owner",
+                "nda_required": False,
+                "availability": "internal_customer",
+            }
+        )
+
+    return {
+        "status": "required" if required_fields else "not_required",
+        "company_name": company_name or "n/v",
+        "scope": "Disambiguate internal-only evidence gaps that cannot be validated from public sources.",
+        "request_fields": required_fields,
+        "submission_format": [
+            "CSV/Excel export for inventory and finance fields",
+            "Named stakeholder list (Name, Role, Function, Intro path)",
+        ],
+        "owner": "Liquisto Account Lead",
+    }
+
+
+def _build_outreach_playbook(
+    *,
+    company_name: str,
+    contact_enrichment_stage: dict[str, Any],
+) -> dict[str, Any]:
+    verified = contact_enrichment_stage.get("verified_decision_makers", []) or []
+    role_gaps = contact_enrichment_stage.get("missing_critical_roles", []) or []
+    primary_contact = verified[0] if verified else {}
+    if verified:
+        contact_label = _non_placeholder(primary_contact.get("name")) or _non_placeholder(primary_contact.get("rolle_titel")) or "n/v"
+        status = "ready"
+        steps = [
+            {
+                "step": 1,
+                "action": f"Open with {contact_label} on inventory-to-cash hypothesis and validate decision ownership.",
+                "owner": "Liquisto Account Lead",
+                "depends_on": "Publicly verifiable contact confirmed",
+            },
+            {
+                "step": 2,
+                "action": "Secure handoff to operational owner (procurement/supply chain/plant) within first meeting.",
+                "owner": "Liquisto Account Lead",
+                "depends_on": "Initial sponsor response",
+            },
+        ]
+    else:
+        missing_role = _non_placeholder((role_gaps[:1] or [{}])[0].get("role_name")) or "operational inventory owner"
+        status = "blocked_by_contact_gap"
+        steps = [
+            {
+                "step": 1,
+                "action": f"No public decision-maker could be verified (keine freien Quellen). Request customer intro to {missing_role}.",
+                "owner": "Customer Sponsor",
+                "depends_on": "Customer-side stakeholder mapping",
+            },
+            {
+                "step": 2,
+                "action": "Use role-based DE/EN search patterns to validate title and channel before outbound.",
+                "owner": "Contact Department",
+                "depends_on": "Stakeholder hint received",
+            },
+        ]
+    return {
+        "status": status,
+        "company_name": company_name or "n/v",
+        "entry_contact": primary_contact,
+        "steps": steps,
+    }
 
 
 def assess_research_readiness(
@@ -1139,7 +1627,19 @@ def assess_research_readiness(
     contact_intelligence: dict[str, Any],
     quality_review: dict[str, Any],
     synthesis: dict[str, Any] | None = None,
+    primary_source_stage: dict[str, Any] | None = None,
+    contact_enrichment_stage: dict[str, Any] | None = None,
+    department_packages: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    primary_stage = primary_source_stage or build_primary_source_stage(
+        company_profile=company_profile,
+        industry_analysis=industry_analysis,
+        market_network=market_network,
+    )
+    contact_stage = contact_enrichment_stage or build_contact_enrichment_stage(
+        company_profile=company_profile,
+        contact_intelligence=contact_intelligence,
+    )
     score = 0
     reasons: list[str] = []
     financial_substance = _has_financial_substance(company_profile)
@@ -1226,6 +1726,79 @@ def assess_research_readiness(
     if not has_min_target_coverage:
         score = max(0, score - 10)
         reasons.append("Target-company stakeholder coverage is too thin for meeting readiness.")
+
+    hard_signal_count = int(primary_stage.get("hard_financial_inventory_signal_count", 0) or 0)
+    verified_decision_makers = int(contact_stage.get("verified_decision_makers_count", 0) or 0)
+    minimum_package = {
+        "required_verified_decision_makers": 1,
+        "verified_decision_makers": verified_decision_makers,
+        "required_hard_financial_inventory_signals": 2,
+        "hard_financial_inventory_signals": hard_signal_count,
+        "met": verified_decision_makers >= 1 and hard_signal_count >= 2,
+    }
+
+    readiness_blockers: list[dict[str, Any]] = []
+    if verified_decision_makers < 1:
+        availability = (
+            "internal_customer"
+            if contact_stage.get("public_search_exhausted")
+            else "public"
+        )
+        reason = (
+            "No publicly verifiable decision-maker was found (keine freien Quellen)."
+            if availability == "internal_customer"
+            else "No verified decision-maker is currently available from public evidence."
+        )
+        readiness_blockers.append(
+            {
+                "blocker_id": "missing_verified_decision_maker",
+                "field_key": "minimum_package.verified_decision_makers",
+                "availability": availability,
+                "severity": "hard",
+                "reason": reason,
+                "owner": "Customer Sponsor" if availability == "internal_customer" else "Contact Department",
+                "next_step": (
+                    "Provide named intro path and role owner from customer-side stakeholder map."
+                    if availability == "internal_customer"
+                    else "Run additional role-based public contact research."
+                ),
+            }
+        )
+    if hard_signal_count < 2:
+        availability = (
+            "internal_customer"
+            if primary_stage.get("public_primary_sources_available")
+            else "public"
+        )
+        reason = (
+            "Public primary sources are available but do not contain enough hard financial/inventory signals."
+            if availability == "internal_customer"
+            else "Primary sources (register/filings/annual docs) are missing from the evidence base."
+        )
+        readiness_blockers.append(
+            {
+                "blocker_id": "missing_hard_financial_inventory_signals",
+                "field_key": "minimum_package.hard_financial_inventory_signals",
+                "availability": availability,
+                "severity": "hard",
+                "reason": reason,
+                "owner": "Customer Finance" if availability == "internal_customer" else "Company Department",
+                "next_step": (
+                    "Request NDA data package (inventory aging, DIO, write-downs)."
+                    if availability == "internal_customer"
+                    else "Collect annual docs/filings/registry sources before synthesis finalization."
+                ),
+            }
+        )
+    if readiness_blockers and not minimum_package["met"]:
+        reasons.append("Minimum package for execution readiness is not met.")
+
+    department_gate_overview = _department_policy_gate_overview(department_packages)
+    department_gate_blockers = _department_policy_gate_blockers(department_packages)
+    if department_gate_blockers:
+        readiness_blockers.extend(department_gate_blockers)
+        reasons.append("At least one department acceptance gate reports unresolved mandatory items.")
+
     component_scores = {
         "synthesis_completeness": 20 if synthesis_ready else 0,
         "contact_quality": 15 if has_min_target_coverage and contact_coverage in {"high", "medium"} else 5 if has_min_target_coverage else 0,
@@ -1238,9 +1811,56 @@ def assess_research_readiness(
         and synthesis_ready
         and (top_path not in financially_grounded_paths or financial_substance)
         and has_min_target_coverage
+        and minimum_package["met"]
+        and not any(
+            item.get("severity") == "hard" and item.get("availability") == "public"
+            for item in readiness_blockers
+        )
+        and not any(
+            item.get("severity") == "hard" and item.get("availability") == "internal_customer"
+            for item in readiness_blockers
+        )
     )
     partial = not usable and core_score >= 30 and quality_review.get("evidence_health") in {"high", "medium", "low"}
-    result = {"usable": usable, "score": score, "reasons": reasons, "component_scores": component_scores}
+    public_hard_blockers = [
+        item for item in readiness_blockers
+        if item.get("severity") == "hard" and item.get("availability") == "public"
+    ]
+    internal_hard_blockers = [
+        item for item in readiness_blockers
+        if item.get("severity") == "hard" and item.get("availability") == "internal_customer"
+    ]
+    discovery_ready = (
+        not usable
+        and bool(internal_hard_blockers)
+        and not public_hard_blockers
+        and core_score >= 30
+        and synthesis_ready
+    )
+
+    data_request_sheet = _build_data_request_sheet(
+        company_name=_non_placeholder(company_profile.get("company_name")) or "n/v",
+        blockers=readiness_blockers,
+    )
+    outreach_playbook = _build_outreach_playbook(
+        company_name=_non_placeholder(company_profile.get("company_name")) or "n/v",
+        contact_enrichment_stage=contact_stage,
+    )
+
+    result = {
+        "usable": usable,
+        "discovery_ready": discovery_ready,
+        "score": score,
+        "reasons": reasons,
+        "component_scores": component_scores,
+        "minimum_package": minimum_package,
+        "readiness_blockers": readiness_blockers,
+        "department_gate_overview": department_gate_overview,
+        "primary_source_stage": primary_stage,
+        "contact_enrichment_stage": contact_stage,
+        "data_request_sheet": data_request_sheet,
+        "outreach_playbook": outreach_playbook,
+    }
     if partial:
         result["partial"] = True
     return result

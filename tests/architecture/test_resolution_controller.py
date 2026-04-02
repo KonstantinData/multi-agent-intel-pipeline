@@ -104,6 +104,18 @@ def test_finalization_blocked_when_public_gaps_remain_after_closure():
     assert status_not_ready == BLOCKED_RUN_STATUS
 
 
+def test_finalization_can_return_discovery_ready_when_only_internal_gaps_remain():
+    from src.app.use_cases import DISCOVERY_READY_RUN_STATUS, determine_final_status
+
+    status = determine_final_status(
+        readiness_usable=False,
+        first_round_resolution={"bucket": "NOT_MEETING_CRITICAL"},
+        remaining_public_gaps=[],
+        discovery_ready=True,
+    )
+    assert status == DISCOVERY_READY_RUN_STATUS
+
+
 def test_meeting_readiness_gate_blocks_on_low_evidence():
     """RA-06: Gate blocks when evidence quality is low AND coverage is thin."""
     from src.orchestration.meeting_readiness import MeetingReadinessGate

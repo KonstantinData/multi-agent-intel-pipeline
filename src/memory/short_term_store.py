@@ -38,6 +38,21 @@ from src.models.meeting_ready import (
 from src.utils import dedup_safe as _dedup_safe
 
 
+def _stable_item_key(value: Any) -> str:
+    """Return a deterministic key for list-delta comparisons.
+
+    Runtime payloads occasionally contain dict/list entries in fields that are
+    primarily string lists. Using a stable JSON key prevents ``TypeError:
+    unhashable type: 'dict'`` during working-set delta extraction.
+    """
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, sort_keys=True, ensure_ascii=False)
+        except TypeError:
+            return str(value)
+    return str(value)
+
+
 @dataclass
 class ShortTermMemoryStore:
     facts: list[str] = field(default_factory=list)
@@ -225,22 +240,22 @@ class ShortTermMemoryStore:
         """
         delta = ShortTermMemoryStore()
         # Lists: only items not in baseline
-        baseline_facts = set(baseline.facts)
-        delta.facts = [f for f in self.facts if f not in baseline_facts]
+        baseline_fact_keys = {_stable_item_key(item) for item in baseline.facts}
+        delta.facts = [item for item in self.facts if _stable_item_key(item) not in baseline_fact_keys]
         baseline_source_urls = {s.get("url", "") for s in baseline.sources if isinstance(s, dict)}
         delta.sources = [s for s in self.sources if isinstance(s, dict) and s.get("url", "") not in baseline_source_urls]
-        baseline_signals = set(baseline.market_signals)
-        delta.market_signals = [s for s in self.market_signals if s not in baseline_signals]
-        baseline_hypotheses = set(baseline.buyer_hypotheses)
-        delta.buyer_hypotheses = [h for h in self.buyer_hypotheses if h not in baseline_hypotheses]
-        baseline_questions = set(baseline.open_questions)
-        delta.open_questions = [q for q in self.open_questions if q not in baseline_questions]
+        baseline_signal_keys = {_stable_item_key(item) for item in baseline.market_signals}
+        delta.market_signals = [item for item in self.market_signals if _stable_item_key(item) not in baseline_signal_keys]
+        baseline_hypothesis_keys = {_stable_item_key(item) for item in baseline.buyer_hypotheses}
+        delta.buyer_hypotheses = [item for item in self.buyer_hypotheses if _stable_item_key(item) not in baseline_hypothesis_keys]
+        baseline_question_keys = {_stable_item_key(item) for item in baseline.open_questions}
+        delta.open_questions = [item for item in self.open_questions if _stable_item_key(item) not in baseline_question_keys]
         baseline_gap_ids = {g.gap_id for g in baseline.gap_candidates}
         delta.gap_candidates = [g for g in self.gap_candidates if g.gap_id not in baseline_gap_ids]
         baseline_packet_ids = {p.packet_id for p in baseline.evidence_packets}
         delta.evidence_packets = [p for p in self.evidence_packets if p.packet_id not in baseline_packet_ids]
-        baseline_actions = set(baseline.next_actions)
-        delta.next_actions = [a for a in self.next_actions if a not in baseline_actions]
+        baseline_action_keys = {_stable_item_key(item) for item in baseline.next_actions}
+        delta.next_actions = [item for item in self.next_actions if _stable_item_key(item) not in baseline_action_keys]
         delta.rejected_claims = list(self.rejected_claims)  # typically empty at parallel start
         delta.worker_reports = list(self.worker_reports)[len(baseline.worker_reports):]
         # Dicts: only new keys

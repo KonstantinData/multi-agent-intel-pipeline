@@ -1,10 +1,15 @@
 """Search helpers — powered by OpenAI web_search_preview."""
 from __future__ import annotations
 
-_SEARCH_MODEL = "gpt-4.1-mini"
+from src.config.settings import (
+    get_openai_api_key,
+    get_openai_max_retries,
+    get_openai_timeout_seconds,
+    get_search_model,
+)
 
 
-def perform_search(query: str, *, max_results: int = 5, timeout: int = 8) -> list[dict[str, str]]:
+def perform_search(query: str, *, max_results: int = 5, timeout: int = 20) -> list[dict[str, str]]:
     """Run a web search via OpenAI Responses API (web_search_preview tool).
 
     Returns a list of {title, url, source_type, summary} dicts.
@@ -16,15 +21,19 @@ def perform_search(query: str, *, max_results: int = 5, timeout: int = 8) -> lis
         return []
     try:
         from openai import OpenAI
-        from src.config.settings import get_openai_api_key
 
         api_key = get_openai_api_key()
         if not api_key:
             return []
 
-        client = OpenAI(api_key=api_key)
+        resolved_timeout = float(timeout) if timeout and timeout > 0 else get_openai_timeout_seconds()
+        client = OpenAI(
+            api_key=api_key,
+            timeout=resolved_timeout,
+            max_retries=get_openai_max_retries(),
+        )
         response = client.responses.create(
-            model=_SEARCH_MODEL,
+            model=get_search_model(),
             tools=[{"type": "web_search_preview"}],
             input=query,
         )
@@ -63,9 +72,16 @@ def perform_search(query: str, *, max_results: int = 5, timeout: int = 8) -> lis
 
 def build_company_queries(company_name: str, web_domain: str) -> list[str]:
     return [
-        f"site:{web_domain} {company_name} products",
-        f"site:{web_domain} {company_name} about",
+        f"\"{company_name}\" revenue",
+        f"\"{company_name}\" employees",
+        f"\"{company_name}\" umsatz mitarbeiter",
         f"\"{company_name}\" company profile",
+        f"site:{web_domain} {company_name} about",
+        f"site:{web_domain} {company_name} products",
+        f"site:{web_domain} {company_name} pressemitteilung umsatz",
+        f"site:{web_domain} {company_name} press release revenue",
+        f"site:bundesanzeiger.de \"{company_name}\" Jahresabschluss",
+        f"site:unternehmensregister.de \"{company_name}\" Jahresabschluss",
     ]
 
 
@@ -97,4 +113,3 @@ def build_buyer_queries(company_name: str, product_keywords: list[str], industry
         if not industry_hint or industry_hint == "n/v":
             queries.append(f"\"{company_name}\" distributors buyers aftermarket")
     return queries
-

@@ -9,8 +9,10 @@ from __future__ import annotations
 from typing import Any
 
 from src.models.meeting_ready import (
+    MinimumPackageStatus,
     MeetingAction,
     MeetingReadinessAssessment,
+    ReadinessBlocker,
 )
 
 
@@ -30,8 +32,12 @@ class MeetingReadinessGate:
         resolution_state: dict[str, Any],
         evidence_health: str,
         readiness_usable: bool,
+        discovery_ready: bool = False,
+        minimum_package: dict[str, Any] | None = None,
+        blockers: list[dict[str, Any]] | None = None,
     ) -> MeetingReadinessAssessment:
         blocked_reasons: list[str] = []
+        structured_blockers: list[ReadinessBlocker] = []
 
         # Check for unresolved meeting-critical public gaps
         remaining_gaps = (
@@ -43,11 +49,34 @@ class MeetingReadinessGate:
             blocked_reasons.append(
                 f"{len(remaining_gaps)} meeting-critical public gap(s) remain after closure."
             )
+            for idx, gap in enumerate(remaining_gaps[:8], start=1):
+                structured_blockers.append(
+                    ReadinessBlocker(
+                        blocker_id=f"public_gap_{idx}",
+                        field_key="public_evidence_gap",
+                        availability="public",
+                        severity="hard",
+                        reason=str(gap),
+                        owner="Research Department",
+                        next_step="Public primary sources re-check and targeted follow-up research.",
+                    )
+                )
 
         # Check for pending user selections
         dashboard = resolution_state.get("dashboard_state", {})
         if dashboard.get("pending_user_selection"):
             blocked_reasons.append("Required user depth selections are pending.")
+            structured_blockers.append(
+                ReadinessBlocker(
+                    blocker_id="user_selection_pending",
+                    field_key="user_selection",
+                    availability="public",
+                    severity="hard",
+                    reason="User depth selection is still pending.",
+                    owner="User",
+                    next_step="Select unanswered questions to continue finalization.",
+                )
+            )
 
         # Unresolved critical answer-matrix entries
         # Only "pending" and "blocked" are blockers; "partially_answered" means
@@ -63,6 +92,18 @@ class MeetingReadinessGate:
             blocked_reasons.append(
                 f"{len(hard_blocked)} core question(s) still pending/blocked: {', '.join(hard_blocked)}."
             )
+            for qid in hard_blocked[:8]:
+                structured_blockers.append(
+                    ReadinessBlocker(
+                        blocker_id=f"matrix_{qid}",
+                        field_key=qid,
+                        availability="public",
+                        severity="hard",
+                        reason="Core question unresolved in answer matrix.",
+                        owner="Responsible Department Lead",
+                        next_step="Complete at least one evidence-backed answer for this question.",
+                    )
+                )
 
         # Readiness score and evidence health are informational but only block
         # when no other evidence compensates. If answer_matrix shows enough
@@ -73,16 +114,97 @@ class MeetingReadinessGate:
         )
         if not readiness_usable and answered_or_partial < 4:
             blocked_reasons.append("Research readiness score is below the usable threshold.")
+            structured_blockers.append(
+                ReadinessBlocker(
+                    blocker_id="readiness_score_low",
+                    field_key="research_readiness.score",
+                    availability="public",
+                    severity="hard",
+                    reason="Research readiness score below usable threshold.",
+                    owner="Supervisor",
+                    next_step="Strengthen coverage on core evidence questions.",
+                )
+            )
         if evidence_health == "low" and answered_or_partial < 4:
             blocked_reasons.append("Evidence quality is too low for a confident meeting brief.")
+            structured_blockers.append(
+                ReadinessBlocker(
+                    blocker_id="evidence_health_low",
+                    field_key="quality_review.evidence_health",
+                    availability="public",
+                    severity="hard",
+                    reason="Evidence quality is too low.",
+                    owner="Research Department",
+                    next_step="Replace weak sources with primary/authoritative sources.",
+                )
+            )
 
-        meeting_ready = len(blocked_reasons) == 0
+        for raw in blockers or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                parsed = ReadinessBlocker.model_validate(raw)
+                structured_blockers.append(parsed)
+                if parsed.availability == "internal_customer" and parsed.severity == "hard":
+                    reason_text = str(parsed.reason).strip()
+                    if reason_text and reason_text not in blocked_reasons:
+                        blocked_reasons.append(reason_text)
+            except Exception:
+                continue
+
+        minimum_package_payload = dict(minimum_package or {})
+        if not minimum_package_payload:
+            minimum_package_payload = {
+                "required_verified_decision_makers": 0,
+                "verified_decision_makers": 0,
+                "required_hard_financial_inventory_signals": 0,
+                "hard_financial_inventory_signals": 0,
+                "met": True,
+            }
+        minimum_package_model = MinimumPackageStatus.model_validate(minimum_package_payload)
+        has_public_hard_blockers = any(
+            item.severity == "hard" and item.availability == "public"
+            for item in structured_blockers
+        )
+        has_internal_hard_blockers = any(
+            item.severity == "hard" and item.availability == "internal_customer"
+            for item in structured_blockers
+        )
+
+        meeting_ready = (
+            readiness_usable
+            and minimum_package_model.met
+            and not has_public_hard_blockers
+            and not has_internal_hard_blockers
+        )
+        discovery_ready_final = (
+            not meeting_ready
+            and discovery_ready
+            and not has_public_hard_blockers
+            and has_internal_hard_blockers
+        )
+
+        run_status: str
+        if meeting_ready:
+            run_status = "meeting_ready"
+        elif discovery_ready_final:
+            run_status = "discovery_ready_not_execution_ready"
+        else:
+            run_status = "blocked_not_meeting_ready"
         return MeetingReadinessAssessment(
-            run_status="meeting_ready" if meeting_ready else "blocked_not_meeting_ready",
+            run_status=run_status,
             meeting_ready=meeting_ready,
+            discovery_ready=discovery_ready_final,
             blocked_reasons=blocked_reasons,
-            confidence="high" if meeting_ready and evidence_health == "high" else
-                       "medium" if meeting_ready else "low",
+            blockers=structured_blockers,
+            minimum_package=minimum_package_model,
+            confidence=(
+                "high"
+                if meeting_ready and evidence_health == "high"
+                else "medium"
+                if meeting_ready or discovery_ready_final
+                else "low"
+            ),
         )
 
 

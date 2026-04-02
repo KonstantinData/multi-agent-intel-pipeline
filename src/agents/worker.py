@@ -9,7 +9,6 @@ runtime artifacts consumed by the resolution controller and answer matrix.
 from __future__ import annotations
 
 import json
-import math
 import os
 from typing import Any
 
@@ -39,7 +38,13 @@ from src.agents._helpers import (
     salvage_valid_fields as _salvage_valid_fields_impl,
     sanitize_for_section as _sanitize_for_section_impl,
 )
-from src.config.settings import get_llm_config, get_openai_api_key
+from src.config.settings import (
+    get_llm_config,
+    get_openai_api_key,
+    get_openai_max_retries,
+    get_openai_timeout_seconds,
+    temperature_param,
+)
 from src.domain.intake import SupervisorBrief
 from src.orchestration.tool_policy import tool_is_allowed
 from src.research.extract import extract_product_keywords, infer_industry, summarize_visible_text
@@ -418,9 +423,25 @@ class ResearchWorker:
 
         evidence_texts = [
             *[str(item.get("title", "")).strip() for item in search_results if item.get("title")],
+            *[str(item.get("summary", "")).strip() for item in search_results if item.get("summary")],
             *[str(item.get("visible_text_excerpt", "")).strip() for item in page_evidence if item.get("visible_text_excerpt")],
             *[str(item) for item in synthesis.get("facts", []) if str(item).strip()],
         ]
+
+        if target_section == "company_profile" and task_key == "company_fundamentals":
+            merged_text = " ".join(item for item in evidence_texts if item)
+            if existing_payload.get("description", "n/v") in {"n/v", ""} and raw_updates.get("description") in {None, "", "n/v"}:
+                fallback_description = summarize_visible_text(brief.raw_homepage_excerpt, limit=320)
+                if fallback_description and fallback_description != "n/v":
+                    raw_updates["description"] = fallback_description
+            if existing_payload.get("revenue", "n/v") in {"n/v", ""} and raw_updates.get("revenue") in {None, "", "n/v"}:
+                extracted_revenue = self._extract_revenue_from_text(merged_text)
+                if extracted_revenue:
+                    raw_updates["revenue"] = extracted_revenue
+            if existing_payload.get("employees", "n/v") in {"n/v", ""} and raw_updates.get("employees") in {None, "", "n/v"}:
+                extracted_employees = self._extract_employees_from_text(merged_text)
+                if extracted_employees:
+                    raw_updates["employees"] = extracted_employees
 
         if target_section == "company_profile" and task_key == "financial_deep_dive":
             extracted_financials = _extract_financial_deep_dive_impl(evidence_texts)
@@ -882,10 +903,59 @@ class ResearchWorker:
         "target_company_contacts": (12, 12),
         "peer_companies": (8, 12),
         "monetization_redeployment": (8, 8),
+        "company_fundamentals": (8, 30),
+        "economic_commercial_situation": (9, 24),
         "financial_deep_dive": (10, 12),
         "transaction_event_intelligence": (10, 12),
     }
     _DEFAULT_QUERY_LIMIT = (5, 8)
+
+    @staticmethod
+    def _extract_revenue_from_text(text: str) -> str:
+        import re as _re
+
+        if not text:
+            return ""
+        patterns = [
+            _re.compile(
+                r"(?:revenue|umsatz)[^.\n]{0,50}?([\d][\d.,\s]*\s?(?:mrd\.?|bn|billion|million|mio\.?)\s?(?:eur|€)?)",
+                _re.IGNORECASE,
+            ),
+            _re.compile(r"([\d][\d.,\s]*\s?(?:mrd\.?|bn|billion|million|mio\.?)\s?(?:eur|€))", _re.IGNORECASE),
+            _re.compile(r"(?:revenue|umsatz)[^.\n]{0,30}?([\d][\d.,\s]*\s?(?:eur|€))", _re.IGNORECASE),
+        ]
+        for pattern in patterns:
+            match = pattern.search(text)
+            if match:
+                return " ".join(match.group(1).split()).strip(" ,.;:")
+        return ""
+
+    @staticmethod
+    def _extract_employees_from_text(text: str) -> str:
+        import re as _re
+
+        if not text:
+            return ""
+        patterns = [
+            _re.compile(
+                r"(?:employees|mitarbeiter(?:innen)?|headcount|belegschaft)[^.\n]{0,30}?([\d][\d.,\s]{2,12})",
+                _re.IGNORECASE,
+            ),
+            _re.compile(r"([\d][\d.,\s]{2,12})\s*(?:employees|mitarbeiter(?:innen)?)", _re.IGNORECASE),
+        ]
+        candidates: list[int] = []
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                raw = match.group(1)
+                digits = "".join(character for character in raw if character.isdigit())
+                if not digits:
+                    continue
+                value = int(digits)
+                if 100 <= value <= 2_000_000:
+                    candidates.append(value)
+        if not candidates:
+            return ""
+        return f"{max(candidates):,}".replace(",", ".")
 
     def _search_queries(
         self,
@@ -907,7 +977,11 @@ class ResearchWorker:
                 continue
             if query not in self._search_cache:
                 search_calls += 1
-                self._search_cache[query] = perform_search(query, max_results=5, timeout=3)
+                primary_timeout = max(18, min(45, int(get_openai_timeout_seconds())))
+                batch = perform_search(query, max_results=max_results, timeout=primary_timeout)
+                if not batch:
+                    batch = perform_search(query, max_results=max_results, timeout=max(primary_timeout, 35))
+                self._search_cache[query] = batch
             for item in self._search_cache.get(query, []):
                 url = str(item.get("url", "")).strip()
                 if not url or url in seen_urls:
@@ -985,7 +1059,11 @@ class ResearchWorker:
 
     def _client_instance(self) -> OpenAI:
         if self._client is None:
-            self._client = OpenAI(api_key=get_openai_api_key())
+            self._client = OpenAI(
+                api_key=get_openai_api_key(),
+                timeout=get_openai_timeout_seconds(),
+                max_retries=get_openai_max_retries(),
+            )
         return self._client
 
     def _llm_synthesis(self, evidence_pack: dict[str, Any], *, model_name: str | None = None) -> dict[str, Any]:
@@ -1192,14 +1270,10 @@ class ResearchWorker:
                 system_parts.append(" ".join(ctx_lines))
 
         effective_model = model_name or str(config["structured_model"])
-        temperature = float(config["temperature"])
-        if not math.isfinite(temperature):
-            temperature = 0.1
-        response = self._client_instance().chat.completions.create(
-            model=effective_model,
-            temperature=temperature,
-            response_format={"type": "json_object"},
-            messages=[
+        request_payload: dict[str, Any] = {
+            "model": effective_model,
+            "response_format": {"type": "json_object"},
+            "messages": [
                 {
                     "role": "system",
                     "content": " ".join(system_parts),
@@ -1209,6 +1283,10 @@ class ResearchWorker:
                     "content": strict_json_dumps(evidence_pack, ensure_ascii=False),
                 },
             ],
+        }
+        request_payload.update(temperature_param(effective_model, config.get("temperature")))
+        response = self._client_instance().chat.completions.create(
+            **request_payload,
         )
         raw_content = response.choices[0].message.content or "{}"
         try:

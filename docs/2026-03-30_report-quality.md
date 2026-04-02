@@ -237,3 +237,30 @@ Wenn P1–P6 umgesetzt sind, sollte ein Run für ZF Friedrichshafen liefern:
 - Confidence-Differenzierung pro Claim
 
 Das entspricht dem Qualitätsniveau des Deep-Research-Referenzberichts.
+
+---
+
+## 7. Runtime-Update 2026-04-02 (department-spezifische KB und Gates)
+
+Dieses Dokument bleibt eine historische Gap-Analyse (Stand 2026-03-30).
+Seit 2026-04-02 wurden zusätzlich folgende Runtime-Mechanismen umgesetzt:
+
+- Department-spezifische Source-KB:
+  - `knowledge/sources/company.yaml`
+  - `knowledge/sources/market.yaml`
+  - `knowledge/sources/buyer.yaml`
+  - `knowledge/sources/contact.yaml`
+- Department-spezifische Policy-KB:
+  - `knowledge/policies/company.yaml`
+  - `knowledge/policies/market.yaml`
+  - `knowledge/policies/buyer.yaml`
+  - `knowledge/policies/contact.yaml`
+- Acceptance-time Policy-Gates pro Department:
+  - Pflichtfelder
+  - Mindest-Evidenzregeln
+  - strukturierte Blocker mit Owner und Next Step
+- Kontakt-Lücken werden explizit als `keine freien Quellen` geführt, statt pauschal `n/v`.
+- Conversable-Agent-Prinzip bleibt unverändert:
+  - freie Department-Kommunikation bleibt erhalten
+  - kein starrer Dialogablauf durch Policies
+  - Gates greifen erst bei Package-Finalisierung und Readiness-Bewertung

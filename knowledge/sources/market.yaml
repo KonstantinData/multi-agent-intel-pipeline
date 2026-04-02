@@ -1,0 +1,62 @@
+{
+  "department": "MarketDepartment",
+  "source_priority": [
+    "official_statistics",
+    "industry_publications",
+    "search_trends"
+  ],
+  "sources": [
+    {
+      "name": "Destatis GENESIS",
+      "url": "https://www-genesis.destatis.de/",
+      "department": "MarketDepartment",
+      "priority": "official_statistics",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.95,
+      "search_patterns_de": [
+        "destatis <branche> produktion index",
+        "destatis <branche> preisindex"
+      ],
+      "search_patterns_en": [
+        "destatis <industry> index germany"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Eurostat",
+      "url": "https://ec.europa.eu/eurostat",
+      "department": "MarketDepartment",
+      "priority": "official_statistics",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.9,
+      "search_patterns_de": [
+        "eurostat <branche> eu produktion",
+        "eurostat demand supply <industry>"
+      ],
+      "search_patterns_en": [
+        "eurostat <industry> demand supply EU"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Google Trends",
+      "url": "https://trends.google.com/",
+      "department": "MarketDepartment",
+      "priority": "search_trends",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.55,
+      "search_patterns_de": [
+        "<produktkategorie>",
+        "<firma> ersatzteile"
+      ],
+      "search_patterns_en": [
+        "<product category>",
+        "<company> aftermarket"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}
