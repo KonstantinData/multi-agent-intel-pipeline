@@ -3,8 +3,11 @@
   "required_fields": [
     "target_company",
     "peer_competitors.companies",
+    "peer_competitors.assessment",
     "downstream_buyers.companies",
-    "monetization_paths"
+    "downstream_buyers.assessment",
+    "monetization_paths",
+    "redeployment_paths"
   ],
   "source_priority": [
     "company_disclosures",
@@ -19,7 +22,7 @@
     "require_any_accepted_task": true,
     "missing_field_availability": "public",
     "missing_field_owner": "Buyer Department",
-    "missing_field_next_step": "Expand peer/buyer map with role-specific search variants."
+    "missing_field_next_step": "Expand peer/buyer map and redeployment paths with role-specific and marketplace search variants."
   },
   "blocker_templates": {
     "missing_required_field": "Required buyer field '{field}' is missing or placeholder.",

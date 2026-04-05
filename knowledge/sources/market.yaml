@@ -15,11 +15,13 @@
       "evidence_type": "hard",
       "confidence_weight": 0.95,
       "search_patterns_de": [
-        "destatis <branche> produktion index",
-        "destatis <branche> preisindex"
+        "destatis <branche> produktion auftragseingang index",
+        "destatis <branche> erzeugerpreisindex preisdruck",
+        "destatis <branche> kapazitätsauslastung überkapazität"
       ],
       "search_patterns_en": [
-        "destatis <industry> index germany"
+        "destatis <industry> output order intake index germany",
+        "destatis <industry> producer price supply pressure"
       ],
       "fallback_label": "keine freien Quellen"
     },
@@ -32,11 +34,31 @@
       "evidence_type": "hard",
       "confidence_weight": 0.9,
       "search_patterns_de": [
-        "eurostat <branche> eu produktion",
-        "eurostat demand supply <industry>"
+        "eurostat <branche> eu produktion nachfragerückgang",
+        "eurostat <branche> kapazitätsauslastung europa rückgang"
       ],
       "search_patterns_en": [
-        "eurostat <industry> demand supply EU"
+        "eurostat <industry> demand decline growth EU",
+        "eurostat <industry> overcapacity utilisation rate"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "VDMA Konjunkturbericht",
+      "url": "https://www.vdma.org/konjunktur-statistik",
+      "department": "MarketDepartment",
+      "priority": "industry_publications",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.8,
+      "search_patterns_de": [
+        "vdma <branche> auftragseingang maschinenbau rückgang",
+        "vdma <branche> marktbericht nachfrage überkapazität",
+        "vdma <branche> export lieferzeiten preisdruck"
+      ],
+      "search_patterns_en": [
+        "vdma <industry> order intake mechanical engineering decline",
+        "vdma <industry> market report supply pressure"
       ],
       "fallback_label": "keine freien Quellen"
     },
@@ -49,12 +71,14 @@
       "evidence_type": "indicative",
       "confidence_weight": 0.55,
       "search_patterns_de": [
-        "<produktkategorie>",
-        "<firma> ersatzteile"
+        "<produktkategorie> nachfrage rückgang überkapazität",
+        "<produktkategorie> gebraucht ersatzteile restbestand",
+        "<firma> bestand lager überschuss"
       ],
       "search_patterns_en": [
-        "<product category>",
-        "<company> aftermarket"
+        "<product category> demand decline growth trend",
+        "<product category> surplus aftermarket used equipment",
+        "<company> overcapacity inventory surplus"
       ],
       "fallback_label": "keine freien Quellen"
     }

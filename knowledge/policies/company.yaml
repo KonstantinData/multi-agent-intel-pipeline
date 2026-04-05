@@ -4,9 +4,11 @@
     "company_name",
     "description",
     "product_asset_scope",
+    "goods_classification",
     "financial_deep_dive.assessment",
     "financial_deep_dive.key_financials",
-    "financial_deep_dive.inventory_positions"
+    "financial_deep_dive.inventory_positions",
+    "transaction_event_intelligence.assessment"
   ],
   "source_priority": [
     "primary",
@@ -22,7 +24,7 @@
     "require_any_accepted_task": true,
     "missing_field_availability": "public",
     "missing_field_owner": "Company Department",
-    "missing_field_next_step": "Run focused primary-source follow-up for missing company/financial fields."
+    "missing_field_next_step": "Run focused primary-source follow-up for missing company, financial, product/asset scope, goods classification, or transaction event intelligence fields."
   },
   "blocker_templates": {
     "missing_required_field": "Required field '{field}' is missing or placeholder.",

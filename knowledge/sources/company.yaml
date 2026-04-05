@@ -16,10 +16,12 @@
       "confidence_weight": 1.0,
       "search_patterns_de": [
         "<firma> unternehmensregister jahresabschluss",
-        "<firma> bilanz unternehmensregister"
+        "<firma> bilanz unternehmensregister",
+        "<firma> inventar anlagevermögen unternehmensregister"
       ],
       "search_patterns_en": [
-        "<company> annual filing register"
+        "<company> annual filing german commercial register",
+        "<company> balance sheet register filing"
       ],
       "fallback_label": "keine freien Quellen"
     },
@@ -33,27 +35,68 @@
       "confidence_weight": 0.95,
       "search_patterns_de": [
         "<firma> bundesanzeiger jahresabschluss",
-        "<firma> inventar abschreibung"
+        "<firma> inventar abschreibung bundesanzeiger",
+        "<firma> vorräte warenbestand bundesanzeiger"
       ],
       "search_patterns_en": [
-        "<company> federal gazette filing"
+        "<company> federal gazette annual filing",
+        "<company> inventory positions germany"
       ],
       "fallback_label": "keine freien Quellen"
     },
     {
-      "name": "Investor Relations",
-      "url": "https://",
+      "name": "OpenCorporates",
+      "url": "https://opencorporates.com/",
+      "department": "CompanyDepartment",
+      "priority": "primary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.85,
+      "search_patterns_de": [
+        "<firma> opencorporates handelsregister international",
+        "<firma> firmenprofil ausland register"
+      ],
+      "search_patterns_en": [
+        "<company> opencorporates company filing",
+        "<company> corporate registry international"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Northdata Firmenauskunft",
+      "url": "https://www.northdata.de/",
       "department": "CompanyDepartment",
       "priority": "official_secondary",
       "free_access": "public",
       "evidence_type": "hard",
       "confidence_weight": 0.9,
       "search_patterns_de": [
-        "<firma> investor relations geschäftsbericht",
-        "<firma> annual report pdf"
+        "northdata <firma> finanzlage umsatz mitarbeiter",
+        "northdata <firma> geschäftsführung jahresabschluss",
+        "northdata <firma> warenklassifikation branche"
       ],
       "search_patterns_en": [
-        "<company> investor relations annual report"
+        "northdata <company> company profile financials",
+        "northdata <company> management annual report"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Statista Branchenreport",
+      "url": "https://de.statista.com/",
+      "department": "CompanyDepartment",
+      "priority": "industry_secondary",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.7,
+      "search_patterns_de": [
+        "statista <branche> marktvolumen deutschland umsatz",
+        "statista <branche> unternehmen umsatzverteilung",
+        "statista <produktkategorie> absatz preis entwicklung"
+      ],
+      "search_patterns_en": [
+        "statista <industry> market volume germany",
+        "statista <company> revenue sector benchmark"
       ],
       "fallback_label": "keine freien Quellen"
     }

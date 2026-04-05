@@ -4,7 +4,8 @@
     "industry_name",
     "assessment",
     "key_trends",
-    "demand_outlook"
+    "demand_outlook",
+    "trend_direction"
   ],
   "source_priority": [
     "official_statistics",

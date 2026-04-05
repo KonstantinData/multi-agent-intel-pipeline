@@ -3,7 +3,8 @@
   "required_fields": [
     "target_company_summary",
     "target_company_contacts",
-    "target_company_access_path"
+    "target_company_access_path",
+    "coverage_quality"
   ],
   "source_priority": [
     "official_people_pages",
@@ -18,7 +19,7 @@
     "require_any_accepted_task": false,
     "missing_field_availability": "public",
     "missing_field_owner": "Contact Department",
-    "missing_field_next_step": "Apply DE/EN role-based search patterns and verify at least one channel."
+    "missing_field_next_step": "Apply DE/EN role-based search patterns across Board / Geschäftsführung, Finance / CFO / Controlling, Procurement / Einkauf, Operations / Werk / Supply Chain, Aftermarket / Service, and Divisional / BU leadership. Verify at least one reachable channel."
   },
   "blocker_templates": {
     "missing_required_field": "Required contact field '{field}' is missing; if public search is exhausted, mark as 'keine freien Quellen'.",
