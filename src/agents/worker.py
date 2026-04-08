@@ -49,6 +49,7 @@ from src.domain.intake import SupervisorBrief
 from src.orchestration.tool_policy import tool_is_allowed
 from src.research.extract import extract_product_keywords, infer_industry, summarize_visible_text
 from src.research.fetch import fetch_website_snapshot
+from src.research.query_resolver import is_verify_mode, resolve_queries
 from src.research.search import build_buyer_queries, build_company_queries, build_market_queries, perform_search
 from src.utils import strict_json_dumps
 
@@ -743,6 +744,29 @@ class ResearchWorker:
         }
 
     def _build_queries(self, *, brief: SupervisorBrief, task_key: str, current_section: dict[str, Any] | None = None) -> list[str]:
+        """Resolve queries via the central query resolver.
+
+        Delegates to ``resolve_queries()`` from ``src.research.query_resolver``.
+        When ``LIQUISTO_QUERY_RESOLVER_VERIFY=1`` both the resolver and the
+        legacy path are run and any divergence is logged for migration monitoring.
+        """
+        resolved = resolve_queries(task_key, brief, current_section=current_section)
+        if is_verify_mode():
+            import logging as _logging
+            _log = _logging.getLogger(__name__)
+            try:
+                legacy = self._build_queries_legacy(brief=brief, task_key=task_key, current_section=current_section)
+                if resolved != legacy:
+                    _log.warning(
+                        "QUERY_RESOLVER_VERIFY divergence for task '%s': "
+                        "resolver=%r legacy=%r",
+                        task_key, resolved, legacy,
+                    )
+            except Exception as exc:
+                _log.warning("QUERY_RESOLVER_VERIFY legacy path error for '%s': %s", task_key, exc)
+        return resolved
+
+    def _build_queries_legacy(self, *, brief: SupervisorBrief, task_key: str, current_section: dict[str, Any] | None = None) -> list[str]:
         hints = self._derive_research_hints(brief)
         company_name = brief.company_name
         industry_hint = hints["industry_hint"]

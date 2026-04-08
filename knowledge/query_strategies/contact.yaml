@@ -1,0 +1,62 @@
+{
+  "department": "ContactDepartment",
+  "tasks": {
+    "contact_discovery": {
+      "queries_per_buyer": [
+        "\"{buyer}\" procurement head supply chain director",
+        "\"{buyer}\" COO VP operations asset management",
+        "site:linkedin.com/in \"{buyer}\" procurement operations",
+        "\"{buyer}\" aftermarket service director",
+        "\"{buyer}\" aftermarket spare parts procurement",
+        "\"{buyer}\" retrofit service operations",
+        "\"{buyer}\" distributor service network procurement"
+      ],
+      "buyer_limit": 5,
+      "queries_fallback": [
+        "{industry} OEM procurement director aftermarket",
+        "{industry} distributor spare parts procurement head",
+        "{industry} retrofit service provider operations director",
+        "{industry} service network procurement director",
+        "{industry} procurement director head of purchasing decision maker"
+      ],
+      "result_limit": 10
+    },
+    "contact_qualification": {
+      "queries_per_buyer": [
+        "\"{buyer}\" procurement head supply chain director",
+        "\"{buyer}\" COO VP operations asset management",
+        "site:linkedin.com/in \"{buyer}\" procurement operations",
+        "\"{buyer}\" aftermarket service director",
+        "\"{buyer}\" aftermarket spare parts procurement",
+        "\"{buyer}\" retrofit service operations",
+        "\"{buyer}\" distributor service network procurement"
+      ],
+      "buyer_limit": 5,
+      "queries_fallback": [
+        "{industry} OEM procurement director aftermarket",
+        "{industry} distributor spare parts procurement head",
+        "{industry} retrofit service provider operations director",
+        "{industry} service network procurement director",
+        "{industry} procurement director head of purchasing decision maker"
+      ],
+      "result_limit": 10
+    },
+    "target_company_contacts": {
+      "queries": [
+        "\"{company}\" management board executive committee procurement",
+        "\"{company}\" CFO COO chief procurement officer",
+        "\"{company}\" aftermarket head division president",
+        "\"{company}\" board of management operations supply chain",
+        "site:linkedin.com/in \"{company}\" procurement operations aftermarket",
+        "site:{domain} {company} leadership procurement operations",
+        "\"{company}\" investor relations management team",
+        "\"{company}\" divisional head aftermarket procurement",
+        "site:{domain} {company} management board corporate governance",
+        "site:{domain} {company} press release plant kupferzell poland north carolina",
+        "\"{company}\" trade fair speaker procurement operations",
+        "\"{company}\" association board plant operations supply chain",
+        "\"{company}\" local registry legal entity managing director plant"
+      ]
+    }
+  }
+}

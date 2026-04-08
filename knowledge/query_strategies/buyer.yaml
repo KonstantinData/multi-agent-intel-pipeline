@@ -1,0 +1,46 @@
+{
+  "department": "BuyerDepartment",
+  "tasks": {
+    "peer_companies": {
+      "queries_peer_prefix": [
+        "\"{company}\" competitors manufacturers",
+        "top {industry} Tier 1 suppliers global ranking",
+        "{industry} manufacturers europe competitors",
+        "{industry} component manufacturers global competitors ranking"
+      ],
+      "queries_buyer_base": {
+        "queries_if_keywords": [
+          "{keywords} distributors aftermarket buyers",
+          "{keywords} spare parts buyers"
+        ],
+        "queries_if_industry": [
+          "{industry} peer companies buyers"
+        ],
+        "queries_if_industry_no_keywords": [
+          "{industry} distributors aftermarket buyers"
+        ],
+        "queries_always": [
+          "\"{company}\" customers"
+        ],
+        "queries_if_no_keywords": [
+          "\"{company}\" competitors peer companies"
+        ],
+        "queries_if_no_keywords_no_industry": [
+          "\"{company}\" distributors buyers aftermarket"
+        ]
+      },
+      "dedup": true
+    },
+    "monetization_redeployment": {
+      "queries": [
+        "\"{company}\" OEM customers vehicle manufacturers",
+        "\"{company}\" aftermarket distributors service network",
+        "{industry} fleet operators industrial end-users {company}",
+        "\"{company}\" customers aftermarket service",
+        "{keywords} distributors brokers marketplace",
+        "{keywords} retrofit service providers",
+        "{keywords} aftermarket partners distributors"
+      ]
+    }
+  }
+}

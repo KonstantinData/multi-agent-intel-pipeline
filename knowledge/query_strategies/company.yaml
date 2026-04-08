@@ -1,0 +1,80 @@
+{
+  "department": "CompanyDepartment",
+  "tasks": {
+    "economic_commercial_situation": {
+      "queries": [
+        "\"{company}\" revenue growth financial results",
+        "\"{company}\" restructuring layoffs insolvency",
+        "\"{company}\" inventory write-down excess stock",
+        "\"{company}\" M&A acquisition cost cutting",
+        "\"{company}\" annual report results EBIT net debt",
+        "\"{company}\" margin pressure CEO statement",
+        "\"{company}\" Germany decline Poland plant North Carolina",
+        "\"{company}\" temporary workers short-time work local for local",
+        "site:{domain} {company} investor relations annual report"
+      ]
+    },
+    "financial_deep_dive": {
+      "queries": [
+        "site:{domain} {company} annual report pdf",
+        "site:{domain} {company} investor relations annual report pdf",
+        "\"{company}\" annual report inventory working capital pdf",
+        "\"{company}\" annual report net debt EBIT pdf",
+        "\"{company}\" investor presentation inventory pdf",
+        "\"{company}\" financial statements inventory write-down pdf",
+        "\"{company}\" Geschäftsbericht Vorräte Nettoverschuldung pdf",
+        "\"{company}\" annual report notes inventories write-downs pdf",
+        "\"{company}\" consolidated financial statements inventory debt pdf",
+        "site:bundesanzeiger.de \"{company}\" Jahresabschluss",
+        "site:northdata.de \"{company}\" Jahresabschluss",
+        "site:{domain} {company} press release revenue margin production",
+        "\"{company}\" CEO margin pressure demand Germany Poland plant",
+        "\"{company}\" North Carolina investment capacity press release"
+      ]
+    },
+    "company_fundamentals": {
+      "queries": [
+        "\"{company}\" revenue",
+        "\"{company}\" employees",
+        "\"{company}\" umsatz mitarbeiter",
+        "\"{company}\" company profile",
+        "site:{domain} {company} about",
+        "site:{domain} {company} products",
+        "site:{domain} {company} pressemitteilung umsatz",
+        "site:{domain} {company} press release revenue",
+        "site:bundesanzeiger.de \"{company}\" Jahresabschluss",
+        "site:unternehmensregister.de \"{company}\" Jahresabschluss"
+      ]
+    },
+    "product_asset_scope": {
+      "queries": [
+        "\"{company}\" revenue",
+        "\"{company}\" employees",
+        "\"{company}\" umsatz mitarbeiter",
+        "\"{company}\" company profile",
+        "site:{domain} {company} about",
+        "site:{domain} {company} products",
+        "site:{domain} {company} pressemitteilung umsatz",
+        "site:{domain} {company} press release revenue",
+        "site:bundesanzeiger.de \"{company}\" Jahresabschluss",
+        "site:unternehmensregister.de \"{company}\" Jahresabschluss"
+      ],
+      "queries_extra": [
+        "site:{domain} {company} spare parts components",
+        "\"{company}\" product portfolio materials"
+      ]
+    },
+    "transaction_event_intelligence": {
+      "queries": [
+        "\"{company}\" acquisition divestiture carve-out joint venture",
+        "\"{company}\" restructuring program termination divestment",
+        "\"{company}\" IAS 8 accounting correction regulatory filing",
+        "\"{company}\" investor presentation transaction portfolio review",
+        "\"{company}\" H1 H2 2025 strategic update divestiture",
+        "site:{domain} {company} press release divestiture acquisition",
+        "site:{domain} {company} press release Poland North Carolina local for local",
+        "\"{company}\" data center growth strategy margin pressure press release"
+      ]
+    }
+  }
+}

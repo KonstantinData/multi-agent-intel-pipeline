@@ -11,12 +11,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from src.config.settings import ROOT
 from src.orchestration.contracts import DepartmentPolicy
+
+# Set LIQUISTO_STRICT_PROFILE_LOADING=1 to disable silent fallback for
+# source profiles and policies.  In strict mode a missing or malformed
+# file raises immediately instead of returning a hardcoded default.
+_STRICT_PROFILE_LOADING = os.getenv("LIQUISTO_STRICT_PROFILE_LOADING", "").strip() == "1"
 
 logger = logging.getLogger(__name__)
 
@@ -393,7 +399,16 @@ def _read_json_payload(path: Path) -> dict[str, Any]:
 def load_department_policy(department: str) -> DepartmentPolicy:
     slug = _slug_for_department(department)
     path = ROOT / "knowledge" / "policies" / f"{slug}.yaml"
-    payload = _read_json_payload(path) or dict(_DEFAULT_POLICIES[slug])
+    raw_payload = _read_json_payload(path)
+    if not raw_payload:
+        if _STRICT_PROFILE_LOADING:
+            raise RuntimeError(
+                f"Department policy file missing or unparsable: {path}. "
+                "Fix the file or unset LIQUISTO_STRICT_PROFILE_LOADING."
+            )
+        logger.warning("Policy file %s missing or empty — using hardcoded default.", path)
+        raw_payload = dict(_DEFAULT_POLICIES[slug])
+    payload = raw_payload
     payload.setdefault("department", department)
     return DepartmentPolicy.from_dict(payload)
 
@@ -402,7 +417,16 @@ def load_department_policy(department: str) -> DepartmentPolicy:
 def load_department_source_profile(department: str) -> dict[str, Any]:
     slug = _slug_for_department(department)
     path = ROOT / "knowledge" / "sources" / f"{slug}.yaml"
-    payload = _read_json_payload(path) or dict(_DEFAULT_SOURCE_PROFILES[slug])
+    raw_payload = _read_json_payload(path)
+    if not raw_payload:
+        if _STRICT_PROFILE_LOADING:
+            raise RuntimeError(
+                f"Department source profile file missing or unparsable: {path}. "
+                "Fix the file or unset LIQUISTO_STRICT_PROFILE_LOADING."
+            )
+        logger.warning("Source profile %s missing or empty — using hardcoded default.", path)
+        raw_payload = dict(_DEFAULT_SOURCE_PROFILES[slug])
+    payload = raw_payload
     payload["department"] = department
     payload.setdefault("source_priority", [])
     payload.setdefault("sources", [])

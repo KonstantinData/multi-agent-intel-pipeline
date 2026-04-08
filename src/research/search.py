@@ -71,6 +71,12 @@ def perform_search(query: str, *, max_results: int = 5, timeout: int = 20) -> li
 
 
 def build_company_queries(company_name: str, web_domain: str) -> list[str]:
+    """Deprecated: use ``src.research.query_resolver.resolve_queries`` instead.
+
+    Called by ``_build_queries_legacy()`` for ``company_fundamentals`` and
+    ``product_asset_scope`` task keys.  Will be removed after parity migration
+    is complete (Phase 10).
+    """
     return [
         f"\"{company_name}\" revenue",
         f"\"{company_name}\" employees",
@@ -86,6 +92,11 @@ def build_company_queries(company_name: str, web_domain: str) -> list[str]:
 
 
 def build_market_queries(company_name: str, industry_hint: str, product_keywords: list[str]) -> list[str]:
+    """Deprecated: imported but not called in the current runtime path.
+
+    Registered in ``tools.py`` but not invoked by ``_build_queries_legacy()``.
+    Lowest-risk removal candidate.  Will be removed in Phase 10.
+    """
     joined_keywords = " ".join(product_keywords[:3]).strip()
     queries = []
     if industry_hint and industry_hint != "n/v":
@@ -97,6 +108,11 @@ def build_market_queries(company_name: str, industry_hint: str, product_keywords
 
 
 def build_buyer_queries(company_name: str, product_keywords: list[str], industry_hint: str) -> list[str]:
+    """Deprecated: use ``src.research.query_resolver.resolve_queries`` instead.
+
+    Called by ``_build_queries_legacy()`` for ``peer_companies`` and as fallback
+    for ``monetization_redeployment``.  Will be removed in Phase 10.
+    """
     joined_keywords = " ".join(product_keywords[:3]).strip()
     queries = []
     if joined_keywords:
