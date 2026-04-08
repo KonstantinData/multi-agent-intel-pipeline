@@ -39,8 +39,10 @@ Praktisch bedeutet das:
 
 Seit dieser Fassung gilt zusätzlich:
 - jedes Department hat eine eigene Knowledge Base:
-  - `knowledge/sources/<department>.yaml`
-  - `knowledge/policies/<department>.yaml`
+  - `knowledge/sources/<department>.yaml` — Source-Metadaten: Prioritäten, Evidenztyp, Provenienzhinweise (keine Runtime-Queries)
+  - `knowledge/policies/<department>.yaml` — Pflichtfelder, Mindest-Evidenz, Gate-Regeln
+  - `knowledge/query_strategies/<department>.yaml` — Runtime-Query-Templates pro Task, kanonische `{placeholder}`-Syntax; einzige autoritative Quelle für Query-Konstruktion zur Laufzeit
+- die Query-Auflösung erfolgt zentral über `src/research/query_resolver.py` (Placeholder-Expansion, Validierung, Buyer-Expansion)
 - die GroupChat-Kommunikation bleibt frei (kein starres Skript)
 - die Policy-Prüfung passiert erst bei Package-Abnahme/Finalisierung
 - fehlende öffentlich auffindbare Kontakte werden explizit als `keine freien Quellen` markiert

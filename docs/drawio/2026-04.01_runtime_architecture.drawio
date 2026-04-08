@@ -7,7 +7,7 @@
                 <mxCell id="title" value="Liquisto Runtime Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
                     <mxGeometry x="40" y="24" width="620" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · department-specific source/policy KB + acceptance gates · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
+                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · department-specific source/policy KB + query strategy KB + acceptance gates · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
                     <mxGeometry x="40" y="58" width="1800" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="lane_entry" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
@@ -61,7 +61,7 @@
                 <mxCell id="handoff" value="&lt;b&gt;Department Handoffs&lt;/b&gt;&lt;br&gt;each department returns a package; Supervisor writes admission envelope (admission, raw_package, admitted_payload) and stores policy_gate result per department" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
                     <mxGeometry x="380" y="870" width="260" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="department_kb" value="&lt;b&gt;Department Knowledge Base&lt;/b&gt;&lt;br&gt;knowledge/sources/*.yaml + knowledge/policies/*.yaml&lt;br&gt;department-specific source priorities, required fields, evidence minima, blocker templates&lt;br&gt;guidance only; conversation remains free inside GroupChat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                <mxCell id="department_kb" value="&lt;b&gt;Department Knowledge Base&lt;/b&gt;&lt;br&gt;knowledge/sources/*.yaml — source metadata (priorities, evidence type, provenance notes; not runtime queries)&lt;br&gt;knowledge/policies/*.yaml — required fields, evidence minima, blocker templates&lt;br&gt;knowledge/query_strategies/*.yaml — runtime query templates per task; single query-strategy authority&lt;br&gt;query_resolver.py — placeholder expansion, validation, buyer expansion&lt;br&gt;guidance only; conversation remains free inside GroupChat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
                     <mxGeometry x="380" y="1035" width="260" height="130" as="geometry"/>
                 </mxCell>
                 <mxCell id="dept_company" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#86efac;strokeWidth=2;" parent="1" vertex="1">
