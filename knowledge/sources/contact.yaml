@@ -7,23 +7,21 @@
   ],
   "sources": [
     {
-      "name": "Northdata Geschäftsführung",
-      "url": "https://www.northdata.de/",
+      "name": "Handelsregister Führungspersonen",
+      "url": "https://www.handelsregister.de/",
       "department": "ContactDepartment",
       "priority": "official_people_pages",
       "free_access": "public",
       "evidence_type": "hard",
       "confidence_weight": 0.9,
       "search_patterns_de": [
-        "northdata <firma> geschäftsführer vorstand prokura",
-        "northdata <firma> leitende angestellte finanzchef",
-        "<firma> impressum geschäftsführung prokura team",
-        "<firma> leitung einkauf operations aftermarket"
+        "handelsregister <firma> geschäftsführer vorstand",
+        "handelsregister <firma> prokuristen leitungsorgane",
+        "<firma> hr-nummer geschäftsführer amtsgericht"
       ],
       "search_patterns_en": [
-        "northdata <company> managing director board officers",
-        "<company> management team leadership page",
-        "<company> board of directors CFO procurement head"
+        "<company> german commercial register managing director",
+        "<company> handelsregister board officers germany"
       ],
       "fallback_label": "keine freien Quellen"
     },

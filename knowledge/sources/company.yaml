@@ -82,21 +82,21 @@
       "fallback_label": "keine freien Quellen"
     },
     {
-      "name": "Statista Branchenreport",
-      "url": "https://de.statista.com/",
+      "name": "BMWK Branchenberichte",
+      "url": "https://www.bmwk.de/",
       "department": "CompanyDepartment",
       "priority": "industry_secondary",
       "free_access": "public",
       "evidence_type": "indicative",
       "confidence_weight": 0.7,
       "search_patterns_de": [
-        "statista <branche> marktvolumen deutschland umsatz",
-        "statista <branche> unternehmen umsatzverteilung",
-        "statista <produktkategorie> absatz preis entwicklung"
+        "bmwk <branche> branchenbericht lage konjunktur",
+        "bmwk <branche> umsatz beschäftigung sektoranalyse",
+        "bmwk <branche> strukturbericht wettbewerbsfähigkeit"
       ],
       "search_patterns_en": [
-        "statista <industry> market volume germany",
-        "statista <company> revenue sector benchmark"
+        "bmwk <industry> sector report germany",
+        "bmwk <industry> market analysis competitiveness"
       ],
       "fallback_label": "keine freien Quellen"
     }

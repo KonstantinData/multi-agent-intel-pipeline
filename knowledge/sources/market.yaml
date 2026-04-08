@@ -44,21 +44,22 @@
       "fallback_label": "keine freien Quellen"
     },
     {
-      "name": "VDMA Konjunkturbericht",
-      "url": "https://www.vdma.org/konjunktur-statistik",
+      "name": "ifo Institut Konjunkturumfrage",
+      "url": "https://www.ifo.de/",
       "department": "MarketDepartment",
       "priority": "industry_publications",
       "free_access": "public",
       "evidence_type": "hard",
       "confidence_weight": 0.8,
       "search_patterns_de": [
-        "vdma <branche> auftragseingang maschinenbau rückgang",
-        "vdma <branche> marktbericht nachfrage überkapazität",
-        "vdma <branche> export lieferzeiten preisdruck"
+        "ifo <branche> geschäftsklima konjunktur lage",
+        "ifo <branche> auftragseingang erwartungen nachfrage",
+        "ifo <branche> überkapazitäten preiserwartungen rückgang"
       ],
       "search_patterns_en": [
-        "vdma <industry> order intake mechanical engineering decline",
-        "vdma <industry> market report supply pressure"
+        "ifo <industry> business climate survey germany",
+        "ifo <industry> demand outlook capacity utilisation",
+        "ifo <industry> order intake expectations decline growth"
       ],
       "fallback_label": "keine freien Quellen"
     },
