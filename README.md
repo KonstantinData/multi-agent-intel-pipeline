@@ -66,8 +66,10 @@ Each department group contains:
 
 Department execution stays conversation-driven. Quality enforcement is
 department-specific and checked at package finalization via Knowledge Base:
-- `knowledge/sources/<department>.yaml` (free-source priorities, search patterns)
+
+- `knowledge/sources/<department>.yaml` (source registry, priorities, evidence type, provenance notes — not runtime queries)
 - `knowledge/policies/<department>.yaml` (required fields, evidence minimums, gate rules)
+- `knowledge/query_strategies/<department>.yaml` (runtime query templates per task — the single query-strategy authority)
 
 ### Synthesis Plane
 
@@ -136,6 +138,7 @@ The runtime plans around **meeting questions**, not only departments.
 | [src/models/meeting_ready.py](src/models/meeting_ready.py) | Typed models: EvidencePacket, GapCandidate, AnswerMatrixUpdate, MeetingAction, MeetingReadinessAssessment, FinalBriefing |
 | [src/agents/lead.py](src/agents/lead.py) | DepartmentLeadAgent — evidence-first AG2 group lifecycle |
 | [src/agents/worker.py](src/agents/worker.py) | ResearchWorker — evidence packets as primary output |
+| [src/research/query_resolver.py](src/research/query_resolver.py) | Central runtime query resolver — single authority for query construction per task |
 | [src/agents/supervisor.py](src/agents/supervisor.py) | SupervisorAgent — intake, routing, package acceptance |
 | [src/agents/report_writer.py](src/agents/report_writer.py) | ReportWriterAgent — report package assembly from pipeline artifacts |
 | [src/agents/critic.py](src/agents/critic.py) | CriticAgent — deterministic rule-based review |
@@ -188,6 +191,8 @@ A successful run does **not** contain:
 - **Web search call pricing overrides**:
   `OPENAI_PRICE_WEB_SEARCH_PREVIEW_REASONING_PER_1K_CALLS` and
   `OPENAI_PRICE_WEB_SEARCH_PREVIEW_NON_REASONING_PER_1K_CALLS`
+- **Strict profile loading**: `LIQUISTO_STRICT_PROFILE_LOADING=1` disables silent fallback for department source profiles and policies (raises on missing/malformed file)
+- **Query resolver verify mode**: `LIQUISTO_QUERY_RESOLVER_VERIFY=1` runs both the resolver and legacy path in parallel and logs divergence (migration monitoring)
 - **Max retries**: `LIQUISTO_MAX_TASK_RETRIES` env var (default: 3)
 - **Token budgets**: `LIQUISTO_SOFT_TOKEN_BUDGET` and `LIQUISTO_HARD_TOKEN_CAP` env vars
 - **Phase budgets**: `LIQUISTO_FIRST_PASS_TOKEN_BUDGET`, `LIQUISTO_CLOSURE_TOKEN_BUDGET`, `LIQUISTO_OPTIONAL_DEPTH_TOKEN_BUDGET`
@@ -197,5 +202,5 @@ A successful run does **not** contain:
 
 ```bash
 python preflight.py   # environment, packages, project files, API key, import chain, port
-pytest                # unit tests (308+ tests covering behavior, negative paths, golden traces)
+pytest                # unit tests (400+ tests covering behavior, negative paths, golden traces, query parity, query consistency)
 ```
