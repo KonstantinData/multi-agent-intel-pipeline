@@ -1,0 +1,87 @@
+{
+  "department": "MarketDepartment",
+  "source_priority": [
+    "official_statistics",
+    "industry_publications",
+    "search_trends"
+  ],
+  "sources": [
+    {
+      "name": "Destatis GENESIS",
+      "url": "https://www-genesis.destatis.de/",
+      "department": "MarketDepartment",
+      "priority": "official_statistics",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.95,
+      "search_patterns_de": [
+        "destatis <branche> produktion auftragseingang index",
+        "destatis <branche> erzeugerpreisindex preisdruck",
+        "destatis <branche> kapazitätsauslastung überkapazität"
+      ],
+      "search_patterns_en": [
+        "destatis <industry> output order intake index germany",
+        "destatis <industry> producer price supply pressure"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Eurostat",
+      "url": "https://ec.europa.eu/eurostat",
+      "department": "MarketDepartment",
+      "priority": "official_statistics",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.9,
+      "search_patterns_de": [
+        "eurostat <branche> eu produktion nachfragerückgang",
+        "eurostat <branche> kapazitätsauslastung europa rückgang"
+      ],
+      "search_patterns_en": [
+        "eurostat <industry> demand decline growth EU",
+        "eurostat <industry> overcapacity utilisation rate"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "ifo Institut Konjunkturumfrage",
+      "url": "https://www.ifo.de/",
+      "department": "MarketDepartment",
+      "priority": "industry_publications",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.8,
+      "search_patterns_de": [
+        "ifo <branche> geschäftsklima konjunktur lage",
+        "ifo <branche> auftragseingang erwartungen nachfrage",
+        "ifo <branche> überkapazitäten preiserwartungen rückgang"
+      ],
+      "search_patterns_en": [
+        "ifo <industry> business climate survey germany",
+        "ifo <industry> demand outlook capacity utilisation",
+        "ifo <industry> order intake expectations decline growth"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Google Trends",
+      "url": "https://trends.google.com/",
+      "department": "MarketDepartment",
+      "priority": "search_trends",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.55,
+      "search_patterns_de": [
+        "<produktkategorie> nachfrage rückgang überkapazität",
+        "<produktkategorie> gebraucht ersatzteile restbestand",
+        "<firma> bestand lager überschuss"
+      ],
+      "search_patterns_en": [
+        "<product category> demand decline growth trend",
+        "<product category> surplus aftermarket used equipment",
+        "<company> overcapacity inventory surplus"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}

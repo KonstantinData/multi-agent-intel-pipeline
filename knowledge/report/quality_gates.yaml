@@ -1,0 +1,13 @@
+{
+  "required_global_fields": [
+    "run_id",
+    "run_status",
+    "company_name",
+    "report_title",
+    "executive_summary",
+    "primary_opportunity_path"
+  ],
+  "min_sections": 7,
+  "max_top_risks": 3,
+  "max_next_steps": 5
+}

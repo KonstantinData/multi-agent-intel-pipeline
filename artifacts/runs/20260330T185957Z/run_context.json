@@ -1,0 +1,444 @@
+{
+  "run_id": "20260330T185957Z",
+  "intake": {
+    "company_name": "ims gear",
+    "web_domain": "imsgear.com",
+    "language": "de"
+  },
+  "supervisor_brief": {
+    "submitted_company_name": "ims gear",
+    "submitted_web_domain": "imsgear.com",
+    "verified_company_name": "ims gear",
+    "verified_legal_name": "n/v",
+    "name_confidence": "medium",
+    "website_reachable": true,
+    "homepage_url": "https://imsgear.com",
+    "page_title": "IMS Gear: Zahnrad- und Getriebetechnik von einem der weltweit führenden Hersteller",
+    "meta_description": "IMS Gear bietet Ihnen jahrelange Erfahrung, bewährte Komponenten und umfassende Entwicklungskompetenz im Bereich der Zahnrad- und Getriebetechnik.",
+    "raw_homepage_excerpt": "IMS Gear: Zahnrad- und Getriebetechnik von einem der weltweit führenden Hersteller Unternehmen Karriere Newsroom Downloads Kontakt DE EN IT Individuelle Mobilität Industrie Industrie Industrie Solution Finder Success Stories Unsere Planetengetriebe IMS Drive Getriebe Low Noise Haushaltsgeräte Gebäudetechnik Agrartechni",
+    "normalized_domain": "imsgear.com",
+    "industry_hint": "Mechanical Engineering",
+    "observations": [
+      "Website reachable.",
+      "Verified company name: ims gear.",
+      "Name confidence: medium."
+    ],
+    "sources": [
+      {
+        "title": "IMS Gear: Zahnrad- und Getriebetechnik von einem der weltweit führenden Hersteller",
+        "url": "https://imsgear.com",
+        "source_type": "owned",
+        "summary": "IMS Gear: Zahnrad- und Getriebetechnik von einem der weltweit führenden Hersteller Unternehmen Karriere Newsroom Downloads Kontakt DE EN IT Individuelle Mobilität Industrie Industrie Industrie Solution Finder Success Stories Unsere Planetengetriebe IMS Drive Getriebe Low Noise Haushaltsgeräte Gebäudetechnik Agrartechni"
+      }
+    ]
+  },
+  "retrieved_strategies": [],
+  "retrieved_role_strategies": {
+    "BuyerCodingSpecialist": [],
+    "BuyerCritic": [],
+    "BuyerJudge": [],
+    "BuyerLead": [],
+    "BuyerResearcher": [],
+    "CompanyCodingSpecialist": [],
+    "CompanyCritic": [],
+    "CompanyJudge": [],
+    "CompanyLead": [],
+    "CompanyResearcher": [],
+    "ContactCodingSpecialist": [],
+    "ContactCritic": [],
+    "ContactJudge": [],
+    "ContactLead": [],
+    "ContactResearcher": [],
+    "MarketCodingSpecialist": [],
+    "MarketCritic": [],
+    "MarketJudge": [],
+    "MarketLead": [],
+    "MarketResearcher": [],
+    "Supervisor": []
+  },
+  "active_tasks": [
+    {
+      "assignee": "CompanyDepartment",
+      "objective": "Build verified company fundamentals for n/v, including identity, offering, footprint, and business model.",
+      "section": "company_profile",
+      "status": "assigned",
+      "task_key": "company_fundamentals",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "CompanyDepartment",
+      "objective": "Assess public signals of economic and commercial pressure for n/v, including growth, contraction, inventory stress, shortage or excess dynamics, and strategic change.",
+      "section": "company_profile",
+      "status": "assigned",
+      "task_key": "economic_commercial_situation",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "CompanyDepartment",
+      "objective": "Extract balance-sheet, inventory, debt, and working-capital signals for n/v from the latest annual reports, investor documents, and primary financial disclosures.",
+      "section": "company_profile",
+      "status": "assigned",
+      "task_key": "financial_deep_dive",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "MarketDepartment",
+      "objective": "Assess the market situation for n/v: demand trend, supply pressure, overcapacity, growth or decline, and why.",
+      "section": "industry_analysis",
+      "status": "assigned",
+      "task_key": "market_situation",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "BuyerDepartment",
+      "objective": "Identify direct and close peer companies producing the same or similar goods as n/v.",
+      "section": "market_network",
+      "status": "assigned",
+      "task_key": "peer_companies",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "CompanyDepartment",
+      "objective": "Identify which goods, components, materials, spare parts, or inventory positions are visible in n/v. Distinguish between products the company appears to make itself, products it mainly distributes or resells, and materials, spare parts, or stock it holds. Include internal assets only when they appear relevant for inventory, redeployment, repurposing, or operational analysis, and highlight which items matter most for later buyer, resale, redeployment, repurposing, aftermarket, or inventory-management analysis.",
+      "section": "company_profile",
+      "status": "assigned",
+      "task_key": "product_asset_scope",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "CompanyDepartment",
+      "objective": "Identify strategic events for n/v, including M&A, carve-outs, joint ventures, program terminations, restructurings, and regulatory disclosures that may affect inventory or commercial urgency.",
+      "section": "company_profile",
+      "status": "assigned",
+      "task_key": "transaction_event_intelligence",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "BuyerDepartment",
+      "objective": "Identify plausible resale, redeployment, reuse, and secondary-market paths for the goods and assets identified for n/v, including likely buyers and why each route is relevant.",
+      "section": "market_network",
+      "status": "assigned",
+      "task_key": "monetization_redeployment",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "MarketDepartment",
+      "objective": "Identify plausible repurposing and circularity paths for unused materials, components, or adjacent assets from n/v.",
+      "section": "industry_analysis",
+      "status": "assigned",
+      "task_key": "repurposing_circularity",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "MarketDepartment",
+      "objective": "Identify planning, reporting, inventory-visibility, or decision-support signals where analytics could create value for n/v.",
+      "section": "industry_analysis",
+      "status": "assigned",
+      "task_key": "analytics_operational_improvement",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "ContactDepartment",
+      "objective": "Identify publicly visible decision-makers and relevant contacts at buyer firms identified for n/v. Focus on procurement, asset management, operations, and supply chain functions.",
+      "section": "contact_intelligence",
+      "status": "assigned",
+      "task_key": "contact_discovery",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "ContactDepartment",
+      "objective": "Identify publicly visible decision-makers and likely meeting stakeholders at n/v itself. Focus on board, finance, procurement, operations, aftermarket, and divisional leadership roles relevant to inventory, working capital, and restructuring topics.",
+      "section": "contact_intelligence",
+      "status": "assigned",
+      "task_key": "target_company_contacts",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    },
+    {
+      "assignee": "ContactDepartment",
+      "objective": "Qualify identified contacts for n/v buyer firms by seniority, function, and Liquisto relevance. Suggest a concrete outreach angle per contact based on the buyer context.",
+      "section": "contact_intelligence",
+      "status": "assigned",
+      "task_key": "contact_qualification",
+      "model_name": "gpt-4.1-mini",
+      "allowed_tools": [
+        "search",
+        "page_fetch",
+        "llm_structured"
+      ]
+    }
+  ],
+  "report_package": {},
+  "question_registry": {
+    "q_company_fundamentals": {
+      "question": "What are the verified company fundamentals (identity, offering, footprint, leadership, business model)?",
+      "focus_area": "company_profile"
+    },
+    "q_economic_commercial_situation": {
+      "question": "What public signals show economic or commercial pressure, growth, contraction, or strategic change?",
+      "focus_area": "company_profile"
+    },
+    "q_financial_deep_dive": {
+      "question": "Which balance-sheet, inventory, debt, and working-capital facts are supported by primary financial evidence?",
+      "focus_area": "company_profile"
+    },
+    "q_market_situation": {
+      "question": "How does the market currently evolve (demand, supply pressure, overcapacity, growth/decline) and why?",
+      "focus_area": "industry_analysis"
+    },
+    "q_peer_companies": {
+      "question": "Which peer companies are direct or close competitors for the same or similar goods?",
+      "focus_area": "market_network"
+    },
+    "q_product_asset_scope": {
+      "question": "Which products/assets/materials are in scope and most relevant for buyer or redeployment analysis?",
+      "focus_area": "company_profile"
+    },
+    "q_transaction_event_intelligence": {
+      "question": "Which strategic events, carve-outs, restructurings, or regulatory disclosures materially change the opportunity picture?",
+      "focus_area": "company_profile"
+    },
+    "q_monetization_redeployment": {
+      "question": "Which monetization and redeployment paths are plausible, including relevant buyers and fit?",
+      "focus_area": "market_network"
+    },
+    "q_repurposing_circularity": {
+      "question": "Which repurposing and circularity pathways are plausible for unused materials/components/assets?",
+      "focus_area": "industry_analysis"
+    },
+    "q_analytics_operational_improvement": {
+      "question": "Where are analytics/reporting/operational decision-support opportunities most evident?",
+      "focus_area": "industry_analysis"
+    },
+    "q_liquisto_opportunity_assessment": {
+      "question": "Which Liquisto opportunity path is best supported by current evidence and why?",
+      "focus_area": "synthesis"
+    },
+    "q_negotiation_relevance": {
+      "question": "Which signals are most relevant for negotiation angle, urgency, pricing power, and next steps?",
+      "focus_area": "synthesis"
+    },
+    "q_contact_intelligence": {
+      "question": "Which target contacts are discoverable/qualified at prioritized buyer firms, and what outreach angles are plausible?",
+      "focus_area": "contact_intelligence"
+    },
+    "q_target_company_contacts": {
+      "question": "Which stakeholders at the target company itself are the best entry points for an inventory-to-cash discussion?",
+      "focus_area": "contact_intelligence"
+    }
+  },
+  "answer_matrix": {
+    "q_company_fundamentals": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "company_profile"
+    },
+    "q_economic_commercial_situation": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "company_profile"
+    },
+    "q_financial_deep_dive": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "company_profile"
+    },
+    "q_market_situation": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "industry_analysis"
+    },
+    "q_peer_companies": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "market_network"
+    },
+    "q_product_asset_scope": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "company_profile"
+    },
+    "q_transaction_event_intelligence": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "company_profile"
+    },
+    "q_monetization_redeployment": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "market_network"
+    },
+    "q_repurposing_circularity": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "industry_analysis"
+    },
+    "q_analytics_operational_improvement": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "industry_analysis"
+    },
+    "q_liquisto_opportunity_assessment": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "synthesis"
+    },
+    "q_negotiation_relevance": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "synthesis"
+    },
+    "q_contact_intelligence": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "contact_intelligence"
+    },
+    "q_target_company_contacts": {
+      "status": "pending",
+      "answer": "",
+      "notes": "",
+      "source_tasks": [],
+      "target_section": "contact_intelligence"
+    }
+  },
+  "meeting_readiness_assessment": {
+    "run_status": "running",
+    "meeting_ready": false,
+    "blocked_reasons": [],
+    "unresolved_gaps": [],
+    "confidence": "low"
+  },
+  "final_briefing": null,
+  "short_term_memory": {
+    "facts": [],
+    "sources": [],
+    "market_signals": [],
+    "buyer_hypotheses": [],
+    "open_questions": [],
+    "gap_candidates": [],
+    "evidence_packets": [],
+    "next_actions": [],
+    "rejected_claims": [],
+    "task_outputs": {},
+    "task_statuses": {},
+    "section_outputs": {},
+    "critic_approvals": {},
+    "critic_reviews": {},
+    "accepted_points": {},
+    "open_points": {},
+    "revision_history": {},
+    "worker_reports": [],
+    "department_packages": {},
+    "department_conversations": {},
+    "department_workspaces": {},
+    "department_run_states": {},
+    "follow_up_sessions": [],
+    "answer_matrix_updates": [],
+    "resolution_decisions": [],
+    "resolution_plans": [],
+    "meeting_readiness_assessment": {
+      "run_status": "running",
+      "meeting_ready": false,
+      "blocked_reasons": [],
+      "unresolved_gaps": [],
+      "confidence": "low"
+    },
+    "meeting_actions": [],
+    "final_briefing": null,
+    "usage_totals": {
+      "llm_calls": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "search_calls": 0,
+      "page_fetches": 0
+    }
+  },
+  "status": "failed",
+  "resolution_state": {}
+}

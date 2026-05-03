@@ -80,6 +80,25 @@ def _company_assignments(brief):
     ]
 
 
+def _multi_company_assignments(brief):
+    return [
+        Assignment(
+            task_key="company_fundamentals", assignee="CompanyDepartment",
+            target_section="company_profile", label="Company fundamentals",
+            objective=f"Build verified company fundamentals for {brief.company_name}.",
+            model_name="gpt-4.1-mini",
+            allowed_tools=("search", "page_fetch", "llm_structured"),
+        ),
+        Assignment(
+            task_key="economic_commercial_situation", assignee="CompanyDepartment",
+            target_section="company_profile", label="Economic and commercial situation",
+            objective=f"Assess public pressure signals for {brief.company_name}.",
+            model_name="gpt-4.1-mini",
+            allowed_tools=("search", "page_fetch", "llm_structured"),
+        ),
+    ]
+
+
 def _contact_assignments(brief):
     return [
         Assignment(
@@ -154,6 +173,32 @@ class TestDepartmentGroupChatRun:
             lead, brief, _company_assignments(brief), _make_supervisor()
         )
         assert isinstance(payload.get("sources"), list)
+
+    def test_finalize_package_is_blocked_until_all_assigned_tasks_have_research(self):
+        from src.agents.lead import DepartmentLeadAgent
+        brief = _make_brief()
+        lead = DepartmentLeadAgent("CompanyDepartment")
+
+        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
+            tools: dict[str, Any] = {}
+            for agent in manager.groupchat.agents:
+                for tool_name, tool_fn in getattr(agent, "_function_map", {}).items():
+                    tools[tool_name] = tool_fn
+            tools["run_research"](task_key="company_fundamentals")
+            tools["review_research"](task_key="company_fundamentals")
+            result = tools["finalize_package"](summary="Premature finalize attempt.")
+            assert "incomplete_tasks" in result
+
+        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
+            payload, messages, package = lead.run(
+                brief=brief,
+                assignments=_multi_company_assignments(brief),
+                current_section=None,
+            )
+        assert package is not None
+        statuses = {item["task_key"]: item["status"] for item in package["completed_tasks"]}
+        assert statuses["company_fundamentals"] in {"accepted", "degraded"}
+        assert statuses["economic_commercial_situation"] == "degraded"
 
 
 class TestContactDepartmentEndToEnd:

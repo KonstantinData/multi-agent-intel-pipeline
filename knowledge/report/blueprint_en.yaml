@@ -1,0 +1,14 @@
+{
+  "language": "en",
+  "sections": [
+    {"section_id": "executive_dashboard", "heading": "Executive Dashboard"},
+    {"section_id": "opportunity_thesis", "heading": "Opportunity Thesis"},
+    {"section_id": "company_snapshot", "heading": "Company Snapshot"},
+    {"section_id": "financial_inventory", "heading": "Financial and Inventory Signals"},
+    {"section_id": "buyer_map", "heading": "Buyer and Redeployment Map"},
+    {"section_id": "stakeholder_map", "heading": "Stakeholder Map"},
+    {"section_id": "validation_plan", "heading": "Open Questions and Validation Plan"}
+  ],
+  "summary_style": "meeting_preparation",
+  "max_key_points_per_section": 4
+}

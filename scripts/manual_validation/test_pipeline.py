@@ -40,6 +40,7 @@ def test_negative_placeholder_signals_are_not_treated_as_positive():
             "monetization_paths": ["No credible monetization path validated yet."],
             "redeployment_paths": ["No validated repurposing path found."],
         },
+        contact_intelligence={},
         quality_review={"open_gaps": []},
         memory_snapshot={"sources": [], "next_actions": []},
     )
@@ -214,6 +215,7 @@ def test_assess_research_readiness_requires_multiple_sections():
         company_profile={"company_name": "ACME"},
         industry_analysis={"industry_name": "Software"},
         market_network={"target_company": "ACME"},
+        contact_intelligence={},
         quality_review={"evidence_health": "medium"},
     )
 
@@ -319,8 +321,11 @@ def test_generate_pdf_focuses_on_briefing_not_run_process():
     pdf_bytes = generate_pdf(payload, lang="de")
     text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
 
-    assert "Management Snapshot" in text
-    assert "Buyer- und Redeployment-Landschaft" in text
-    assert "Evidenz-Anhang" in text
+    assert "Management-Übersicht" in text
+    assert "Primäre Empfehlung" in text
+    assert "Zielunternehmen-Kontakte" in text
+    assert "Executive Dashboard" not in text
+    assert "Open Questions & Validation Plan" not in text
+    assert "Evidenz-Anhang" not in text
     assert "Runtime-Events" not in text
     assert "GroupChat-Runden" not in text

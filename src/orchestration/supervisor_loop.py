@@ -10,6 +10,11 @@ from typing import Any, Callable, NamedTuple
 from src.config.settings import SOFT_TOKEN_BUDGET, HARD_TOKEN_CAP
 from src.domain.intake import SupervisorBrief
 from src.memory.short_term_store import ShortTermMemoryStore
+from src.orchestration.meeting_questions import (
+    build_initial_answer_matrix,
+    build_question_registry,
+    matrix_status_for_task_status,
+)
 from src.orchestration.task_router import (
     DEPARTMENT_RESEARCHERS,
     build_department_assignments,
@@ -17,8 +22,15 @@ from src.orchestration.task_router import (
     build_synthesis_assignments,
     evaluate_run_conditions,
 )
-from src.orchestration.synthesis import build_synthesis_context, build_quality_review
+from src.orchestration.synthesis import (
+    build_contact_enrichment_stage,
+    build_primary_source_stage,
+    build_synthesis_context,
+    build_quality_review,
+)
+from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import BlockedArtifact
+from src.orchestration.resolution_controller import ResolutionController
 
 
 MessageHook = Callable[[dict[str, Any]], None] | None
@@ -31,6 +43,7 @@ class SupervisorLoopResult(NamedTuple):
     messages: list[dict[str, Any]]
     completed_backlog: list[dict[str, str]]
     department_timings: dict[str, float]
+    first_round_resolution: dict[str, Any]
 
 
 def _blocked_section_artifact(reason: str, open_questions: list[str] | None = None) -> dict[str, Any]:
@@ -100,6 +113,44 @@ def _admitted_packages_for_synthesis(
     }
 
 
+def _apply_structured_runtime_artifacts(run_context, package: dict[str, Any]) -> None:
+    """Consume structured artifacts as runtime state (not narrative-only fields)."""
+    updates = [
+        AnswerMatrixUpdate.model_validate(item)
+        for item in package.get("answer_matrix_updates", [])
+    ]
+    for update in updates:
+        run_context.short_term_memory.answer_matrix_updates.append(update)
+        matrix_entry = run_context.answer_matrix.setdefault(
+            update.field_key,
+            {
+                "status": "pending",
+                "answer": "",
+                "notes": "",
+                "source_tasks": [],
+                "target_section": "n/v",
+            },
+        )
+        matrix_entry["status"] = update.status
+        matrix_entry["answer"] = update.answer
+        matrix_entry["notes"] = update.notes
+        source_tasks = matrix_entry.setdefault("source_tasks", [])
+        for packet_id in update.evidence_packet_ids:
+            if packet_id not in source_tasks:
+                source_tasks.append(packet_id)
+
+    gaps = [
+        GapCandidate.model_validate(item)
+        for item in package.get("gap_candidates", [])
+    ]
+    run_context.short_term_memory.gap_candidates.extend(gaps)
+    packets = [
+        EvidencePacket.model_validate(item)
+        for item in package.get("evidence_packages", [])
+    ]
+    run_context.short_term_memory.evidence_packets.extend(packets)
+
+
 # Departments that run sequentially after each other (order matters)
 _DEPARTMENT_RUN_ORDER = [
     "CompanyDepartment",
@@ -129,6 +180,11 @@ def run_supervisor_loop(
     agents: dict[str, Any],
     on_message: MessageHook = None,
 ) -> SupervisorLoopResult:
+    if not run_context.question_registry:
+        run_context.question_registry = build_question_registry()
+    if not run_context.answer_matrix:
+        run_context.answer_matrix = build_initial_answer_matrix()
+
     sections: dict[str, Any] = {}
     department_packages: dict[str, Any] = {}
     messages: list[dict[str, Any]] = []
@@ -136,6 +192,27 @@ def run_supervisor_loop(
     department_assignments = build_department_assignments(brief)
     completed_backlog: list[dict[str, str]] = []
     department_timings: dict[str, float] = {}
+
+    def _update_answer_matrix_from_task(assignment, task_status: str) -> None:
+        matrix_status = matrix_status_for_task_status(task_status)
+        for question_id in assignment.question_ids:
+            entry = run_context.answer_matrix.setdefault(
+                question_id,
+                {
+                    "status": "pending",
+                    "answer": "",
+                    "notes": "",
+                    "source_tasks": [],
+                    "target_section": assignment.target_section,
+                },
+            )
+            if assignment.task_key not in entry["source_tasks"]:
+                entry["source_tasks"].append(assignment.task_key)
+            entry["status"] = matrix_status
+            entry["notes"] = (
+                f"Last update from task '{assignment.task_key}' "
+                f"({task_status}) in department '{assignment.assignee}'."
+            )
 
     # Index department assignments by department name for ordered access
     dept_assignment_map = {da.department: da for da in department_assignments}
@@ -166,7 +243,7 @@ def run_supervisor_loop(
     _PARALLEL_BATCH = {"CompanyDepartment", "MarketDepartment"}
     _SEQUENTIAL_AFTER = ["BuyerDepartment", "ContactDepartment"]
 
-    def _run_single_department(dept_name, dept_assignment, current_sec, memory_store):
+    def _run_single_department(dept_name, dept_assignment, current_sec, current_sections, memory_store):
         """Execute one department and return its results with timing."""
         t0 = perf_counter()
         runtime = agents["departments"][dept_name]
@@ -174,6 +251,7 @@ def run_supervisor_loop(
             brief=brief,
             assignments=list(dept_assignment.assignments),
             current_section=current_sec,
+            current_sections=current_sections,
             memory_store=memory_store,
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,
@@ -218,7 +296,7 @@ def run_supervisor_loop(
                 baseline = run_context.short_term_memory.create_working_set()
                 working_sets[dept_name] = ws
                 baselines[dept_name] = baseline
-                futures[pool.submit(_run_single_department, dept_name, da, current_section, ws)] = dept_name
+                futures[pool.submit(_run_single_department, dept_name, da, current_section, dict(sections), ws)] = dept_name
 
             for future in as_completed(futures):
                 dept_name = futures[future]
@@ -227,6 +305,7 @@ def run_supervisor_loop(
                 messages.extend(department_messages)
 
                 acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
+                _apply_structured_runtime_artifacts(run_context, package)
                 _apply_acceptance_gate(
                     acceptance,
                     dept_name=dept_name,
@@ -248,6 +327,7 @@ def run_supervisor_loop(
                     task_status = status_by_task.get(assignment.task_key, "degraded")
                     run_context.update_task_status(task_key=assignment.task_key, status=task_status)
                     run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
+                    _update_answer_matrix_from_task(assignment, task_status)
                     completed_backlog.append({"task_key": assignment.task_key, "label": assignment.label, "target_section": assignment.target_section, "status": task_status})
 
         # F5: Merge deltas in canonical department order (not as_completed order)
@@ -264,9 +344,16 @@ def run_supervisor_loop(
             messages.append(
                 emit_message(on_message, agent="Supervisor", content=json.dumps({"department": da.department, "status": "department_assigned", "target_section": da.target_section, "tasks": [{"task_key": a.task_key, "label": a.label, "objective": a.objective} for a in da.assignments]}, ensure_ascii=False))
             )
-            section_payload, department_messages, package = _run_single_department(dept_name, da, sections.get(da.target_section, {}), run_context.short_term_memory)
+            section_payload, department_messages, package = _run_single_department(
+                dept_name,
+                da,
+                sections.get(da.target_section, {}),
+                dict(sections),
+                run_context.short_term_memory,
+            )
             messages.extend(department_messages)
             acceptance = agents["supervisor"].accept_department_package(department=dept_name, package=package)
+            _apply_structured_runtime_artifacts(run_context, package)
             _apply_acceptance_gate(
                 acceptance,
                 dept_name=dept_name,
@@ -282,6 +369,7 @@ def run_supervisor_loop(
                 task_status = status_by_task.get(assignment.task_key, "degraded")
                 run_context.update_task_status(task_key=assignment.task_key, status=task_status)
                 run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
+                _update_answer_matrix_from_task(assignment, task_status)
                 completed_backlog.append({"task_key": assignment.task_key, "label": assignment.label, "target_section": assignment.target_section, "status": task_status})
 
     # Phase 2: sequential departments (Buyer → Contact)
@@ -330,6 +418,9 @@ def run_supervisor_loop(
             run_context.update_task_status(task_key=sk["task_key"], status="skipped")
             run_context.short_term_memory.task_statuses[sk["task_key"]] = "skipped"
             completed_backlog.append(sk)
+            assignment = next((a for a in department_assignment.assignments if a.task_key == sk["task_key"]), None)
+            if assignment:
+                _update_answer_matrix_from_task(assignment, "skipped")
 
         if not runnable:
             # All tasks in this department were skipped
@@ -341,7 +432,7 @@ def run_supervisor_loop(
             market_payload = sections.get("market_network", {})
             # Extract real company names from typed company lists (peer + downstream)
             buyer_candidates: list[str] = []
-            for tier_key in ("peer_competitors", "downstream_buyers"):
+            for tier_key in ("downstream_buyers", "service_providers", "cross_industry_buyers"):
                 for company in market_payload.get(tier_key, {}).get("companies", []):
                     name = ""
                     if isinstance(company, dict):
@@ -359,6 +450,7 @@ def run_supervisor_loop(
             brief=brief,
             assignments=runnable,
             current_section=current_section,
+            current_sections=dict(sections),
             memory_store=run_context.short_term_memory,
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,
@@ -372,6 +464,7 @@ def run_supervisor_loop(
             department=department_name,
             package=package,
         )
+        _apply_structured_runtime_artifacts(run_context, package)
         _apply_acceptance_gate(
             acceptance,
             dept_name=department_name,
@@ -401,6 +494,7 @@ def run_supervisor_loop(
             task_status = status_by_task.get(assignment.task_key, "degraded")
             run_context.update_task_status(task_key=assignment.task_key, status=task_status)
             run_context.short_term_memory.task_statuses[assignment.task_key] = task_status
+            _update_answer_matrix_from_task(assignment, task_status)
             completed_backlog.append(
                 {
                     "task_key": assignment.task_key,
@@ -425,6 +519,21 @@ def run_supervisor_loop(
                 "Soft token budget exceeded (%d >= %d) after %s — continuing but budget is tight.",
                 total_tokens, SOFT_TOKEN_BUDGET, department_name,
             )
+
+    controller = ResolutionController()
+    first_round_resolution = controller.classify(
+        sections=sections,
+        department_packages=department_packages,
+        answer_matrix=run_context.answer_matrix,
+        task_statuses=dict(run_context.short_term_memory.task_statuses),
+    )
+    messages.append(
+        emit_message(
+            on_message,
+            agent="Supervisor",
+            content=json.dumps({"status": "first_round_resolution", **first_round_resolution}, ensure_ascii=False),
+        )
+    )
 
     # Strategic Synthesis Department — AG2 GroupChat
     synthesis_assignments = build_synthesis_assignments(brief)
@@ -452,6 +561,45 @@ def run_supervisor_loop(
         )
         # Build synthesis context as structured input for the AG2 GroupChat
         quality_review = build_quality_review(run_context.short_term_memory.snapshot())
+        primary_source_stage = build_primary_source_stage(
+            company_profile=sections.get("company_profile", {}),
+            industry_analysis=sections.get("industry_analysis", {}),
+            market_network=sections.get("market_network", {}),
+        )
+        contact_enrichment_stage = build_contact_enrichment_stage(
+            company_profile=sections.get("company_profile", {}),
+            contact_intelligence=sections.get("contact_intelligence", {}),
+        )
+        sections["primary_source_stage"] = primary_source_stage
+        sections["contact_enrichment_stage"] = contact_enrichment_stage
+        messages.append(
+            emit_message(
+                on_message,
+                agent="Supervisor",
+                content=json.dumps(
+                    {
+                        "status": "primary_source_stage_completed",
+                        "coverage_quality": primary_source_stage.get("coverage_quality", "weak"),
+                        "hard_signal_count": primary_source_stage.get("hard_financial_inventory_signal_count", 0),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        messages.append(
+            emit_message(
+                on_message,
+                agent="Supervisor",
+                content=json.dumps(
+                    {
+                        "status": "contact_enrichment_stage_completed",
+                        "verified_decision_makers": contact_enrichment_stage.get("verified_decision_makers_count", 0),
+                        "public_search_exhausted": bool(contact_enrichment_stage.get("public_search_exhausted")),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
         synthesis_ctx = build_synthesis_context(
             company_profile=sections.get("company_profile", {}),
             industry_analysis=sections.get("industry_analysis", {}),
@@ -459,6 +607,8 @@ def run_supervisor_loop(
             contact_intelligence=sections.get("contact_intelligence", {}),
             quality_review=quality_review,
             memory_snapshot=run_context.short_term_memory.snapshot(),
+            primary_source_stage=primary_source_stage,
+            contact_enrichment_stage=contact_enrichment_stage,
         )
         synthesis_result, synthesis_messages = agents["synthesis"].run(
             brief=brief,
@@ -517,6 +667,7 @@ def run_supervisor_loop(
         for assignment in synthesis_assignments:
             run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
             run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
+            _update_answer_matrix_from_task(assignment, synthesis_task_status)
             completed_backlog.append(
                 {
                     "task_key": assignment.task_key,
@@ -532,4 +683,4 @@ def run_supervisor_loop(
     )
     logging.info("Department timings: %s", timing_summary or "none")
 
-    return SupervisorLoopResult(sections, department_packages, messages, completed_backlog, department_timings)
+    return SupervisorLoopResult(sections, department_packages, messages, completed_backlog, department_timings, first_round_resolution)

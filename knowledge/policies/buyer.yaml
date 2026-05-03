@@ -1,0 +1,33 @@
+{
+  "department": "BuyerDepartment",
+  "required_fields": [
+    "target_company",
+    "peer_competitors.companies",
+    "peer_competitors.assessment",
+    "downstream_buyers.companies",
+    "downstream_buyers.assessment",
+    "monetization_paths",
+    "redeployment_paths"
+  ],
+  "source_priority": [
+    "company_disclosures",
+    "trade_sources",
+    "marketplaces"
+  ],
+  "min_evidence_rules": {
+    "min_sources": 2,
+    "min_completed_tasks": 2
+  },
+  "gate_rules": {
+    "require_any_accepted_task": true,
+    "missing_field_availability": "public",
+    "missing_field_owner": "Buyer Department",
+    "missing_field_next_step": "Expand peer/buyer map and redeployment paths with role-specific and marketplace search variants."
+  },
+  "blocker_templates": {
+    "missing_required_field": "Required buyer field '{field}' is missing or placeholder.",
+    "insufficient_sources": "Insufficient buyer-source coverage ({actual}/{required}).",
+    "insufficient_completed_tasks": "Insufficient completed buyer tasks ({actual}/{required}).",
+    "no_accepted_task": "No buyer task reached accepted status."
+  }
+}

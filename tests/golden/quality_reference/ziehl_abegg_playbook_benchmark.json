@@ -1,0 +1,64 @@
+{
+  "target_company_contacts": {
+    "required_fields": [
+      "name",
+      "role",
+      "organization_location",
+      "relevance_buying_center",
+      "profile_contact_channel",
+      "source_verification",
+      "confidence"
+    ],
+    "required_separation": [
+      "named_verified_stakeholders",
+      "critical_missing_roles",
+      "recommended_access_path"
+    ],
+    "required_role_gaps": [
+      "Head of Supply Chain / Material Management DACH / EU",
+      "Head of Procurement / Purchasing",
+      "Aftermarket / Service Parts Lead"
+    ]
+  },
+  "critical_open_questions": {
+    "max_items": 5,
+    "required_labels": [
+      "Bestandsvolumen",
+      "Standardisierungsgrad",
+      "WIP-Stufe",
+      "Obsoleszenz-Management",
+      "Compliance / Brand Protection"
+    ],
+    "forbidden_generic_topics": [
+      "employees",
+      "employee count",
+      "mitarbeiterzahl",
+      "general revenue",
+      "umsatz allgemein"
+    ]
+  },
+  "recommended_next_steps": {
+    "required_phases": [
+      "pre_meeting",
+      "during_meeting",
+      "post_meeting",
+      "post_meeting_under_nda"
+    ],
+    "required_fields": [
+      "owner",
+      "phase",
+      "action",
+      "target_person",
+      "asset_hypothesis",
+      "expected_output",
+      "success_criterion",
+      "definition_of_done",
+      "dependency"
+    ],
+    "forbidden_phrases": [
+      "search for more data",
+      "generic research",
+      "further research required"
+    ]
+  }
+}

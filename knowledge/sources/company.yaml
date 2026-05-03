@@ -1,0 +1,104 @@
+{
+  "department": "CompanyDepartment",
+  "source_priority": [
+    "primary",
+    "official_secondary",
+    "industry_secondary"
+  ],
+  "sources": [
+    {
+      "name": "Unternehmensregister",
+      "url": "https://www.unternehmensregister.de/",
+      "department": "CompanyDepartment",
+      "priority": "primary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 1.0,
+      "search_patterns_de": [
+        "<firma> unternehmensregister jahresabschluss",
+        "<firma> bilanz unternehmensregister",
+        "<firma> inventar anlagevermögen unternehmensregister"
+      ],
+      "search_patterns_en": [
+        "<company> annual filing german commercial register",
+        "<company> balance sheet register filing"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Bundesanzeiger",
+      "url": "https://www.bundesanzeiger.de/",
+      "department": "CompanyDepartment",
+      "priority": "primary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.95,
+      "search_patterns_de": [
+        "<firma> bundesanzeiger jahresabschluss",
+        "<firma> inventar abschreibung bundesanzeiger",
+        "<firma> vorräte warenbestand bundesanzeiger"
+      ],
+      "search_patterns_en": [
+        "<company> federal gazette annual filing",
+        "<company> inventory positions germany"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "OpenCorporates",
+      "url": "https://opencorporates.com/",
+      "department": "CompanyDepartment",
+      "priority": "primary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.85,
+      "search_patterns_de": [
+        "<firma> opencorporates handelsregister international",
+        "<firma> firmenprofil ausland register"
+      ],
+      "search_patterns_en": [
+        "<company> opencorporates company filing",
+        "<company> corporate registry international"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Northdata Firmenauskunft",
+      "url": "https://www.northdata.de/",
+      "department": "CompanyDepartment",
+      "priority": "official_secondary",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.9,
+      "search_patterns_de": [
+        "northdata <firma> finanzlage umsatz mitarbeiter",
+        "northdata <firma> geschäftsführung jahresabschluss",
+        "northdata <firma> warenklassifikation branche"
+      ],
+      "search_patterns_en": [
+        "northdata <company> company profile financials",
+        "northdata <company> management annual report"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "BMWK Branchenberichte",
+      "url": "https://www.bmwk.de/",
+      "department": "CompanyDepartment",
+      "priority": "industry_secondary",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.7,
+      "search_patterns_de": [
+        "bmwk <branche> branchenbericht lage konjunktur",
+        "bmwk <branche> umsatz beschäftigung sektoranalyse",
+        "bmwk <branche> strukturbericht wettbewerbsfähigkeit"
+      ],
+      "search_patterns_en": [
+        "bmwk <industry> sector report germany",
+        "bmwk <industry> market analysis competitiveness"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}

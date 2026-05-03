@@ -54,6 +54,13 @@ Each department contains:
 - optional `Judge`
 - optional `Coding Specialist`
 
+Department-specific knowledge base inputs:
+- `knowledge/sources/<department>.yaml` (free-source priorities, search patterns)
+- `knowledge/policies/<department>.yaml` (required fields, evidence minima, gate rules)
+
+These KB files guide investigation quality and final package acceptance.
+They do not enforce turn order or scripted dialogue.
+
 Department groups are responsible for:
 - domain research
 - domain-level interpretation
@@ -74,6 +81,17 @@ Responsibilities:
 - derive negotiation relevance and next-step logic
 - produce the final `synthesis` section
 
+### Report Writer Runtime
+
+After synthesis and section validation, the runtime executes a dedicated
+`report_writer` node (`src/orchestration/report_runtime.py`), backed by
+`ReportWriterAgent` (`src/agents/report_writer.py`).
+
+Responsibilities:
+- build `run_context.report_package` from validated `pipeline_data`
+- expose a stable report-oriented structure for UI/export
+- emit explicit `ReportWriter` runtime telemetry messages
+
 ## Department Model
 
 Each department operates as a bounded collaborative group.
@@ -92,8 +110,8 @@ Questions owned:
 Questions owned:
 - market situation, demand, and supply pressure
 - overcapacity or contraction signals
-- repurposing and circularity paths
-- analytics and operational improvement signals
+- excess-inventory monetization and redeployment paths
+- inventory-relevant market pressure and timing signals
 
 ### Buyer Department
 
@@ -184,7 +202,7 @@ Lead calls: finalize_package(summary) → TERMINATE
 ```
 
 `MAX_TASK_RETRIES` is configurable via env var `LIQUISTO_MAX_TASK_RETRIES`
-(default: 2).
+(default: 3).
 
 ### Supervisor boundary (CHG-03)
 
@@ -271,10 +289,93 @@ mini-session with the stored context.
 
 Each run must produce:
 - `pipeline_data.json`
-- `run_context.json` (includes run brain: `department_run_states`, `department_packages`)
-- `memory_snapshot.json`
+- `run_context.json` (includes run brain: `department_run_states`, `department_packages`,
+  `answer_matrix`, `question_registry`, `meeting_readiness_assessment`, `resolution_state`)
+- `memory_snapshot.json` (includes `evidence_packets`, `gap_candidates`,
+  `answer_matrix_updates`, `meeting_actions`, `resolution_plans`)
+- `checkpoints/<phase>.json` per major phase (after_first_pass, after_closure,
+  after_dashboard_resume, after_finalization)
 - follow-up artifacts when follow-up answers are generated
 - PDF export in German and English on demand
+
+## Meeting-Readiness Architecture (RA-01–RA-10)
+
+The runtime plans around **meeting questions**, not only departments.
+
+### Question Planning (RA-02)
+
+- `MEETING_QUESTION_REGISTRY` (11 questions) in `src/orchestration/meeting_questions.py`
+- `TASK_TO_QUESTION_IDS` maps each task to its covered question IDs
+- `question_registry` and `answer_matrix` built before department execution
+- Answer matrix updated by each task outcome via `_update_answer_matrix_from_task`
+
+### Evidence Production (RA-03)
+
+Departments are **question-coverage contributors**, not final-briefing owners.
+Primary outputs:
+- `EvidencePacket` per collected fact (worker)
+- `GapCandidate` per unresolved gap (lead)
+- `AnswerMatrixUpdate` per question coverage change (lead)
+
+Narrative summaries exist for human readability but do not drive closure logic.
+
+### Resolution Controller (RA-04)
+
+After the first department round, `ResolutionController.classify()` assigns
+exactly one bucket:
+- `AUTO_CLOSE_REQUIRED` → bounded closure via `run_bounded_follow_up()`
+- `USER_DECISION_REQUIRED` → dashboard pause
+- `CUSTOMER_CONFIRMATION_REQUIRED` → accept gap, continue
+- `NOT_MEETING_CRITICAL` → proceed to finalization
+- `BLOCKING_FAILURE` → block finalization
+
+Closure results feed back into the answer matrix.
+
+### Dashboard Pause/Resume (RA-05)
+
+- `run_pipeline()` returns `needs_user_selection` when dashboard input required
+- `resume_pipeline()` loads paused run, applies user selections, re-evaluates gate
+- UI shows resolution dashboard with answered questions, optional depth checkboxes,
+  customer confirmation items, and resume button
+
+### Meeting-Readiness Gate (RA-06)
+
+`MeetingReadinessGate.evaluate()` blocks finalization when:
+- publicly researchable meeting-critical questions remain unresolved
+- required dashboard decisions are missing
+- evidence quality is below threshold
+- non-contact questions are still pending/blocked
+- department policy-gate blockers remain unresolved
+- minimum execution package is not met (verified decision-maker + hard financial/inventory signals)
+
+Status behavior:
+- `meeting_ready`: all hard gates passed
+- `discovery_ready_not_execution_ready`: public research sufficient, but hard blockers are internal-customer data/contact gaps
+- `blocked_not_meeting_ready`: public hard blockers still open
+
+`FinalBriefingComposer.compose()` produces `MeetingAction` list as the primary
+action output, replacing generic `next_steps`.
+
+### Runtime Guardrails (RA-08)
+
+- `PhaseBudgetTracker`: first_pass / closure / optional_depth token budgets
+- `validate_structured_artifact()`: Pydantic enforcement for runtime artifacts
+- Deterministic ordering: `QUESTION_ORDER`, `MEETING_ACTION_TYPE_ORDER`
+- Stop reasons and budget consumption persisted in `resolution_state`
+
+### Success-Path Semantics
+
+A successful run (`meeting_ready`) contains:
+- `meeting_actions` as the primary action output
+- `customer_confirmation_items` for items requiring customer-side validation
+- `optional_depth_not_selected` for user-skipped depth areas
+
+A successful run does **not** contain:
+- generic `open_questions` block (removed from synthesis on success export)
+- unresolved publicly researchable meeting-critical questions
+
+Legacy `next_steps` in synthesis context exist as a fallback for backward
+compatibility but are not the authoritative action model.
 
 ## Replaced Architecture Elements
 
@@ -285,5 +386,6 @@ Each run must produce:
 | State-machine speaker selector (`workflow_step`) | Guardrail-only selector, Lead drives workflow (CHG-04) |
 | Mutable dict payload as working artifact | Explicit `TaskArtifact` / `TaskReviewArtifact` / `TaskDecisionArtifact` (CHG-01/CHG-05) |
 | Hidden re-judging in `finalize_package` | Assembly from stored decisions only (CHG-07) |
+| Global one-size-fits-all completion semantics | Department-specific KB policy gates at acceptance time |
 | Shallow follow-up heuristics | Run brain rehydration from `department_run_states` (CHG-08) |
 | Unguarded company facts in long-term memory | Scrubbed structural patterns only (CHG-09) |

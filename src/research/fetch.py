@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import html
+import io
 import re
 import urllib.request
 from html.parser import HTMLParser
+from urllib.parse import urlparse
 
 
 class _VisibleTextParser(HTMLParser):
@@ -50,6 +52,34 @@ def _title(html_text: str) -> str:
     return html.unescape(" ".join(match.group(1).split()))
 
 
+def _looks_like_pdf(url: str, content_type: str) -> bool:
+    lowered_url = url.lower()
+    lowered_type = content_type.lower()
+    return lowered_url.endswith(".pdf") or "application/pdf" in lowered_type
+
+
+def _extract_pdf_text(raw_bytes: bytes) -> tuple[str, str]:
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        return "", ""
+
+    try:
+        reader = PdfReader(io.BytesIO(raw_bytes))
+        meta_title = ""
+        if getattr(reader, "metadata", None):
+            meta_title = str(getattr(reader.metadata, "title", "") or "").strip()
+        text_parts: list[str] = []
+        for page in reader.pages[:8]:
+            text = page.extract_text() or ""
+            text = " ".join(text.split())
+            if text:
+                text_parts.append(text)
+        return " ".join(text_parts)[:12000], meta_title[:300]
+    except Exception:
+        return "", ""
+
+
 def fetch_website_snapshot(url: str, *, timeout: int = 8) -> dict[str, str | bool]:
     cleaned_url = str(url or "").strip()
     if not cleaned_url or "://" not in cleaned_url:
@@ -59,6 +89,8 @@ def fetch_website_snapshot(url: str, *, timeout: int = 8) -> dict[str, str | boo
             "title": "",
             "meta_description": "",
             "visible_text": "",
+            "content_type": "",
+            "is_pdf": False,
         }
 
     try:
@@ -67,7 +99,8 @@ def fetch_website_snapshot(url: str, *, timeout: int = 8) -> dict[str, str | boo
             headers={"User-Agent": "Mozilla/5.0 (compatible; LiquistoBot/1.0)"},
         )
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            html_text = response.read(200000).decode("utf-8", errors="ignore")
+            content_type = str(response.headers.get("Content-Type", "") or "")
+            raw_bytes = response.read(800000)
     except Exception:
         return {
             "reachable": False,
@@ -75,7 +108,24 @@ def fetch_website_snapshot(url: str, *, timeout: int = 8) -> dict[str, str | boo
             "title": "",
             "meta_description": "",
             "visible_text": "",
+            "content_type": "",
+            "is_pdf": False,
         }
+
+    if _looks_like_pdf(cleaned_url, content_type):
+        visible_text, pdf_title = _extract_pdf_text(raw_bytes)
+        fallback_title = urlparse(cleaned_url).path.rsplit("/", 1)[-1]
+        return {
+            "reachable": True,
+            "url": cleaned_url,
+            "title": (pdf_title or fallback_title)[:300],
+            "meta_description": "",
+            "visible_text": visible_text[:12000],
+            "content_type": content_type,
+            "is_pdf": True,
+        }
+
+    html_text = raw_bytes.decode("utf-8", errors="ignore")
 
     parser = _VisibleTextParser()
     parser.feed(html_text)
@@ -86,4 +136,6 @@ def fetch_website_snapshot(url: str, *, timeout: int = 8) -> dict[str, str | boo
         "title": _title(html_text)[:300],
         "meta_description": _meta_description(html_text)[:500],
         "visible_text": visible_text,
+        "content_type": content_type,
+        "is_pdf": False,
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from src.agents.supervisor import SupervisorAgent
 from src.orchestration.department_runtime import DepartmentRuntime
+from src.orchestration.report_runtime import ReportWriterRuntime
 from src.orchestration.synthesis_runtime import SynthesisRuntime
 
 
@@ -18,4 +19,5 @@ def create_runtime_agents() -> dict[str, object]:
             "ContactDepartment": DepartmentRuntime("ContactDepartment", search_cache=shared_search_cache),
         },
         "synthesis": SynthesisRuntime(),
+        "report_writer": ReportWriterRuntime(),
     }

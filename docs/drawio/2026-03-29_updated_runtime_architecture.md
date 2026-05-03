@@ -1,7 +1,7 @@
 # Updated Runtime Architecture v2 — exakte Laufbeschreibung in verständlicher Sprache
 
 Diese Datei erklärt den **wirklichen Lauf des Systems** so, dass Du die Datei
-`docs/updated_runtime_architecture.drawio` **Schritt für Schritt mitlesen** kannst.
+`docs/drawio/runtime_architecture.drawio` **Schritt für Schritt mitlesen** kannst.
 
 Ziel dieser Beschreibung ist nicht nur Technik-Dokumentation, sondern echte Nachvollziehbarkeit:
 
@@ -35,6 +35,19 @@ Praktisch bedeutet das:
 - Jeder größere Kasten in der DRAWIO hat hier einen passenden Erklärblock.
 - Wenn im Diagramm ein Pfeil weitergeht, erklärt der nächste Abschnitt, **warum** dieser Pfeil jetzt genommen wird.
 
+### 1.1 Update-Addendum (2026-04-02)
+
+Seit dieser Fassung gilt zusätzlich:
+- jedes Department hat eine eigene Knowledge Base:
+  - `knowledge/sources/<department>.yaml` — Source-Metadaten: Prioritäten, Evidenztyp, Provenienzhinweise (keine Runtime-Queries)
+  - `knowledge/policies/<department>.yaml` — Pflichtfelder, Mindest-Evidenz, Gate-Regeln
+  - `knowledge/query_strategies/<department>.yaml` — Runtime-Query-Templates pro Task, kanonische `{placeholder}`-Syntax; einzige autoritative Quelle für Query-Konstruktion zur Laufzeit
+- die Query-Auflösung erfolgt zentral über `src/research/query_resolver.py` (Placeholder-Expansion, Validierung, Buyer-Expansion)
+- die GroupChat-Kommunikation bleibt frei (kein starres Skript)
+- die Policy-Prüfung passiert erst bei Package-Abnahme/Finalisierung
+- fehlende öffentlich auffindbare Kontakte werden explizit als `keine freien Quellen` markiert
+- Readiness berücksichtigt Department-Policy-Gates zusätzlich zur bisherigen Mindestpaket-Logik
+
 ---
 
 ## 2. Das System in einem einfachen Gesamtbild
@@ -52,9 +65,10 @@ Bevor wir in die Details gehen, hier der gesamte Lauf in ganz einfacher Sprache:
 9. Jedes Department arbeitet intern mit einem kleinen Agententeam: Lead, Researcher, Critic, Judge, Coding Assistant.
 10. Jedes Department liefert am Ende ein offizielles Department-Paket zurück.
 11. Der Supervisor entscheidet, ob dieses Paket downstream sichtbar ist, nur mit Lücken sichtbar ist oder verworfen wird.
-12. Danach liest die Synthesis die freigegebenen Department-Ergebnisse und baut die Gesamtbewertung.
-13. Anschließend baut die Pipeline daraus das finale `pipeline_data`-Objekt, das `report_package` und die Exportdateien.
-14. Zum Schluss wird der komplette Lauf so gespeichert, dass man ihn später mit derselben `run_id` erneut laden und Folgefragen beantworten kann.
+12. Zusätzlich wird je Department ein Policy-Gate ausgewertet (Pflichtfelder, Mindest-Evidenz, Blocker).
+13. Danach liest die Synthesis die freigegebenen Department-Ergebnisse und baut die Gesamtbewertung.
+14. Anschließend baut die Pipeline daraus das finale `pipeline_data`-Objekt, das `report_package` und die Exportdateien.
+15. Zum Schluss wird der komplette Lauf so gespeichert, dass man ihn später mit derselben `run_id` erneut laden und Folgefragen beantworten kann.
 
 ---
 
@@ -338,8 +352,7 @@ Die Standardaufgaben sind aktuell im Wesentlichen so aufgeteilt:
 
 #### MarketDepartment
 - `market_situation`
-- `repurposing_circularity`
-- `analytics_operational_improvement`
+- Historisch: zusaetzliche Markt-Tasks fuer Repurposing/Circularity und Analytics/Operational Improvement
 
 #### BuyerDepartment
 - `peer_companies`
@@ -1193,14 +1206,20 @@ Das ist die Stelle, an der aus vielen Einzelteilen ein **kanonisches Gesamtergeb
 
 ---
 
-### 12.6 `build_report_package(...)`
-**Wo im Code:** `src/pipeline_runner.py`, `src/orchestration/synthesis.py`
+### 12.6 `report_writer.run(...)`
+**Wo im Code:** `src/pipeline_runner.py`, `src/orchestration/report_runtime.py`, `src/agents/report_writer.py`
 
 ### Was passiert?
-Zusätzlich zum maschinenfreundlichen `pipeline_data` wird ein reportfreundliches Paket gebaut.
+Zusätzlich zum maschinenfreundlichen `pipeline_data` läuft jetzt ein eigener
+Runtime-Schritt `report_writer`.
+
+Dieser ruft `ReportWriterAgent.build_report_package(...)` auf und erzeugt ein
+stabil strukturiertes `report_package`.
 
 ### Warum?
 Damit es eine Struktur gibt, die sich leichter für UI, Bericht oder Präsentation weiterverwenden lässt.
+Außerdem ist die Report-Erstellung damit als echter Runtime-Knoten sichtbar
+(inklusive eigener `ReportWriter`-Message im Event-Stream).
 
 ### Ergebnis
 `run_context.report_package` wird gesetzt.

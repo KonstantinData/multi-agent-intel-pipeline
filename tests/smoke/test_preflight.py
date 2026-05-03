@@ -131,25 +131,19 @@ def test_no_toplevel_test_files():
             )
 
 
-def test_report_writer_is_not_a_runtime_agent():
-    """F9: ReportWriterAgent must not exist as a runtime agent class."""
+def test_report_writer_exists_as_runtime_agent():
+    """ReportWriterAgent must exist as a runtime agent class."""
     import importlib
-    try:
-        mod = importlib.import_module("src.agents.report_writer")
-        assert not hasattr(mod, "ReportWriterAgent"), (
-            "ReportWriterAgent still exists as a class — should have been removed in F9"
-        )
-    except (ImportError, ModuleNotFoundError):
-        pass  # Module removed entirely — correct
+    mod = importlib.import_module("src.agents.report_writer")
+    assert hasattr(mod, "ReportWriterAgent"), "ReportWriterAgent class is missing."
 
 
-def test_pipeline_runner_does_not_require_report_writer_agent():
-    """F9: pipeline_runner must not access agents['report_writer']."""
+def test_pipeline_runner_requires_report_writer_agent():
+    """pipeline_runner should access agents['report_writer'] for report assembly."""
     import inspect
     from src import pipeline_runner
     source = inspect.getsource(pipeline_runner.run_pipeline)
-    assert 'agents["report_writer"]' not in source
-    assert "agents['report_writer']" not in source
+    assert 'agents["report_writer"]' in source or "agents['report_writer']" in source
 
 
 def test_supervisor_loop_returns_named_tuple():
@@ -185,10 +179,16 @@ _PHASE_CONFIG = {
 }
 
 _DEPARTMENT_TASK_OWNERSHIP = {
-    "CompanyDepartment": {"company_fundamentals", "economic_commercial_situation", "product_asset_scope"},
-    "MarketDepartment": {"market_situation", "repurposing_circularity", "analytics_operational_improvement"},
+    "CompanyDepartment": {
+        "company_fundamentals",
+        "economic_commercial_situation",
+        "financial_deep_dive",
+        "product_asset_scope",
+        "transaction_event_intelligence",
+    },
+    "MarketDepartment": {"market_situation"},
     "BuyerDepartment": {"peer_companies", "monetization_redeployment"},
-    "ContactDepartment": {"contact_discovery", "contact_qualification"},
+    "ContactDepartment": {"contact_discovery", "target_company_contacts", "contact_qualification"},
     "SynthesisDepartment": {"liquisto_opportunity_assessment", "negotiation_relevance"},
 }
 

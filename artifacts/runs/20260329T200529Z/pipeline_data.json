@@ -1,0 +1,861 @@
+{
+  "company_profile": {
+    "company_name": "ZF Friedrichshafen AG",
+    "legal_form": "n/v",
+    "founded": "1915",
+    "headquarters": "Friedrichshafen, Germany",
+    "website": "https://zf.com",
+    "industry": "Automotive",
+    "employees": "approximately 11,000 to 14,000 employees",
+    "revenue": "€2.6 billion",
+    "products_and_services": [
+      "mobility products",
+      "vehicle systems",
+      "industrial technology",
+      "automotive components"
+    ],
+    "product_asset_scope": [
+      "driveline technology — manufactured",
+      "chassis technology — manufactured",
+      "safety system components — manufactured",
+      "sustainable solutions for commercial vehicles — manufactured",
+      "advanced mobility products and systems — manufactured"
+    ],
+    "goods_classification": "manufacturer",
+    "key_people": [],
+    "description": "ZF Friedrichshafen AG is a global technology company specializing in advanced mobility products and systems for passenger cars, commercial vehicles, and industrial technology. Founded in 1915 by Count Ferdinand von Zeppelin and engineer Alfred von Soden-Fraunhofen, the company is headquartered in Friedrichshafen, Germany. ZF offers a comprehensive product range primarily aimed at vehicle manufacturers, mobility providers, and start-up companies in transportation and mobility fields. Their product portfolio includes driveline and chassis technology, safety system components, and sustainable solutions for commercial vehicles.",
+    "economic_situation": {
+      "revenue_trend": "-11%",
+      "profitability": "3.6% adjusted EBIT margin",
+      "recent_events": [
+        "Deconsolidation of axle assembly product line accounting for €2.6 billion sales",
+        "Announcement in July 2024 of workforce reduction in Germany by approximately 11,000 to 14,000 employees by end of 2028",
+        "Ongoing competitiveness programs improving efficiency",
+        "Structural changes and strategic realignment to strengthen business areas"
+      ],
+      "inventory_signals": [],
+      "financial_pressure": "moderate",
+      "assessment": "ZF Friedrichshafen AG experienced an 11% nominal decline in revenue in 2024 to €41.4 billion, largely due to the deconsolidation of a significant product line. Adjusted for this and currency/M&A effects, organic revenue declined about 3%. Profitability remains positive with an adjusted EBIT margin of 3.6%. The company is undergoing significant restructuring including a planned workforce reduction of up to 14,000 employees in Germany by 2028 to improve competitiveness and efficiency. These factors indicate moderate financial pressure amid strategic realignment and market challenges."
+    },
+    "sources": [
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://zf.com",
+        "source_type": "owned",
+        "summary": "Homepage ZF Friedrichshafen AG - ZF Figures, Facts, and Business Development An overview of the 2025 reporting year. Online Annual Report 2025 Welcome to ZF ZF is a global technology company supplying advanced mobility products and systems for passenger cars, commercial vehicles and industrial technology. Its comprehen"
+      },
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://www.zf.com/",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG is a global technology company specializing in advanced mobility products and systems for passenger cars, commercial vehicles, and industrial technology. Their comprehensive product range is primarily aimed at vehicle manufacturers, mobility providers, and start-up companies in the fields of transportation and mobility. ([zf.com](https://www.zf.com/?utm_source=openai))\n\n**Pro"
+      },
+      {
+        "title": "Products - ZF",
+        "url": "https://www.zf.com/mobile/en/products/products.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen AG - Climate Change 2022",
+        "url": "https://www.zf.com/master/media/corporate/m_zf_com/sustainability/environment_health_safety_ehs/ZF_CDP_Climate_Change_Questionnaire_2022_download.pdf",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen",
+        "url": "https://en.wikipedia.org/wiki/ZF_Friedrichshafen",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG, commonly known as ZF, is a German global technology company specializing in advanced mobility solutions for passenger cars, commercial vehicles, and industrial technology. Founded in 1915 by Count Ferdinand von Zeppelin and engineer Alfred von Soden-Fraunhofen, the company is headquartered in Friedrichshafen, Germany. ([en.wikipedia.org](https://en.wikipedia.org/wiki/ZF_Frie"
+      },
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://www.zf.com/mobile/en/stories_9473.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF progresses with strategic realignment - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_82496.html",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG, a leading global automotive technology company, has experienced fluctuations in its revenue over recent years. In 2024, the company reported sales of €41.4 billion, a decrease of approximately 11% from €46.6 billion in 2023. ([press.zf.com](https://press.zf.com/press/en/releases/release_82496.html?utm_source=openai)) This decline was influenced by the deconsolidation of the"
+      },
+      {
+        "title": "ZF half-year figures reflect challenging environment - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_73280.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Nine-Month Results 2025: ZF Improves Profitability Despite Market Challenges - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_96896.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Group realigns its structures - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_73088.html",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG has been undergoing significant restructuring efforts in recent years to enhance its competitiveness and adapt to evolving market conditions. These measures have included workforce reductions, strategic realignments, and operational adjustments.\n\n**Restructuring and Workforce Reductions:**\n\n- **July 2024:** ZF announced plans to reduce its workforce in Germany by approximatel"
+      }
+    ]
+  },
+  "industry_analysis": {
+    "industry_name": "Automotive",
+    "market_size": "n/v",
+    "trend_direction": "n/v",
+    "growth_rate": "n/v",
+    "key_trends": [
+      "Sales decline of 11% year-over-year indicates weakening demand.",
+      "Sluggish purchasing activity and recession signals suggest market contraction.",
+      "Strategic realignment efforts imply adaptation to a difficult market environment."
+    ],
+    "overcapacity_signals": [],
+    "excess_stock_indicators": "n/v",
+    "demand_outlook": "ZF Friedrichshafen AG reported sales of €41.4 billion in 2024, down 11% from €46.6 billion in 2023. The decline in sales is influenced by a challenging market environment with sluggish purchasing activity and recession signs.",
+    "repurposing_signals": [
+      "Adjacent reuse or remanufacturing may be plausible for mobility products — requires validation.",
+      "ZF Friedrichshafen AG reported sales of €41.4 billion in 2024, down 11% from €46.6 billion in 2023, reflecting weakening demand in the automotive market.",
+      "The sales decline is influenced by sluggish purchasing activity and recession signals in the market."
+    ],
+    "analytics_signals": [
+      "Sales decline of 11% year-over-year to €41.4 billion in 2024 indicates weakening demand and suggests a need for enhanced demand forecasting and inventory optimization analytics.",
+      "Sluggish purchasing activity and recession signals in the automotive market highlight the importance of real-time market and supply chain analytics to support agile decision-making and strategic realignment."
+    ],
+    "assessment": "ZF Friedrichshafen AG is experiencing a challenging market environment characterized by an 11% sales decline in 2024, sluggish purchasing activity, and recession signals. These factors underscore the value of advanced analytics in improving planning accuracy, inventory visibility, and decision support to adapt to market contraction and support strategic realignment efforts.",
+    "sources": [
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://zf.com",
+        "source_type": "owned",
+        "summary": "Homepage ZF Friedrichshafen AG - ZF Figures, Facts, and Business Development An overview of the 2025 reporting year. Online Annual Report 2025 Welcome to ZF ZF is a global technology company supplying advanced mobility products and systems for passenger cars, commercial vehicles and industrial technology. Its comprehen"
+      },
+      {
+        "title": "ZF progresses with strategic realignment - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_82496.html",
+        "source_type": "secondary",
+        "summary": "In 2024, ZF Friedrichshafen AG experienced a decline in sales, reporting €41.4 billion, an 11% decrease from the previous year's €46.6 billion. ([press.zf.com](https://press.zf.com/press/en/releases/release_82496.html?utm_source=openai)) This downturn was influenced by a challenging market environment, characterized by sluggish purchasing activity and signs of recession. ([press.zf.com](https://pr"
+      },
+      {
+        "title": "ZF half-year figures reflect challenging environment - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_73280.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen AG - sales breakdown by segment 2024| Statista",
+        "url": "https://www.statista.com/statistics/377836/sales-structure-by-segment-of-zf-friedrichshafen-ag/",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen",
+        "url": "https://ru.wikipedia.org/wiki/ZF_Friedrichshafen",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen AG",
+        "url": "https://www.zf.com/master/media/corporate/m_zf_com/company/bonds_relations_/bons_and_rating/SP_RatingsDirect_Sep-8-2025.pdf",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Cox Automotive's Forecast: 2024 - A Return to Normalcy in the U.S. Auto Market",
+        "url": "https://www.prnewswire.com/news-releases/cox-automotives-forecast-2024--a-return-to-normalcy-in-the-us-auto-market-302025120.html",
+        "source_type": "secondary",
+        "summary": "The automotive market in 2024 is characterized by a return to pre-pandemic normalcy, with several key trends shaping demand:\n\n**1. Recovery of Vehicle Supply:**\nAfter significant disruptions during the COVID-19 pandemic, vehicle production has rebounded. New-vehicle inventories are expected to reach pre-pandemic levels in 2024, leading to increased availability and more competitive pricing for con"
+      },
+      {
+        "title": "2024 Predictions: Edmunds Experts Expect Clashing Market Forces in New Year, Forecast 15.7 Million New Vehicles Will Be Sold | Edmunds",
+        "url": "https://www.edmunds.com/industry/press/2024-predictions-edmunds-experts-expect-clashing-market-forces-in-new-year-forecast-15-7-million-new-vehicles-will-be-sold.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "S&P Global Mobility forecasts 88.3M auto sales in 2024",
+        "url": "https://www.spglobal.com/automotive-insights/en/blogs/2023/12/sp-global-mobility-forecasts-883m-auto-sales-in-2024",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "A year of electric vehicle and mobility trends | McKinsey",
+        "url": "https://www.mckinsey.com/industries/automotive-and-assembly/our-insights/spotlight-on-mobility-trends",
+        "source_type": "secondary",
+        "summary": "The mobility products and vehicle systems sector is experiencing significant transformations driven by technological advancements, evolving consumer preferences, and global market dynamics. Here's an overview of the current demand trends, key suppliers, and buyer behaviors in this industry.\n\n**Demand Trends:**\n\n1. **Electrification and Sustainable Mobility:** There's a notable shift towards electr"
+      }
+    ]
+  },
+  "market_network": {
+    "target_company": "ZF Friedrichshafen AG",
+    "peer_competitors": {
+      "companies": [
+        {
+          "name": "Robert Bosch GmbH",
+          "city": "Stuttgart",
+          "country": "Germany",
+          "relevance": "Robert Bosch GmbH is a major global automotive supplier specializing in driveline components, steering systems, braking systems, and electronic control units, overlapping with ZF Friedrichshafen's product families in driveline and chassis technology as well as safety systems."
+        }
+      ],
+      "assessment": "ZF Friedrichshafen AG operates in a competitive global market for automotive Tier 1 suppliers, focusing on driveline, chassis technology, and safety systems. Its direct peer identified from the evidence is Robert Bosch GmbH, a German multinational with overlapping product lines in driveline components and vehicle safety systems. The competitive landscape includes a limited number of large Tier 1 suppliers with broad portfolios serving passenger cars, commercial vehicles, and industrial technology sectors. These suppliers compete primarily in Europe and globally, with Germany as a key hub. ZF is positioned as a leading technology company with a comprehensive product range, competing closely with Bosch in advanced mobility products and vehicle systems. Other major Tier 1 suppliers likely exist but were not concretely identified in the provided evidence.",
+      "sources": [
+        {
+          "title": "https://www.globaldata.com/company-profile/zf-friedrichshafen-ag/competitors/",
+          "url": "https://www.globaldata.com/company-profile/zf-friedrichshafen-ag/competitors/",
+          "source_type": "secondary",
+          "summary": ""
+        }
+      ]
+    },
+    "downstream_buyers": {
+      "companies": [
+        {
+          "name": "BMW Group",
+          "city": "Munich",
+          "country": "Germany",
+          "relevance": "OEM vehicle manufacturer and longstanding customer of ZF Friedrichshafen AG, integrating ZF driveline and chassis components into their passenger cars."
+        }
+      ],
+      "assessment": "ZF Friedrichshafen AG serves a broad range of downstream buyers including major OEMs such as BMW Group, which incorporate ZF's driveline, chassis, and advanced mobility products into their vehicles. Additionally, ZF operates an extensive global aftermarket service network spanning 115 countries, comprising authorized distributors, service centers, and remanufacturing sites. This network supports vehicle maintenance, repair, and parts replacement for passenger cars, commercial vehicles, and industrial machinery, indicating a robust secondary market and service ecosystem. Fleet operators and industrial end-users likely benefit from these aftermarket services, although specific companies were not identified in the evidence.",
+      "sources": []
+    },
+    "service_providers": {
+      "companies": [],
+      "assessment": "n/v",
+      "sources": []
+    },
+    "cross_industry_buyers": {
+      "companies": [],
+      "assessment": "n/v",
+      "sources": []
+    },
+    "monetization_paths": [
+      "Aftermarket parts sales through authorized distributors and service centers",
+      "Remanufacturing and refurbishment of driveline and chassis components",
+      "Licensing of advanced mobility and vehicle system technologies to OEMs",
+      "Direct supply of new components to OEM vehicle manufacturers"
+    ],
+    "redeployment_paths": [
+      "Reuse of remanufactured components in commercial vehicle fleets",
+      "Refurbishment and resale of transmissions and driveline systems",
+      "Integration of industrial technology products into adjacent industrial applications",
+      "Utilization of advanced driver-assistance systems (ADAS) in retrofit or secondary markets"
+    ]
+  },
+  "contact_intelligence": {
+    "contacts": [
+      {
+        "name": "Dr. Arne Flemming",
+        "firma": "Robert Bosch GmbH",
+        "rolle_titel": "Senior Vice President of Supply Chain Management",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://www.bosch.com/company/supply-chain/",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      },
+      {
+        "name": "Stefan Hartung",
+        "firma": "Robert Bosch GmbH",
+        "rolle_titel": "Chairman of the Board of Management, responsible for technology, manufacturing, and quality management",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://us.bosch-press.com/pressportal/us/en/press-release-19584.html",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      },
+      {
+        "name": "Dr. Markus Forschner",
+        "firma": "Robert Bosch GmbH",
+        "rolle_titel": "Chief Financial Officer (CFO)",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://us.bosch-press.com/pressportal/us/en/press-release-19584.html",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      },
+      {
+        "name": "Dr. Tanja Rückert",
+        "firma": "Robert Bosch GmbH",
+        "rolle_titel": "Chief Digital Officer (CDO)",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://us.bosch-press.com/pressportal/us/en/press-release-19584.html",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      },
+      {
+        "name": "Dr. Joachim Post",
+        "firma": "BMW Group",
+        "rolle_titel": "Member of the Board of Management of BMW AG, overseeing Development; previously responsible for Purchasing and Supplier Network",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://www.bmwgroup.com/en/company/leadership-and-governance.html",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      },
+      {
+        "name": "Nadine Philipp",
+        "firma": "BMW Group",
+        "rolle_titel": "Vice President of Sustainability Supplier Network",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://www.bmwgroup.com/en/company/leadership-and-governance.html",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      },
+      {
+        "name": "Patrick Hudde",
+        "firma": "BMW Group",
+        "rolle_titel": "Head of Sustainability in the Supply Chain, Raw Materials Management and Energy",
+        "funktion": "n/v",
+        "senioritaet": "n/v",
+        "standort": "n/v",
+        "quelle": "https://www.press.bmwgroup.com/global/photo/detail/P90473554/Patrick-Hudde-Head-of-Sustainability-in-the-Supply-Chain-Raw-Materials-Management-and-Energy-at-the",
+        "confidence": "inferred",
+        "relevance_reason": "n/v",
+        "suggested_outreach_angle": "n/v"
+      }
+    ],
+    "prioritized_contacts": [],
+    "firms_searched": 2,
+    "contacts_found": 7,
+    "coverage_quality": "n/v",
+    "narrative_summary": "n/v",
+    "open_questions": [],
+    "sources": [
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://zf.com",
+        "source_type": "owned",
+        "summary": "Homepage ZF Friedrichshafen AG - ZF Figures, Facts, and Business Development An overview of the 2025 reporting year. Online Annual Report 2025 Welcome to ZF ZF is a global technology company supplying advanced mobility products and systems for passenger cars, commercial vehicles and industrial technology. Its comprehen"
+      },
+      {
+        "title": "Supply chain | Bosch Global",
+        "url": "https://www.bosch.com/company/supply-chain/",
+        "source_type": "secondary",
+        "summary": "As of March 2026, the head of Supply Chain Management at Robert Bosch GmbH is Dr. Arne Flemming, who serves as the Senior Vice President of Supply Chain Management. ([bosch.com](https://www.bosch.com/company/supply-chain/?utm_source=openai))\n\nIn the Purchasing department, Bosch employs approximately 11,000 associates worldwide, managing a purchasing volume of around €50 billion. ([bosch.com](https"
+      },
+      {
+        "title": "Purchasing | Bosch Global",
+        "url": "https://www.bosch.com/company/supply-chain/purchasing/",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Bosch (company)",
+        "url": "https://en.wikipedia.org/wiki/Bosch_%28company%29",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Personnel changes at Robert Bosch GmbH - Bosch Media Service US",
+        "url": "https://us.bosch-press.com/pressportal/us/en/press-release-19584.html",
+        "source_type": "secondary",
+        "summary": "As of March 2026, Robert Bosch GmbH's executive leadership includes:\n\n- **Stefan Hartung**: Chairman of the Board of Management, responsible for technology, manufacturing, and quality management. ([us.bosch-press.com](https://us.bosch-press.com/pressportal/us/en/press-release-19584.html?utm_source=openai))\n\n- **Dr. Markus Forschner**: Chief Financial Officer (CFO), overseeing financial operations."
+      },
+      {
+        "title": "Leadership & Governance BMW Group",
+        "url": "https://www.bmwgroup.com/en/company/leadership-and-governance.html",
+        "source_type": "secondary",
+        "summary": "As of March 2026, the BMW Group's procurement and supply chain leadership includes several key individuals:\n\n- **Dr. Joachim Post**: Since July 2025, Dr. Post has been a member of the Board of Management of BMW AG, overseeing Development. Prior to this, from 2022 to 2025, he was responsible for Purchasing and Supplier Network. ([bmwgroup.com](https://www.bmwgroup.com/en/company/leadership-and-gove"
+      },
+      {
+        "title": "Nadine Philipp | Automotive Logistics &amp; Supply Chain Europe",
+        "url": "https://alsceurope.automotivelogistics.media/speakers/detail/veranstaltung/automotive-logistics-supply-chain-europe-2026/sprecher/nadine-philipp-new67c96b14544d3872588646/",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Patrick Hudde, Head of Sustainability in the Supply Chain, Raw Materials Management and Energy at the BMW Group",
+        "url": "https://www.press.bmwgroup.com/global/photo/detail/P90473554/Patrick-Hudde-Head-of-Sustainability-in-the-Supply-Chain-Raw-Materials-Management-and-Energy-at-the",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "BMW Group Executive Team",
+        "url": "https://www.comparably.com/companies/bmw/executive-team",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Alphabet announces new Chief Operations Officer - Asset Finance Connect",
+        "url": "https://assetfinanceconnect.com/alphabet-announces-new-chief-operations-officer/",
+        "source_type": "secondary",
+        "summary": ""
+      }
+    ]
+  },
+  "quality_review": {
+    "validated_agents": [
+      "Supervisor",
+      "CompanyDepartment",
+      "MarketDepartment",
+      "BuyerDepartment",
+      "ContactDepartment",
+      "analytics_operational_improvement",
+      "product_asset_scope",
+      "repurposing_circularity"
+    ],
+    "evidence_health": "medium",
+    "open_gaps": [
+      "What is the current total number of employees at ZF Friedrichshafen AG?",
+      "What is the most recent annual revenue figure for ZF Friedrichshafen AG?",
+      "What is the current total employee headcount after announced workforce reductions?",
+      "Are there any inventory write-downs or excess stock issues reported recently?",
+      "What are the detailed impacts of the strategic realignment on product offerings and partnerships?",
+      "How is ZF addressing supply chain challenges amid market fluctuations?",
+      "Does ZF Friedrichshafen AG hold significant inventory or spare parts stock for aftermarket sales or distribution?",
+      "Are there any specific materials or raw components that ZF distributes or holds in stock beyond its manufactured product lines?",
+      "What is the extent of ZF's involvement in aftermarket spare parts or distribution channels?",
+      "Revenue figure is missing",
+      "What is the outlook for recovery or growth in ZF's key market segments beyond 2024?",
+      "Are there specific geographic regions where demand is stronger or weaker?",
+      "How will ZF's strategic partnerships and realignment impact its competitive position long term?",
+      "Is there any indication of inventory buildup or excess stock within ZF or the broader market?",
+      "Does ZF Friedrichshafen AG have explicit programs or initiatives focused on recycling, remanufacturing, or circular economy?",
+      "What specific materials or components does ZF identify as candidates for repurposing or reuse?",
+      "How is ZF integrating sustainability and circularity into its strategic realignment?",
+      "What specific supply chain planning and inventory visibility systems does ZF currently use?",
+      "How is ZF currently leveraging analytics in its strategic realignment efforts?",
+      "What are the key operational challenges ZF faces in managing inventory and production amid declining demand?",
+      "Is ZF exploring adjacent reuse or remanufacturing opportunities for its mobility products as part of its strategic realignment?",
+      "What data sources are available internally at ZF for enhancing decision-support analytics?",
+      "Market trend direction is missing",
+      "Growth rate is missing",
+      "Market size is missing",
+      "What other Tier 1 suppliers directly compete with ZF Friedrichshafen AG in driveline and chassis technology beyond Bosch?",
+      "How does ZF's market share compare regionally and globally against other Tier 1 suppliers?",
+      "What are the emerging competitors in advanced mobility products and vehicle systems?",
+      "Which other major OEMs beyond BMW are key customers of ZF Friedrichshafen AG?",
+      "What are the identities of the largest aftermarket distributors and service partners in ZF's network?",
+      "Are there specific fleet operators or industrial end-users publicly known to rely heavily on ZF products?",
+      "What is the scale and scope of ZF's licensing agreements for their advanced mobility technologies?",
+      "Fewer than 3 peer companies identified",
+      "Fewer than 2 peers have a relevance explanation",
+      "Who holds the direct procurement head or supply chain director roles at BMW Group currently beyond the known executives?",
+      "Are there additional contacts at Robert Bosch GmbH specifically responsible for asset management or operations beyond the senior supply chain leadership?",
+      "Is there a Chief Operations Officer or VP Operations role at BMW Group or Robert Bosch GmbH relevant to ZF Friedrichshafen AG's target buyer functions?"
+    ],
+    "recommendations": [
+      "Validate likely buyers against CRM before the meeting.",
+      "Confirm economic pressure signals with fresher external evidence where possible."
+    ],
+    "gap_details": [
+      {
+        "agent": "Supervisor",
+        "field_path": "*",
+        "issue_type": "open_question",
+        "severity": "moderate",
+        "summary": "What is the current total number of employees at ZF Friedrichshafen AG?",
+        "recommendation": "Use follow-up mode or customer discovery to close this gap."
+      },
+      {
+        "agent": "Supervisor",
+        "field_path": "*",
+        "issue_type": "open_question",
+        "severity": "moderate",
+        "summary": "What is the most recent annual revenue figure for ZF Friedrichshafen AG?",
+        "recommendation": "Use follow-up mode or customer discovery to close this gap."
+      },
+      {
+        "agent": "Supervisor",
+        "field_path": "*",
+        "issue_type": "open_question",
+        "severity": "moderate",
+        "summary": "What is the current total employee headcount after announced workforce reductions?",
+        "recommendation": "Use follow-up mode or customer discovery to close this gap."
+      },
+      {
+        "agent": "Supervisor",
+        "field_path": "*",
+        "issue_type": "open_question",
+        "severity": "moderate",
+        "summary": "Are there any inventory write-downs or excess stock issues reported recently?",
+        "recommendation": "Use follow-up mode or customer discovery to close this gap."
+      },
+      {
+        "agent": "Supervisor",
+        "field_path": "*",
+        "issue_type": "open_question",
+        "severity": "moderate",
+        "summary": "What are the detailed impacts of the strategic realignment on product offerings and partnerships?",
+        "recommendation": "Use follow-up mode or customer discovery to close this gap."
+      }
+    ]
+  },
+  "synthesis": {
+    "target_company": "ZF Friedrichshafen AG",
+    "executive_summary": "ZF Friedrichshafen AG is a global manufacturer of advanced mobility products, currently facing significant economic and operational pressures. Revenue has declined sharply, and the company is executing a major restructuring, including substantial workforce reductions. While there is no direct evidence of inventory write-downs or explicit excess stock, the scale of restructuring and weak market conditions strongly suggest potential for excess or slow-moving inventory. ZF’s global aftermarket and remanufacturing network provides multiple channels for redeployment and resale, aligning well with Liquisto’s service offerings. Key buyer-side contacts at BMW and Bosch have been identified for initial outreach. However, the opportunity assessment is constrained by unresolved gaps: quantitative market size, growth rate, trend direction, and comprehensive peer mapping are missing, and ZF’s explicit circularity initiatives are not detailed. These limitations should be transparently communicated in any customer engagement, and further intelligence gathering is recommended to refine the opportunity and outreach strategy.",
+    "liquisto_service_relevance": [
+      {
+        "service_area": "excess_inventory",
+        "relevance": "medium",
+        "reasoning": "Indicative resale or buyer routes were identified with at least one buyer signal."
+      },
+      {
+        "service_area": "repurposing",
+        "relevance": "medium",
+        "reasoning": "At least one redeployment or repurposing hypothesis exists."
+      },
+      {
+        "service_area": "analytics",
+        "relevance": "medium",
+        "reasoning": "Operational visibility or decision-support leverage is indicated."
+      }
+    ],
+    "opportunity_assessment_summary": "ZF Friedrichshafen AG is a strong candidate for Liquisto’s excess inventory, repurposing, and analytics services. The company is under significant economic and operational pressure, with revenue declining from €46.6B (2023) to €41.4B (2024) and a major restructuring underway. ZF’s global aftermarket network and remanufacturing footprint suggest latent opportunities for redeployment, resale, or analytics-driven inventory optimization. However, the opportunity scale cannot be precisely quantified due to missing data on market size, growth rate, and explicit inventory signals. Peer benchmarking is also limited by incomplete competitor mapping.",
+    "recommended_engagement_paths": [
+      "excess_inventory",
+      "repurposing",
+      "analytics"
+    ],
+    "case_assessments": [
+      {
+        "option": "excess_inventory",
+        "arguments": [
+          {
+            "argument": "Indicative resale or buyer routes were identified with at least one buyer signal.",
+            "direction": "pro",
+            "based_on": "validated_department_packages"
+          }
+        ],
+        "summary": "Indicative resale or buyer routes were identified with at least one buyer signal."
+      },
+      {
+        "option": "repurposing",
+        "arguments": [
+          {
+            "argument": "At least one redeployment or repurposing hypothesis exists.",
+            "direction": "pro",
+            "based_on": "validated_department_packages"
+          }
+        ],
+        "summary": "At least one redeployment or repurposing hypothesis exists."
+      },
+      {
+        "option": "analytics",
+        "arguments": [
+          {
+            "argument": "Operational visibility or decision-support leverage is indicated.",
+            "direction": "pro",
+            "based_on": "validated_department_packages"
+          }
+        ],
+        "summary": "Operational visibility or decision-support leverage is indicated."
+      }
+    ],
+    "buyer_market_summary": "ZF Friedrichshafen AG serves a broad range of downstream buyers including major OEMs such as BMW Group, which incorporate ZF's driveline, chassis, and advanced mobility products into their vehicles. Additionally, ZF operates an extensive global aftermarket service network spanning 115 countries, comprising authorized distributors, service centers, and remanufacturing sites. This network supports vehicle maintenance, repair, and parts replacement for passenger cars, commercial vehicles, and industrial machinery, indicating a robust secondary market and service ecosystem. Fleet operators and industrial end-users likely benefit from these aftermarket services, although specific companies were not identified in the evidence.",
+    "total_peer_competitors": 1,
+    "total_downstream_buyers": 1,
+    "total_service_providers": 0,
+    "total_cross_industry_buyers": 0,
+    "key_risks": [
+      "Revenue figure is missing",
+      "Is ZF exploring adjacent reuse or remanufacturing opportunities for its mobility products as part of its strategic realignment?",
+      "Market trend direction is missing",
+      "Growth rate is missing",
+      "Market size is missing",
+      "Fewer than 3 peer companies identified",
+      "Fewer than 2 peers have a relevance explanation"
+    ],
+    "next_steps": [
+      "Search for the latest annual report or official company disclosures to obtain current employee count and revenue data.",
+      "Verify if ZF Friedrichshafen AG has any recent press releases or investor presentations that disclose updated financial and workforce information.",
+      "Monitor upcoming financial reports for updated employee numbers and inventory status.",
+      "Investigate further details on restructuring impacts and strategic partnerships.",
+      "Track market reactions and customer feedback related to ZF's realignment and competitiveness programs.",
+      "Search for any announcements on supply chain management or inventory adjustments.",
+      "Investigate ZF's product catalog or annual report sections for details on spare parts, inventory holdings, or distribution activities.",
+      "Search for information on ZF's aftermarket business or spare parts distribution to clarify if they hold stock or resell components.",
+      "Monitor press releases or investor communications for updates on product portfolio changes or inventory management strategies.",
+      "Monitor ZF's upcoming quarterly and annual reports for updated sales and margin data.",
+      "Analyze competitor performance and market share changes in the automotive components sector.",
+      "Investigate macroeconomic forecasts for the automotive industry and related supply chains.",
+      "Assess the impact of ZF's strategic realignment initiatives on operational efficiency and market positioning.",
+      "Review ZF Friedrichshafen AG's latest sustainability or CDP climate disclosures for explicit circularity programs.",
+      "Analyze product lines and supply chain details to identify potential repurposing or recycling opportunities.",
+      "Monitor press releases and annual reports for updates on strategic initiatives related to circular economy.",
+      "Engage with ZF stakeholders to understand current analytics capabilities and gaps in supply chain planning and inventory visibility.",
+      "Explore opportunities to pilot advanced demand forecasting and inventory optimization analytics tailored to ZF's market conditions.",
+      "Investigate feasibility and interest in analytics solutions supporting strategic realignment and scenario planning under recession conditions.",
+      "Assess potential for analytics to support adjacent reuse or remanufacturing initiatives within ZF's mobility products segment.",
+      "Monitor automotive market trends, especially electrification and supply recovery, to refine analytics value propositions for ZF.",
+      "Conduct further research to identify additional direct Tier 1 competitors to ZF Friedrichshafen AG.",
+      "Analyze market share data and regional competitive dynamics for Tier 1 automotive suppliers.",
+      "Investigate recent M&A activity and technology trends impacting the competitive landscape.",
+      "Conduct targeted searches to identify additional OEM customers of ZF Friedrichshafen AG.",
+      "Investigate ZF's aftermarket distributor partners and service network members by region.",
+      "Explore fleet operator and industrial user case studies or partnerships involving ZF products.",
+      "Research ZF's technology licensing programs and any public disclosures on such agreements.",
+      "Verify and update contact details for procurement and supply chain decision-makers at BMW Group, focusing on roles beyond Dr. Joachim Post and Nadine Philipp.",
+      "Investigate further contacts at Robert Bosch GmbH related to asset management and operations to complement supply chain leadership contacts.",
+      "Monitor for announcements or updates regarding COO or VP Operations appointments at both Robert Bosch GmbH and BMW Group."
+    ],
+    "sources": [
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://zf.com",
+        "source_type": "owned",
+        "summary": "Homepage ZF Friedrichshafen AG - ZF Figures, Facts, and Business Development An overview of the 2025 reporting year. Online Annual Report 2025 Welcome to ZF ZF is a global technology company supplying advanced mobility products and systems for passenger cars, commercial vehicles and industrial technology. Its comprehen"
+      },
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://www.zf.com/",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG is a global technology company specializing in advanced mobility products and systems for passenger cars, commercial vehicles, and industrial technology. Their comprehensive product range is primarily aimed at vehicle manufacturers, mobility providers, and start-up companies in the fields of transportation and mobility. ([zf.com](https://www.zf.com/?utm_source=openai))\n\n**Pro"
+      },
+      {
+        "title": "Products - ZF",
+        "url": "https://www.zf.com/mobile/en/products/products.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen AG - Climate Change 2022",
+        "url": "https://www.zf.com/master/media/corporate/m_zf_com/sustainability/environment_health_safety_ehs/ZF_CDP_Climate_Change_Questionnaire_2022_download.pdf",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen",
+        "url": "https://en.wikipedia.org/wiki/ZF_Friedrichshafen",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG, commonly known as ZF, is a German global technology company specializing in advanced mobility solutions for passenger cars, commercial vehicles, and industrial technology. Founded in 1915 by Count Ferdinand von Zeppelin and engineer Alfred von Soden-Fraunhofen, the company is headquartered in Friedrichshafen, Germany. ([en.wikipedia.org](https://en.wikipedia.org/wiki/ZF_Frie"
+      },
+      {
+        "title": "Homepage ZF Friedrichshafen AG - ZF",
+        "url": "https://www.zf.com/mobile/en/stories_9473.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF progresses with strategic realignment - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_82496.html",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG, a leading global automotive technology company, has experienced fluctuations in its revenue over recent years. In 2024, the company reported sales of €41.4 billion, a decrease of approximately 11% from €46.6 billion in 2023. ([press.zf.com](https://press.zf.com/press/en/releases/release_82496.html?utm_source=openai)) This decline was influenced by the deconsolidation of the"
+      },
+      {
+        "title": "ZF half-year figures reflect challenging environment - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_73280.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Nine-Month Results 2025: ZF Improves Profitability Despite Market Challenges - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_96896.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Group realigns its structures - ZF",
+        "url": "https://press.zf.com/press/en/releases/release_73088.html",
+        "source_type": "secondary",
+        "summary": "ZF Friedrichshafen AG has been undergoing significant restructuring efforts in recent years to enhance its competitiveness and adapt to evolving market conditions. These measures have included workforce reductions, strategic realignments, and operational adjustments.\n\n**Restructuring and Workforce Reductions:**\n\n- **July 2024:** ZF announced plans to reduce its workforce in Germany by approximatel"
+      },
+      {
+        "title": "ZF Friedrichshafen AG - sales breakdown by segment 2024| Statista",
+        "url": "https://www.statista.com/statistics/377836/sales-structure-by-segment-of-zf-friedrichshafen-ag/",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen",
+        "url": "https://ru.wikipedia.org/wiki/ZF_Friedrichshafen",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "ZF Friedrichshafen AG",
+        "url": "https://www.zf.com/master/media/corporate/m_zf_com/company/bonds_relations_/bons_and_rating/SP_RatingsDirect_Sep-8-2025.pdf",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Cox Automotive's Forecast: 2024 - A Return to Normalcy in the U.S. Auto Market",
+        "url": "https://www.prnewswire.com/news-releases/cox-automotives-forecast-2024--a-return-to-normalcy-in-the-us-auto-market-302025120.html",
+        "source_type": "secondary",
+        "summary": "The automotive market in 2024 is characterized by a return to pre-pandemic normalcy, with several key trends shaping demand:\n\n**1. Recovery of Vehicle Supply:**\nAfter significant disruptions during the COVID-19 pandemic, vehicle production has rebounded. New-vehicle inventories are expected to reach pre-pandemic levels in 2024, leading to increased availability and more competitive pricing for con"
+      },
+      {
+        "title": "2024 Predictions: Edmunds Experts Expect Clashing Market Forces in New Year, Forecast 15.7 Million New Vehicles Will Be Sold | Edmunds",
+        "url": "https://www.edmunds.com/industry/press/2024-predictions-edmunds-experts-expect-clashing-market-forces-in-new-year-forecast-15-7-million-new-vehicles-will-be-sold.html",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "S&P Global Mobility forecasts 88.3M auto sales in 2024",
+        "url": "https://www.spglobal.com/automotive-insights/en/blogs/2023/12/sp-global-mobility-forecasts-883m-auto-sales-in-2024",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "A year of electric vehicle and mobility trends | McKinsey",
+        "url": "https://www.mckinsey.com/industries/automotive-and-assembly/our-insights/spotlight-on-mobility-trends",
+        "source_type": "secondary",
+        "summary": "The mobility products and vehicle systems sector is experiencing significant transformations driven by technological advancements, evolving consumer preferences, and global market dynamics. Here's an overview of the current demand trends, key suppliers, and buyer behaviors in this industry.\n\n**Demand Trends:**\n\n1. **Electrification and Sustainable Mobility:** There's a notable shift towards electr"
+      },
+      {
+        "title": "Supply chain | Bosch Global",
+        "url": "https://www.bosch.com/company/supply-chain/",
+        "source_type": "secondary",
+        "summary": "As of March 2026, the head of Supply Chain Management at Robert Bosch GmbH is Dr. Arne Flemming, who serves as the Senior Vice President of Supply Chain Management. ([bosch.com](https://www.bosch.com/company/supply-chain/?utm_source=openai))\n\nIn the Purchasing department, Bosch employs approximately 11,000 associates worldwide, managing a purchasing volume of around €50 billion. ([bosch.com](https"
+      },
+      {
+        "title": "Purchasing | Bosch Global",
+        "url": "https://www.bosch.com/company/supply-chain/purchasing/",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Bosch (company)",
+        "url": "https://en.wikipedia.org/wiki/Bosch_%28company%29",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Personnel changes at Robert Bosch GmbH - Bosch Media Service US",
+        "url": "https://us.bosch-press.com/pressportal/us/en/press-release-19584.html",
+        "source_type": "secondary",
+        "summary": "As of March 2026, Robert Bosch GmbH's executive leadership includes:\n\n- **Stefan Hartung**: Chairman of the Board of Management, responsible for technology, manufacturing, and quality management. ([us.bosch-press.com](https://us.bosch-press.com/pressportal/us/en/press-release-19584.html?utm_source=openai))\n\n- **Dr. Markus Forschner**: Chief Financial Officer (CFO), overseeing financial operations."
+      },
+      {
+        "title": "Leadership & Governance BMW Group",
+        "url": "https://www.bmwgroup.com/en/company/leadership-and-governance.html",
+        "source_type": "secondary",
+        "summary": "As of March 2026, the BMW Group's procurement and supply chain leadership includes several key individuals:\n\n- **Dr. Joachim Post**: Since July 2025, Dr. Post has been a member of the Board of Management of BMW AG, overseeing Development. Prior to this, from 2022 to 2025, he was responsible for Purchasing and Supplier Network. ([bmwgroup.com](https://www.bmwgroup.com/en/company/leadership-and-gove"
+      },
+      {
+        "title": "Nadine Philipp | Automotive Logistics &amp; Supply Chain Europe",
+        "url": "https://alsceurope.automotivelogistics.media/speakers/detail/veranstaltung/automotive-logistics-supply-chain-europe-2026/sprecher/nadine-philipp-new67c96b14544d3872588646/",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Patrick Hudde, Head of Sustainability in the Supply Chain, Raw Materials Management and Energy at the BMW Group",
+        "url": "https://www.press.bmwgroup.com/global/photo/detail/P90473554/Patrick-Hudde-Head-of-Sustainability-in-the-Supply-Chain-Raw-Materials-Management-and-Energy-at-the",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "BMW Group Executive Team",
+        "url": "https://www.comparably.com/companies/bmw/executive-team",
+        "source_type": "secondary",
+        "summary": ""
+      },
+      {
+        "title": "Alphabet announces new Chief Operations Officer - Asset Finance Connect",
+        "url": "https://assetfinanceconnect.com/alphabet-announces-new-chief-operations-officer/",
+        "source_type": "secondary",
+        "summary": ""
+      }
+    ],
+    "generation_mode": "normal",
+    "confidence": "medium",
+    "back_requests_issued": 2,
+    "back_requests": [
+      {
+        "department": "BuyerDepartment",
+        "type": "strengthen",
+        "subject": "peer mapping",
+        "context": "The synthesis is weakened by the identification of fewer than three peer competitors for ZF Friedrichshafen AG, with limited relevance explanations. Please strengthen the peer mapping by identifying at least two additional direct competitors in driveline, chassis, or advanced mobility products, and provide brief relevance explanations for each."
+      },
+      {
+        "department": "MarketDepartment",
+        "type": "strengthen",
+        "subject": "market quantification",
+        "context": "The synthesis lacks quantitative data on market size, growth rate, and trend direction for ZF Friedrichshafen AG's core markets. Please strengthen the assessment by providing any available estimates or credible proxies for market size, growth rate, and trend direction relevant to ZF's automotive and industrial technology segments."
+      }
+    ],
+    "department_confidences": {
+      "CompanyDepartment": "high",
+      "MarketDepartment": "medium",
+      "BuyerDepartment": "medium",
+      "ContactDepartment": "medium"
+    }
+  },
+  "research_readiness": {
+    "usable": true,
+    "score": 83,
+    "reasons": [
+      "Contact coverage is low — identify procurement lead before outreach.",
+      "Evidence quality is only moderate and should be strengthened before the meeting.",
+      "Open critic gaps remain unresolved."
+    ]
+  },
+  "validation_errors": [],
+  "meeting_readiness_assessment": {
+    "run_status": "running",
+    "meeting_ready": false,
+    "blocked_reasons": [],
+    "unresolved_gaps": [],
+    "confidence": "low"
+  },
+  "final_briefing": {
+    "run_id": "n/v",
+    "company_name": "n/v",
+    "status": "running",
+    "executive_summary": "n/v",
+    "evidence_packets": [],
+    "answer_matrix_updates": [],
+    "readiness": {
+      "run_status": "running",
+      "meeting_ready": false,
+      "blocked_reasons": [],
+      "unresolved_gaps": [],
+      "confidence": "low"
+    },
+    "recommended_actions": [],
+    "metadata": {}
+  },
+  "meeting_actions": [
+    {
+      "action_type": "prepare_meeting",
+      "title": "Lead with excess_inventory opportunity",
+      "description": "ZF Friedrichshafen AG is a strong candidate for Liquisto’s excess inventory, repurposing, and analytics services. The company is under significant economic and operational pressure, with revenue declining from €46.6B (2023) to €41.4B (2024) and a major restructuring underway. ZF’s global aftermarket network and remanufacturing footprint suggest latent opportunities for redeployment, resale, or analytics-driven inventory optimization. However, the opportunity scale cannot be precisely quantified due to missing data on market size, growth rate, and explicit inventory signals. Peer benchmarking is also limited by incomplete competitor mapping.",
+      "owner": "Liquisto Account Lead"
+    },
+    {
+      "action_type": "prepare_meeting",
+      "title": "Prepare contact outreach",
+      "description": "Use identified contacts and outreach angles for pre-meeting or post-meeting follow-up.",
+      "owner": "Liquisto Account Lead"
+    },
+    {
+      "action_type": "collect_missing_evidence",
+      "title": "Validate: What is the current total number of employees at ZF Friedrichshafen AG?",
+      "description": "Confirm or refute this gap directly in the meeting with ZF Friedrichshafen.",
+      "owner": "Liquisto Account Lead"
+    },
+    {
+      "action_type": "collect_missing_evidence",
+      "title": "Validate: What is the most recent annual revenue figure for ZF Friedrichshafen AG?",
+      "description": "Confirm or refute this gap directly in the meeting with ZF Friedrichshafen.",
+      "owner": "Liquisto Account Lead"
+    },
+    {
+      "action_type": "collect_missing_evidence",
+      "title": "Customer confirmation: Who holds the direct procurement head or supply chain director roles at BMW Grou",
+      "description": "This item requires customer-side confirmation and cannot be resolved from public sources.",
+      "owner": "Liquisto Account Lead"
+    },
+    {
+      "action_type": "collect_missing_evidence",
+      "title": "Customer confirmation: Are there additional contacts at Robert Bosch GmbH specifically responsible for ",
+      "description": "This item requires customer-side confirmation and cannot be resolved from public sources.",
+      "owner": "Liquisto Account Lead"
+    }
+  ]
+}

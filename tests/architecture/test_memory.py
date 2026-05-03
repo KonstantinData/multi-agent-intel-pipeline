@@ -9,11 +9,14 @@ NO AG2/autogen dependency.
 """
 from __future__ import annotations
 
+import json
 import logging
 
 import pytest
 
+from src.memory.backfill import backfill_long_term_memory_from_runs
 from src.memory.short_term_store import ShortTermMemoryStore
+from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.consolidation import (
     consolidate_role_patterns,
     MEMORY_ROLE_STATUS,
@@ -135,6 +138,29 @@ class TestConsolidationProcessSafety:
         )
         assert patterns == []
 
+    def test_consolidation_accepts_meeting_ready_status(self):
+        run_context = {
+            "short_term_memory": {
+                "worker_reports": [
+                    {
+                        "worker": "CompanyResearcher",
+                        "queries_used": ["manufacturer inventory surplus signals"],
+                        "task_key": "company_fundamentals",
+                    }
+                ],
+                "sources": [{"source_type": "registry"}],
+                "task_statuses": {"company_fundamentals": "accepted"},
+                "critic_reviews": {},
+                "department_run_states": {},
+            }
+        }
+        pipeline_data = {"company_profile": {"industry": "Manufacturing"}}
+        patterns = consolidate_role_patterns(
+            run_context=run_context, pipeline_data=pipeline_data,
+            status="meeting_ready", usable=True,
+        )
+        assert patterns
+
     def test_consolidation_empty_for_not_usable(self):
         patterns = consolidate_role_patterns(
             run_context={}, pipeline_data={}, status="completed", usable=False
@@ -146,6 +172,7 @@ class TestConsolidationProcessSafety:
             "short_term_memory": {
                 "worker_reports": [],
                 "sources": [],
+                "task_statuses": {"company_fundamentals": "accepted"},
                 "critic_reviews": {
                     "company_fundamentals": {
                         "core_passed": 2,
@@ -201,8 +228,54 @@ class TestConsolidationProcessSafety:
 class TestMemoryPolicies:
     def test_should_store_strategy_only_for_usable_completed_runs(self):
         assert should_store_strategy(status="completed", usable=True) is True
+        assert should_store_strategy(status="meeting_ready", usable=True) is True
         assert should_store_strategy(status="completed_but_not_usable", usable=False) is False
         assert should_store_strategy(status="failed", usable=False) is False
+
+    def test_backfill_populates_empty_store_from_eligible_runs(self, tmp_path):
+        runs_dir = tmp_path / "runs"
+        run_dir = runs_dir / "20260329T193314Z"
+        run_dir.mkdir(parents=True)
+
+        (run_dir / "run_meta.json").write_text(
+            json.dumps({"status": "meeting_ready"}),
+            encoding="utf-8",
+        )
+        (run_dir / "pipeline_data.json").write_text(
+            json.dumps(
+                {
+                    "company_profile": {"industry": "Manufacturing"},
+                    "research_readiness": {"usable": True, "score": 83},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "run_context.json").write_text(
+            json.dumps(
+                {
+                    "short_term_memory": {
+                        "task_statuses": {"company_fundamentals": "accepted"},
+                        "worker_reports": [
+                            {
+                                "worker": "CompanyResearcher",
+                                "task_key": "company_fundamentals",
+                                "queries_used": ["manufacturer inventory surplus signals"],
+                            }
+                        ],
+                        "sources": [{"source_type": "registry"}],
+                        "critic_reviews": {},
+                        "department_run_states": {},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        memory_store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        inserted = backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=runs_dir)
+
+        assert inserted > 0
+        assert memory_store.load()
 
 
 # ===========================================================================
@@ -371,6 +444,23 @@ class TestShortTermMemoryMerge:
         assert "existing fact" not in delta.facts
         assert delta.usage_totals["llm_calls"] == 3
         assert "new_task" in delta.task_statuses
+
+    def test_delta_from_handles_dict_items_in_list_fields(self):
+        """Parallel merge must not fail when list fields contain dict payloads."""
+        main = ShortTermMemoryStore()
+        main.open_questions.append({"question": "baseline", "owner": "company"})
+        main.next_actions.append({"action": "baseline"})
+
+        ws = main.create_working_set()
+        baseline = main.create_working_set()
+
+        ws.open_questions.append({"question": "new", "owner": "market"})
+        ws.next_actions.append({"action": "new"})
+
+        delta = ws.delta_from(baseline)
+        assert {"question": "new", "owner": "market"} in delta.open_questions
+        assert {"question": "baseline", "owner": "company"} not in delta.open_questions
+        assert {"action": "new"} in delta.next_actions
 
 
 import contextlib

@@ -4,6 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+def _present(value: str) -> str:
+    text = str(value or "").strip()
+    return "" if text.lower() in {"", "n/v", "n/a", "unknown"} else text
+
+
 @dataclass(slots=True)
 class IntakeRequest:
     company_name: str
@@ -30,7 +35,12 @@ class SupervisorBrief:
 
     @property
     def company_name(self) -> str:
-        return self.verified_legal_name or self.verified_company_name or self.submitted_company_name
+        return (
+            _present(self.verified_legal_name)
+            or _present(self.verified_company_name)
+            or _present(self.submitted_company_name)
+            or "n/v"
+        )
 
     @property
     def web_domain(self) -> str:

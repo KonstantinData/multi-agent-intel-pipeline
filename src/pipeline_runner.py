@@ -9,23 +9,47 @@ from typing import Any, Callable
 
 from src.agents.specs import AGENT_SPECS
 from src.agents.runtime_factory import create_runtime_agents
-from src.config import summarize_worker_report_costs
+from src.app.use_cases import (
+    BLOCKED_RUN_STATUS,
+    DISCOVERY_READY_RUN_STATUS,
+    SELECTION_REQUIRED_RUN_STATUS,
+    SUCCESS_RUN_STATUS,
+    build_dashboard_state,
+    build_resolution_plan,
+    determine_final_status,
+)
+from src.config import (
+    estimate_web_search_preview_call_cost_usd,
+    get_search_model,
+    summarize_worker_report_costs,
+)
 from src.domain.intake import IntakeRequest
 from src.exporters.json_export import export_run
+from src.memory.backfill import backfill_long_term_memory_from_runs
 from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_patterns
 from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
 from src.memory.retrieval import retrieve_strategies
+from src.models.meeting_ready import FinalBriefing, MeetingAction, ResolutionPlan
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.envelope import resolve_admission
+from src.orchestration.follow_up import run_bounded_follow_up
+from src.orchestration.dashboard_composer import compose_dashboard
+from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
+from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
+from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
     assess_research_readiness,
+    build_contact_enrichment_stage,
+    build_contact_briefing_assets,
+    build_playbook_assets,
+    build_primary_source_stage,
     build_quality_review,
-    build_report_package,
     build_synthesis_context,
+    harmonize_synthesis_output,
 )
 from src.research.normalize import normalize_domain
 
@@ -33,6 +57,16 @@ from src.research.normalize import normalize_domain
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "artifacts" / "runs"
 LONG_TERM_MEMORY_PATH = ROOT / "artifacts" / "memory" / "long_term_memory.json"
+
+
+def _write_checkpoint(run_dir: Path, phase: str, run_context: "RunContext") -> None:
+    """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
+    cp_dir = run_dir / "checkpoints"
+    cp_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"phase": phase, "status": run_context.status, **run_context.snapshot()}
+    (cp_dir / f"{phase}.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8",
+    )
 
 AGENT_META = {
     name: {"icon": spec.icon, "color": spec.color, "summary": spec.summary}
@@ -83,6 +117,228 @@ def _extract_pipeline_data(messages: list[dict[str, Any]]) -> dict[str, Any]:
     return validate_pipeline_data(pipeline_data)
 
 
+def _normalize_meeting_actions(raw_actions: list[Any] | None) -> list[MeetingAction]:
+    actions: list[MeetingAction] = []
+    for item in raw_actions or []:
+        if isinstance(item, MeetingAction):
+            actions.append(item)
+        elif isinstance(item, dict):
+            actions.append(MeetingAction.model_validate(item))
+    return actions
+
+
+def _sync_finalization_artifacts(
+    *,
+    run_context: RunContext,
+    pipeline_data: dict[str, Any],
+    run_id: str,
+    company_name: str,
+    status: str,
+    meeting_actions: list[MeetingAction] | list[dict[str, Any]] | None = None,
+) -> None:
+    evidence_health = str(
+        ((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low")
+    )
+    blocked_reasons = list(run_context.meeting_readiness_assessment.blocked_reasons or [])
+    if status in {BLOCKED_RUN_STATUS, DISCOVERY_READY_RUN_STATUS} and not blocked_reasons:
+        readiness_reasons = [
+            str(reason).strip()
+            for reason in ((pipeline_data.get("research_readiness") or {}).get("reasons") or [])
+            if str(reason).strip()
+        ]
+        blocked_reasons = readiness_reasons[:5]
+        if not blocked_reasons:
+            finalization_reason = str(
+                (run_context.resolution_state.get("finalization_blocked") or {}).get("reason") or ""
+            ).strip()
+            if finalization_reason == "meeting_critical_public_gaps_open":
+                blocked_reasons = ["Meeting-critical public gaps remain open."]
+            elif finalization_reason == "meeting_not_ready":
+                blocked_reasons = ["Research output is not yet meeting-ready."]
+            elif finalization_reason == "internal_customer_data_required":
+                blocked_reasons = ["Execution requires internal customer data that is not publicly available."]
+
+    readiness = run_context.meeting_readiness_assessment.model_copy(
+        update={
+            "run_status": status,
+            "meeting_ready": status == SUCCESS_RUN_STATUS,
+            "discovery_ready": status == DISCOVERY_READY_RUN_STATUS,
+            "blocked_reasons": [] if status == SUCCESS_RUN_STATUS else blocked_reasons,
+            "confidence": (
+                "high"
+                if status == SUCCESS_RUN_STATUS and evidence_health == "high"
+                else "medium"
+                if status in {SUCCESS_RUN_STATUS, DISCOVERY_READY_RUN_STATUS}
+                else "low"
+            ),
+        }
+    )
+    run_context.meeting_readiness_assessment = readiness
+    run_context.short_term_memory.meeting_readiness_assessment = readiness
+
+    actions = _normalize_meeting_actions(
+        meeting_actions
+        if meeting_actions is not None
+        else (
+            run_context.short_term_memory.meeting_actions
+            or pipeline_data.get("meeting_actions")
+            or []
+        )
+    )
+    if actions:
+        run_context.short_term_memory.meeting_actions = actions
+        pipeline_data["meeting_actions"] = sort_meeting_actions(
+            [action.model_dump(mode="json") for action in actions]
+        )
+
+    final_briefing = FinalBriefing(
+        run_id=run_id,
+        company_name=company_name,
+        status=status,
+        executive_summary=str((pipeline_data.get("synthesis") or {}).get("executive_summary") or "n/v"),
+        evidence_packets=list(run_context.short_term_memory.evidence_packets),
+        answer_matrix_updates=list(run_context.short_term_memory.answer_matrix_updates),
+        readiness=readiness,
+        recommended_actions=actions,
+        metadata={
+            "run_status": status,
+            "research_readiness_score": int(
+                ((pipeline_data.get("research_readiness") or {}).get("score", 0) or 0)
+            ),
+            "evidence_health": evidence_health,
+        },
+    )
+    run_context.final_briefing = final_briefing
+    run_context.short_term_memory.final_briefing = final_briefing
+    pipeline_data["meeting_readiness_assessment"] = readiness.model_dump(mode="json")
+    pipeline_data["final_briefing"] = final_briefing.model_dump(mode="json")
+
+
+def resume_pipeline(
+    *,
+    run_id: str,
+    user_selections: dict[str, Any],
+    on_message: MessageHook = None,
+) -> dict[str, Any]:
+    """Resume a paused run after user depth selections.
+
+    Loads the persisted run state, applies user decisions to the resolution
+    plan and answer matrix, then re-evaluates the finalization gate.
+    """
+    run_dir = RUNS_DIR / run_id
+    if not run_dir.exists():
+        raise FileNotFoundError(f"Run '{run_id}' not found.")
+
+    run_context = RunContext.from_snapshot(
+        json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
+    )
+    pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
+
+    if run_context.status != SELECTION_REQUIRED_RUN_STATUS:
+        return {
+            "run_id": run_id,
+            "status": run_context.status,
+            "error": f"Run is not paused for user selection (status={run_context.status}).",
+        }
+
+    # Apply user depth selections to answer matrix
+    selected_questions = list(user_selections.get("selected_questions", []))
+    skipped_questions = list(user_selections.get("skipped_questions", []))
+
+    for qid in selected_questions:
+        entry = run_context.answer_matrix.get(qid)
+        if entry:
+            entry["status"] = "partially_answered"
+            entry["notes"] = "User selected for optional depth."
+
+    for qid in skipped_questions:
+        entry = run_context.answer_matrix.get(qid)
+        if entry:
+            entry["status"] = "blocked"
+            entry["notes"] = "User skipped optional depth."
+
+    # Persist user selections in resolution state
+    run_context.resolution_state["user_selections"] = {
+        "selected_questions": selected_questions,
+        "skipped_questions": skipped_questions,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    dashboard = run_context.resolution_state.get("dashboard_state", {})
+    dashboard["pending_user_selection"] = False
+    dashboard["resume_entrypoint"] = "supervisor_finalization_entrypoint"
+    run_context.resolution_state["dashboard_state"] = dashboard
+    run_context.resolution_state["resume_entrypoint"] = "supervisor_finalization_entrypoint"
+
+    # Re-evaluate finalization gate — user resolved the selection requirement,
+    # so override the bucket to prevent re-triggering needs_user_selection.
+    first_round_resolution = dict(run_context.resolution_state.get("first_round_resolution", {}))
+    first_round_resolution["bucket"] = "NOT_MEETING_CRITICAL"  # user decision applied
+    run_context.resolution_state["first_round_resolution"] = first_round_resolution
+    readiness = pipeline_data.get("research_readiness", {})
+    meeting_assessment = MeetingReadinessGate().evaluate(
+        answer_matrix=run_context.answer_matrix,
+        resolution_state=run_context.resolution_state,
+        evidence_health=str((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low"),
+        readiness_usable=bool(readiness.get("usable")),
+        discovery_ready=bool(readiness.get("discovery_ready")),
+        minimum_package=dict(readiness.get("minimum_package", {}) or {}),
+        blockers=list(readiness.get("readiness_blockers", []) or []),
+    )
+    run_context.meeting_readiness_assessment = meeting_assessment
+    status = determine_final_status(
+        readiness_usable=bool(readiness.get("usable")),
+        first_round_resolution=first_round_resolution,
+        remaining_public_gaps=[],  # user resolved the selection requirement
+        discovery_ready=bool(readiness.get("discovery_ready")),
+    )
+    if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
+        status = meeting_assessment.run_status
+    run_context.status = status
+    _sync_finalization_artifacts(
+        run_context=run_context,
+        pipeline_data=pipeline_data,
+        run_id=run_id,
+        company_name=run_context.intake.get("company_name", ""),
+        status=status,
+    )
+
+    # RA-07: Checkpoint after dashboard resume
+    _write_checkpoint(run_dir, "after_dashboard_resume", run_context)
+
+    # Re-export
+    run_context_snapshot = run_context.snapshot()
+    export_run(
+        run_dir=run_dir,
+        run_id=run_id,
+        company_name=run_context.intake.get("company_name", ""),
+        web_domain=run_context.intake.get("web_domain", ""),
+        status=status,
+        messages=[],
+        pipeline_data=pipeline_data,
+        run_context=run_context_snapshot,
+    )
+
+    if on_message:
+        on_message({
+            "agent": "Supervisor",
+            "content": json.dumps({
+                "status": "resumed_after_user_selection",
+                "final_status": status,
+                "selected_questions": selected_questions,
+                "skipped_questions": skipped_questions,
+            }, ensure_ascii=False),
+            "type": "agent_message",
+        })
+
+    return {
+        "run_id": run_id,
+        "status": status,
+        "run_context": run_context_snapshot,
+        "pipeline_data": pipeline_data,
+        "error": None,
+    }
+
+
 def run_pipeline(
     *,
     company_name: str,
@@ -96,6 +352,7 @@ def run_pipeline(
     agents = create_runtime_agents()
 
     memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
+    backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=RUNS_DIR)
     run_context = RunContext(
         run_id=run_id,
         intake={"company_name": company_name, "web_domain": web_domain, "language": intake.language},
@@ -116,9 +373,12 @@ def run_pipeline(
     }
 
     messages: list[dict[str, Any]] = []
+    budget_tracker = PhaseBudgetTracker()
     try:
         brief, supervisor_message = agents["supervisor"].build_intake_brief(intake)
         run_context.supervisor_brief = supervisor_message["payload"]
+        run_context.question_registry = build_question_registry()
+        run_context.answer_matrix = build_initial_answer_matrix()
         messages.append(
             emit_message(
                 on_message,
@@ -127,7 +387,7 @@ def run_pipeline(
             )
         )
 
-        sections, department_packages, loop_messages, completed_backlog, department_timings = run_supervisor_loop(
+        sections, department_packages, loop_messages, completed_backlog, department_timings, first_round_resolution = run_supervisor_loop(
             brief=brief,
             run_context=run_context,
             agents=agents,
@@ -137,6 +397,77 @@ def run_pipeline(
         run_context.short_term_memory.task_statuses.update(
             {item["task_key"]: item["status"] for item in completed_backlog}
         )
+        # RA-08: Record first-pass token consumption
+        first_pass_snapshot = run_context.short_term_memory.snapshot()
+        first_pass_tokens = int(first_pass_snapshot.get("usage_totals", {}).get("total_tokens", 0) or 0)
+        budget_tracker.record_phase_tokens("first_pass", first_pass_tokens)
+        if not budget_tracker.check_budget("first_pass"):
+            budget_tracker.record_stop("first_pass", "token_budget_exceeded")
+
+        run_context.resolution_state = {
+            "first_round_resolution": first_round_resolution,
+            "auto_close": {
+                "triggered": False,
+                "max_questions": 4,
+                "attempted_questions": 0,
+                "stop_reason": "not_required",
+                "remaining_public_gaps": [],
+            },
+        }
+
+        # RA-07: Checkpoint after first pass
+        _write_checkpoint(run_dir, "after_first_pass", run_context)
+
+        if first_round_resolution.get("bucket") == "AUTO_CLOSE_REQUIRED":
+            auto_close_result = run_bounded_follow_up(
+                run_id=run_id,
+                run_context=run_context.snapshot(),
+                pipeline_data={
+                    "company_profile": sections.get("company_profile", {}),
+                    "industry_analysis": sections.get("industry_analysis", {}),
+                    "market_network": sections.get("market_network", {}),
+                    "contact_intelligence": sections.get("contact_intelligence", {}),
+                    "synthesis": sections.get("synthesis", {}),
+                    "quality_review": {},
+                },
+                public_gap_questions=first_round_resolution.get("meeting_critical_public_gaps", []),
+                max_questions=4,
+            )
+            run_context.resolution_state["auto_close"] = {
+                "triggered": True,
+                **auto_close_result,
+            }
+            # RA-04: Feed closure results back into answer matrix
+            for attempt in auto_close_result.get("attempts", []):
+                if attempt.get("resolved"):
+                    for qid, entry in run_context.answer_matrix.items():
+                        if entry.get("status") in {"pending", "blocked"}:
+                            # Mark as partially answered by closure
+                            entry["status"] = "partially_answered"
+                            entry["notes"] = f"Auto-close follow-up resolved: {attempt.get('question', '')[:80]}"
+            messages.append(
+                emit_message(
+                    on_message,
+                    agent="Supervisor",
+                    content=json.dumps(
+                        {
+                            "status": "auto_close_follow_up_completed",
+                            **auto_close_result,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            )
+
+        # RA-08: Record closure token consumption
+            closure_tokens = int(
+                run_context.short_term_memory.snapshot()
+                .get("usage_totals", {}).get("total_tokens", 0) or 0
+            ) - first_pass_tokens
+            budget_tracker.record_phase_tokens("closure", max(closure_tokens, 0))
+
+            # RA-07: Checkpoint after closure
+            _write_checkpoint(run_dir, "after_closure", run_context)
 
         # Quality review still derived from memory snapshot
         quality_review = build_quality_review(run_context.short_term_memory.snapshot())
@@ -185,51 +516,224 @@ def run_pipeline(
                 "sources": [],
             }
 
+        contact_intelligence = dict(sections.get("contact_intelligence", {}) or {})
+        contact_intelligence.update(
+            build_contact_briefing_assets(
+                company_profile=sections.get("company_profile", {}),
+                contact_intelligence=contact_intelligence,
+            )
+        )
+        sections["contact_intelligence"] = contact_intelligence
+        primary_source_stage = dict(
+            sections.get("primary_source_stage", {}) or build_primary_source_stage(
+                company_profile=sections.get("company_profile", {}),
+                industry_analysis=sections.get("industry_analysis", {}),
+                market_network=sections.get("market_network", {}),
+            )
+        )
+        contact_enrichment_stage = dict(
+            sections.get("contact_enrichment_stage", {}) or build_contact_enrichment_stage(
+                company_profile=sections.get("company_profile", {}),
+                contact_intelligence=contact_intelligence,
+            )
+        )
+
+        synthesis = harmonize_synthesis_output(
+            synthesis=synthesis,
+            company_profile=sections.get("company_profile", {}),
+            industry_analysis=sections.get("industry_analysis", {}),
+            market_network=sections.get("market_network", {}),
+            contact_intelligence=contact_intelligence,
+            quality_review=quality_review,
+        )
+
+        synthesis.update(
+            build_playbook_assets(
+                company_profile=sections.get("company_profile", {}),
+                market_network=sections.get("market_network", {}),
+                contact_intelligence=contact_intelligence,
+                synthesis=synthesis,
+            )
+        )
+
         readiness = assess_research_readiness(
             company_profile=sections.get("company_profile", {}),
             industry_analysis=sections.get("industry_analysis", {}),
             market_network=sections.get("market_network", {}),
-            contact_intelligence=sections.get("contact_intelligence", {}),
+            contact_intelligence=contact_intelligence,
             quality_review=quality_review,
+            synthesis=synthesis,
+            primary_source_stage=primary_source_stage,
+            contact_enrichment_stage=contact_enrichment_stage,
+            department_packages=department_packages,
         )
         pipeline_data = validate_pipeline_data(
             {
                 "company_profile": assemble_section("company_profile", sections.get("company_profile", {})),
                 "industry_analysis": assemble_section("industry_analysis", sections.get("industry_analysis", {})),
                 "market_network": assemble_section("market_network", sections.get("market_network", {})),
-                "contact_intelligence": assemble_section("contact_intelligence", sections.get("contact_intelligence", {})),
+                "contact_intelligence": assemble_section("contact_intelligence", contact_intelligence),
                 "quality_review": quality_review,
                 "synthesis": synthesis,
                 "research_readiness": readiness,
+                "primary_source_stage": readiness.get("primary_source_stage", primary_source_stage),
+                "contact_enrichment_stage": readiness.get("contact_enrichment_stage", contact_enrichment_stage),
+                "data_request_sheet": readiness.get("data_request_sheet", {}),
+                "outreach_playbook": readiness.get("outreach_playbook", {}),
                 "validation_errors": [],
             }
         )
+        run_context.resolution_state["readiness_contract"] = {
+            "minimum_package": dict(readiness.get("minimum_package", {}) or {}),
+            "readiness_blockers": list(readiness.get("readiness_blockers", []) or []),
+            "department_gate_overview": dict(readiness.get("department_gate_overview", {}) or {}),
+            "discovery_ready": bool(readiness.get("discovery_ready")),
+        }
 
-        report_package = build_report_package(
+        remaining_public_gaps = run_context.resolution_state.get("auto_close", {}).get("remaining_public_gaps", [])
+        resolution_plan = build_resolution_plan(
+            run_id=run_id,
+            first_round_resolution=first_round_resolution,
+            remaining_public_gaps=list(remaining_public_gaps),
+        )
+
+        if resolution_plan.get("unresolved") is None or not isinstance(resolution_plan.get("unresolved"), dict):
+            resolution_plan["unresolved"] = {}
+        if bool(readiness.get("discovery_ready")):
+            data_request_fields = [
+                str(item.get("label", "")).strip()
+                for item in (readiness.get("data_request_sheet", {}).get("request_fields", []) or [])
+                if isinstance(item, dict) and str(item.get("label", "")).strip()
+            ]
+            if data_request_fields:
+                resolution_plan["unresolved"]["internal_customer_data_request"] = data_request_fields
+            resolution_plan["decision"] = {
+                "decision": "accept_gap",
+                "rationale": "Public research is complete for discovery scope; execution requires internal customer data.",
+                "selected_gap_ids": [
+                    str(item.get("blocker_id", "")).strip()
+                    for item in (readiness.get("readiness_blockers", []) or [])
+                    if isinstance(item, dict) and str(item.get("blocker_id", "")).strip()
+                ],
+            }
+            resolution_plan["steps"] = [
+                "Provide Data Request Sheet fields under NDA.",
+                "Confirm target-company stakeholder owner and intro path.",
+                "Resume execution readiness validation once customer data is available.",
+            ]
+
+        run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
+        run_context.resolution_state["resolution_plan"] = resolution_plan
+
+        report_package, report_messages = agents["report_writer"].run(
             pipeline_data=pipeline_data,
             department_packages=department_packages,
+            on_message=on_message,
         )
         run_context.report_package = report_package
-        messages.append(
-            emit_message(
-                on_message,
-                agent="ReportWriter",
-                content=json.dumps({"section": "report_package", "payload": report_package}, ensure_ascii=False),
-            )
+        pipeline_data["report_package"] = report_package
+        messages.extend(report_messages)
+
+        # RA-06: Meeting-readiness gate — enforced before finalization
+        readiness_gate = MeetingReadinessGate()
+        meeting_assessment = readiness_gate.evaluate(
+            answer_matrix=run_context.answer_matrix,
+            resolution_state=run_context.resolution_state,
+            evidence_health=quality_review.get("evidence_health", "low"),
+            readiness_usable=bool(readiness.get("usable")),
+            discovery_ready=bool(readiness.get("discovery_ready")),
+            minimum_package=dict(readiness.get("minimum_package", {}) or {}),
+            blockers=list(readiness.get("readiness_blockers", []) or []),
+        )
+        run_context.meeting_readiness_assessment = meeting_assessment
+
+        # RA-06: Final briefing composer — meeting_actions replace next_steps
+        composer = FinalBriefingComposer()
+        meeting_actions = composer.compose(
+            synthesis=synthesis,
+            answer_matrix=run_context.answer_matrix,
+            quality_review=quality_review,
+            resolution_state=run_context.resolution_state,
+            company_name=company_name,
+        )
+        run_context.short_term_memory.meeting_actions = meeting_actions
+
+        # RA-08: Deterministic ordering for meeting actions
+        sorted_action_dicts = sort_meeting_actions(
+            [a.model_dump(mode="json") for a in meeting_actions]
         )
 
-        if readiness["usable"]:
-            status = "completed"
-        elif readiness.get("partial"):
-            status = "completed_partial"
-        else:
-            status = "completed_but_not_usable"
+        # Inject meeting_actions into pipeline_data for PDF/export access
+        pipeline_data["meeting_actions"] = sorted_action_dicts
+
+        status = determine_final_status(
+            readiness_usable=bool(readiness.get("usable")),
+            first_round_resolution=first_round_resolution,
+            remaining_public_gaps=list(remaining_public_gaps),
+            discovery_ready=bool(readiness.get("discovery_ready")),
+        )
+        if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
+            status = meeting_assessment.run_status
+        resume_entrypoint = (
+            "supervisor_resume_after_user_selection"
+            if status == SELECTION_REQUIRED_RUN_STATUS
+            else "supervisor_finalization_entrypoint"
+        )
+        run_context.resolution_state["dashboard_state"] = build_dashboard_state(
+            status=status,
+            run_id=run_id,
+            resolution_plan=resolution_plan,
+            resume_entrypoint=resume_entrypoint,
+        )
+        run_context.resolution_state["resume_entrypoint"] = resume_entrypoint
+        if status == BLOCKED_RUN_STATUS:
+            run_context.resolution_state["finalization_blocked"] = {
+                "reason": "meeting_critical_public_gaps_open" if remaining_public_gaps else "meeting_not_ready",
+                "open_gaps": list(remaining_public_gaps),
+            }
+        elif status == DISCOVERY_READY_RUN_STATUS:
+            run_context.resolution_state["finalization_blocked"] = {
+                "reason": "internal_customer_data_required",
+                "open_gaps": [
+                    str(item.get("reason", "")).strip()
+                    for item in (readiness.get("readiness_blockers", []) or [])
+                    if isinstance(item, dict) and str(item.get("reason", "")).strip()
+                ],
+            }
         run_context.status = status
+        _sync_finalization_artifacts(
+            run_context=run_context,
+            pipeline_data=pipeline_data,
+            run_id=run_id,
+            company_name=company_name,
+            status=status,
+            meeting_actions=meeting_actions,
+        )
+
+        # RA-08: Persist budget tracker and guardrail telemetry
+        run_context.resolution_state["budget_tracker"] = budget_tracker.snapshot()
+
+        # RA-07: Checkpoint after finalization gate
+        _write_checkpoint(run_dir, "after_finalization", run_context)
+
         elapsed_seconds = round(perf_counter() - start_time, 3)
         memory_snapshot = run_context.short_term_memory.snapshot()
         usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))
         usage_total = usage.get("total", {})
         usage_totals = memory_snapshot.get("usage_totals", {})
+        search_calls_used = int(usage_totals.get("search_calls", 0) or 0)
+        web_search_preview_call_cost = estimate_web_search_preview_call_cost_usd(
+            search_calls=search_calls_used,
+            model_name=get_search_model(),
+        )
+        if web_search_preview_call_cost > 0:
+            usage_total["web_search_preview_call_cost"] = web_search_preview_call_cost
+            usage_total["total_cost"] = round(float(usage_total.get("total_cost", 0.0) or 0.0) + web_search_preview_call_cost, 10)
+            usage_actual = usage.get("actual", {})
+            usage_actual["web_search_preview_call_cost"] = web_search_preview_call_cost
+            usage_actual["total_cost"] = usage_total["total_cost"]
+            usage["actual"] = usage_actual
+            usage["total"] = usage_total
         budget = {
             "total_pipeline_events": len(messages),
             "tool_calls_used": int(
@@ -239,14 +743,25 @@ def run_pipeline(
             ),
             "max_tool_calls": 140,
             "max_department_attempts": 3,
+            "resume_entrypoint": resume_entrypoint,
             "llm_calls_used": int(usage_totals.get("llm_calls", 0) or 0),
-            "search_calls_used": int(usage_totals.get("search_calls", 0) or 0),
+            "search_calls_used": search_calls_used,
             "page_fetches_used": int(usage_totals.get("page_fetches", 0) or 0),
             "estimated_cost_usd": float(usage_total.get("total_cost", 0.0) or 0.0),
             "elapsed_seconds": elapsed_seconds,
             "department_timings": department_timings,
         }
         run_context_snapshot = run_context.snapshot()
+
+        # ── Dashboard bundle (shared visualization layer) ─────────────────
+        dashboard_bundle = compose_dashboard(
+            run_id=run_id,
+            status=status,
+            pipeline_data=pipeline_data,
+            run_context=run_context_snapshot,
+            budget=budget,
+        )
+        pipeline_data["dashboard_bundle"] = dashboard_bundle.model_dump(mode="json")
 
         role_patterns = consolidate_role_patterns(
             run_context=run_context_snapshot,

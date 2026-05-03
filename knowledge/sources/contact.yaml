@@ -1,0 +1,75 @@
+{
+  "department": "ContactDepartment",
+  "source_priority": [
+    "official_people_pages",
+    "linkedin_public",
+    "trade_mentions"
+  ],
+  "sources": [
+    {
+      "name": "Handelsregister Führungspersonen",
+      "url": "https://www.handelsregister.de/",
+      "department": "ContactDepartment",
+      "priority": "official_people_pages",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.9,
+      "search_patterns_de": [
+        "handelsregister <firma> geschäftsführer vorstand",
+        "handelsregister <firma> prokuristen leitungsorgane",
+        "<firma> hr-nummer geschäftsführer amtsgericht"
+      ],
+      "search_patterns_en": [
+        "<company> german commercial register managing director",
+        "<company> handelsregister board officers germany"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "LinkedIn Public Profiles",
+      "url": "https://www.linkedin.com/",
+      "department": "ContactDepartment",
+      "priority": "linkedin_public",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.7,
+      "search_patterns_de": [
+        "site:linkedin.com <firma> geschäftsführer CEO vorstand",
+        "site:linkedin.com <firma> leiter einkauf procurement",
+        "site:linkedin.com <firma> cfo finanzvorstand controlling",
+        "site:linkedin.com <firma> operations leiter werk supply chain",
+        "site:linkedin.com <firma> aftermarket service leiter",
+        "site:linkedin.com <firma> bereichsleiter sparte divisional"
+      ],
+      "search_patterns_en": [
+        "site:linkedin.com <company> managing director CEO board",
+        "site:linkedin.com <company> head procurement CFO finance",
+        "site:linkedin.com <company> operations director plant manager",
+        "site:linkedin.com <company> aftermarket service lead",
+        "site:linkedin.com <company> divisional business unit head"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Wer liefert was B2B-Verzeichnis",
+      "url": "https://www.wlw.de/",
+      "department": "ContactDepartment",
+      "priority": "trade_mentions",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.6,
+      "search_patterns_de": [
+        "wlw <firma> ansprechpartner kontakt einkauf",
+        "wlw <branche> lieferant geschäftsführer kontakt",
+        "<firma> messe sprecher branchenveranstaltung kontakt",
+        "<firma> pressemitteilung ansprechpartner verantwortlich"
+      ],
+      "search_patterns_en": [
+        "wlw <company> contact person procurement trade",
+        "<company> trade show speaker contact",
+        "<company> press contact spokesperson"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}

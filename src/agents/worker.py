@@ -1,4 +1,11 @@
-"""Evidence-driven research worker with optional LLM synthesis."""
+"""Evidence-driven research worker with optional LLM synthesis.
+
+The worker is a **question-coverage contributor**: its primary outputs are
+structured evidence packets (one per collected fact) and open-question gaps,
+not narrative section reports.  The payload_updates feed the section schema
+for backward compatibility, but evidence_packages are the authoritative
+runtime artifacts consumed by the resolution controller and answer matrix.
+"""
 from __future__ import annotations
 
 import json
@@ -9,6 +16,7 @@ from openai import OpenAI
 
 from src.agents._helpers import (
     SECTION_MODELS,
+    assess_contact_coverage as _assess_contact_coverage_impl,
     build_memory_context as _build_memory_context_impl,
     coerce_contact_records as _coerce_contact_records_impl,
     coerce_to_string as _coerce_to_string_impl,
@@ -18,20 +26,32 @@ from src.agents._helpers import (
     coerce_sources as _coerce_sources_impl,
     deep_merge as _deep_merge_impl,
     dedup_list as _dedup_list_impl,
+    extract_financial_deep_dive as _extract_financial_deep_dive_impl,
     extract_contacts_from_facts as _extract_contacts_from_facts_impl,
+    extract_transaction_events as _extract_transaction_events_impl,
     normalize_contact_fields as _normalize_contact_fields_impl,
     normalize_payload_updates as _normalize_payload_updates_impl,
     parse_contact_from_title as _parse_contact_from_title_static,
     pick_field as _pick_field_static,
+    prioritize_contact_records as _prioritize_contact_records_impl,
+    is_plausible_named_contact as _is_plausible_named_contact_impl,
     salvage_valid_fields as _salvage_valid_fields_impl,
     sanitize_for_section as _sanitize_for_section_impl,
 )
-from src.config.settings import get_llm_config, get_openai_api_key
+from src.config.settings import (
+    get_llm_config,
+    get_openai_api_key,
+    get_openai_max_retries,
+    get_openai_timeout_seconds,
+    temperature_param,
+)
 from src.domain.intake import SupervisorBrief
 from src.orchestration.tool_policy import tool_is_allowed
 from src.research.extract import extract_product_keywords, infer_industry, summarize_visible_text
 from src.research.fetch import fetch_website_snapshot
+from src.research.query_resolver import is_verify_mode, resolve_queries
 from src.research.search import build_buyer_queries, build_company_queries, build_market_queries, perform_search
+from src.utils import strict_json_dumps
 
 
 class ResearchWorker:
@@ -154,6 +174,28 @@ class ResearchWorker:
                     facts = synthesis.get("facts", [])
                     if facts:
                         raw_updates["redeployment_paths"] = [str(f) for f in facts[:3]]
+            if not raw_updates.get("monetization_paths"):
+                inferred_paths: list[str] = []
+                buyer_companies = (raw_updates.get("downstream_buyers", {}) or {}).get("companies", [])
+                if buyer_companies:
+                    inferred_paths.append("Aftermarket resale via service and spare-parts channels.")
+                    inferred_paths.append("Direct OEM or industrial resale for standard product families.")
+                inferred_paths.extend(
+                    f"Targeted monetization path for {keyword} via distributor, OEM, or service demand."
+                    for keyword in hints.get("product_keywords", [])[:2]
+                )
+                raw_updates["monetization_paths"] = self._dedup_list(inferred_paths)[:4]
+            if not raw_updates.get("redeployment_paths"):
+                inferred_redeployment: list[str] = []
+                if (raw_updates.get("downstream_buyers", {}) or {}).get("companies", []):
+                    inferred_redeployment.append(
+                        "Redeployment into adjacent industrial users with similar ventilation, motor, or control requirements."
+                    )
+                inferred_redeployment.extend(
+                    f"Redeployment or retrofit path for {keyword} into service, maintenance, or adjacent industrial applications."
+                    for keyword in hints.get("product_keywords", [])[:2]
+                )
+                raw_updates["redeployment_paths"] = self._dedup_list(inferred_redeployment)[:4]
 
             # RF-3: Dedup guard — remove downstream_buyers that overlap with peer_competitors
             peer_tier = existing_payload.get("peer_competitors", {})
@@ -180,17 +222,34 @@ class ResearchWorker:
                                 )
                             buyer_tier["companies"] = deduped
 
-        # P3 bridge: if repurposing_circularity LLM synthesis left repurposing_signals empty,
-        # generate indicative signals from product keywords as a last resort.
-        if target_section == "industry_analysis" and task_key == "repurposing_circularity":
-            if not raw_updates.get("repurposing_signals"):
-                kw = hints.get("product_keywords", [])
-                facts = synthesis.get("facts", [])
-                if kw:
-                    raw_updates["repurposing_signals"] = [
-                        f"Adjacent reuse or remanufacturing may be plausible for {kw[0]} — requires validation."
-                        if kw else "No validated repurposing path found yet."
-                    ] + [str(f) for f in facts[:2] if f]
+            buyer_tier = raw_updates.get("downstream_buyers", {})
+            if isinstance(buyer_tier, dict):
+                target_company = str(hints.get("company_name", "") or "").strip().lower().replace("-", " ")
+                buyer_companies = buyer_tier.get("companies", [])
+                filtered_buyers = []
+                for company in buyer_companies:
+                    if not isinstance(company, dict):
+                        continue
+                    name = str(company.get("name", "") or "").strip()
+                    lowered = name.lower()
+                    simplified = lowered.replace("-", " ")
+                    if not name or lowered == "n/v":
+                        continue
+                    if any(token in lowered for token in ("operators", "various", "end-users", "end users")):
+                        continue
+                    if "," in name:
+                        continue
+                    if target_company and (
+                        target_company in simplified
+                        or simplified in target_company
+                    ):
+                        continue
+                    filtered_buyers.append(company)
+                buyer_tier["companies"] = filtered_buyers
+                fallback_sources = _coerce_sources_impl(search_results[:5])
+                if fallback_sources:
+                    buyer_tier.setdefault("sources", fallback_sources)
+                    raw_updates.setdefault("sources", fallback_sources)
 
         # P0-2 bridge: if market_situation LLM synthesis left key_trends/demand_outlook
         # empty, fall back to the market_signals and facts the LLM DID collect.
@@ -211,7 +270,7 @@ class ResearchWorker:
         # P0-3 bridge: if contact_discovery LLM synthesis left contacts empty,
         # RF-2: first try to extract contacts from LLM facts/buyer_hypotheses,
         # then fall back to title parsing only if that also yields nothing.
-        if target_section == "contact_intelligence" and not raw_updates.get("contacts"):
+        if target_section == "contact_intelligence" and task_key in {"contact_discovery", "contact_qualification"} and not raw_updates.get("contacts"):
             # Step 1: promote LLM-extracted contacts from facts
             fact_contacts = _extract_contacts_from_facts_impl(
                 synthesis.get("facts", []),
@@ -242,6 +301,29 @@ class ResearchWorker:
                         {c["firma"] for c in bridged if c.get("firma") not in {"n/v", ""}}
                     )
                     raw_updates.setdefault("coverage_quality", "low")
+
+        if target_section == "contact_intelligence" and task_key == "target_company_contacts" and not raw_updates.get("target_company_contacts"):
+            target_contacts: list[dict[str, str]] = []
+            for result in search_results[:6]:
+                parsed = self._parse_contact_from_title(
+                    str(result.get("title", "")),
+                    str(result.get("url", "")),
+                    buyer_candidates=[brief.company_name],
+                )
+                if parsed:
+                    target_contacts.append(parsed)
+            if target_contacts:
+                raw_updates["target_company_contacts"] = target_contacts
+                raw_updates["target_company_prioritized_contacts"] = self._prioritize_contact_records(
+                    target_contacts,
+                    preferred_company_names=[brief.company_name],
+                    target_company_mode=True,
+                    limit=3,
+                )
+                raw_updates.setdefault(
+                    "target_company_summary",
+                    "Indicative public stakeholder map at the target company; validate exact ownership before outreach.",
+                )
 
         if target_section == "company_profile" and task_key == "company_fundamentals":
             ps = raw_updates.get("products_and_services", [])
@@ -340,6 +422,101 @@ class ResearchWorker:
                         raw_updates["employees"] = emp_match.group(0).strip()
                         break
 
+        evidence_texts = [
+            *[str(item.get("title", "")).strip() for item in search_results if item.get("title")],
+            *[str(item.get("summary", "")).strip() for item in search_results if item.get("summary")],
+            *[str(item.get("visible_text_excerpt", "")).strip() for item in page_evidence if item.get("visible_text_excerpt")],
+            *[str(item) for item in synthesis.get("facts", []) if str(item).strip()],
+        ]
+
+        if target_section == "company_profile" and task_key == "company_fundamentals":
+            merged_text = " ".join(item for item in evidence_texts if item)
+            if existing_payload.get("description", "n/v") in {"n/v", ""} and raw_updates.get("description") in {None, "", "n/v"}:
+                fallback_description = summarize_visible_text(brief.raw_homepage_excerpt, limit=320)
+                if fallback_description and fallback_description != "n/v":
+                    raw_updates["description"] = fallback_description
+            if existing_payload.get("revenue", "n/v") in {"n/v", ""} and raw_updates.get("revenue") in {None, "", "n/v"}:
+                extracted_revenue = self._extract_revenue_from_text(merged_text)
+                if extracted_revenue:
+                    raw_updates["revenue"] = extracted_revenue
+            if existing_payload.get("employees", "n/v") in {"n/v", ""} and raw_updates.get("employees") in {None, "", "n/v"}:
+                extracted_employees = self._extract_employees_from_text(merged_text)
+                if extracted_employees:
+                    raw_updates["employees"] = extracted_employees
+
+        if target_section == "company_profile" and task_key == "financial_deep_dive":
+            extracted_financials = _extract_financial_deep_dive_impl(evidence_texts)
+            existing_financials = raw_updates.get("financial_deep_dive", {})
+            if not isinstance(existing_financials, dict):
+                existing_financials = {}
+            raw_updates["financial_deep_dive"] = self._deep_merge(extracted_financials, existing_financials)
+            if (
+                raw_updates.get("revenue") in {None, "", "n/v"}
+                and existing_payload.get("revenue", "n/v") == "n/v"
+            ):
+                for line in raw_updates["financial_deep_dive"].get("key_financials", []):
+                    if str(line).lower().startswith("revenue:"):
+                        raw_updates["revenue"] = str(line).split(":", 1)[1].strip()
+                        break
+
+        if target_section == "company_profile" and task_key == "transaction_event_intelligence":
+            extracted_events = _extract_transaction_events_impl(evidence_texts)
+            existing_events = raw_updates.get("transaction_event_intelligence", {})
+            if not isinstance(existing_events, dict):
+                existing_events = {}
+            raw_updates["transaction_event_intelligence"] = self._deep_merge(extracted_events, existing_events)
+
+        if target_section == "contact_intelligence":
+            buyer_candidates = (
+                (current_sections.get(target_section) or {}).get("buyer_candidates")
+                or []
+            )
+            contacts = [
+                contact for contact in self._coerce_contact_records(raw_updates.get("contacts", []))
+                if _is_plausible_named_contact_impl(contact.get("name", ""))
+            ]
+            target_contacts = [
+                contact for contact in self._coerce_contact_records(raw_updates.get("target_company_contacts", []))
+                if _is_plausible_named_contact_impl(contact.get("name", ""))
+            ]
+
+            if contacts:
+                raw_updates["contacts"] = contacts
+                raw_updates["prioritized_contacts"] = (
+                    self._prioritize_contact_records(
+                        raw_updates.get("prioritized_contacts") or contacts,
+                        preferred_company_names=buyer_candidates,
+                    )
+                )
+                raw_updates["narrative_summary"] = (
+                    raw_updates.get("narrative_summary")
+                    if raw_updates.get("narrative_summary") not in {"", "n/v", None}
+                    else f"Verified {len(contacts)} buyer-side contacts with {len(raw_updates['prioritized_contacts'])} prioritized outreach candidates."
+                )
+
+            if target_contacts:
+                raw_updates["target_company_contacts"] = target_contacts
+                raw_updates["target_company_prioritized_contacts"] = (
+                    self._prioritize_contact_records(
+                        raw_updates.get("target_company_prioritized_contacts") or target_contacts,
+                        preferred_company_names=[brief.company_name],
+                        target_company_mode=True,
+                    )
+                )
+                raw_updates["target_company_summary"] = (
+                    raw_updates.get("target_company_summary")
+                    if raw_updates.get("target_company_summary") not in {"", "n/v", None}
+                    else f"Verified {len(target_contacts)} target-company stakeholders relevant to inventory, working capital, or operations."
+                )
+
+            coverage_quality = _assess_contact_coverage_impl(
+                contacts=raw_updates.get("contacts", []),
+                prioritized_contacts=raw_updates.get("prioritized_contacts", []),
+                target_contacts=raw_updates.get("target_company_contacts", []),
+            )
+            if coverage_quality != "n/v":
+                raw_updates["coverage_quality"] = coverage_quality
+
         try:
             payload = self._merge_payload(
                 section=target_section,
@@ -389,6 +566,13 @@ class ResearchWorker:
         field_issues: list[str] = []
         if fallback_note:
             field_issues.append(fallback_note)
+        evidence_packages = self._build_evidence_packages(
+            task_key=task_key,
+            objective=objective,
+            facts=synthesis.get("facts", []),
+            sources=payload.get("sources", []),
+            open_questions=synthesis.get("open_questions", []),
+        )
 
         return {
             "task_key": task_key,
@@ -406,6 +590,7 @@ class ResearchWorker:
             "next_actions": synthesis.get("next_actions", []),
             "field_issues": field_issues,
             "sources": payload.get("sources", []),
+            "evidence_packages": evidence_packages,
             "queries_used": queries,
             "usage": {
                 **llm_usage,
@@ -413,6 +598,120 @@ class ResearchWorker:
                 "page_fetches": page_fetches,
             },
         }
+
+    def _build_evidence_packages(
+        self,
+        *,
+        task_key: str,
+        objective: str,
+        facts: list[Any],
+        sources: list[Any],
+        open_questions: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Build structured evidence packets for one task execution."""
+        source_urls = [
+            str(item.get("url", "")).strip()
+            for item in sources
+            if isinstance(item, dict) and str(item.get("url", "")).strip()
+        ]
+        source_notes = [
+            str(item.get("summary", "")).strip()
+            for item in sources
+            if isinstance(item, dict) and str(item.get("summary", "")).strip()
+        ]
+        unique_urls = self._dedup_list(source_urls)[:6]
+        unique_notes = self._dedup_list(source_notes)[:6]
+
+        def _confidence() -> str:
+            if len(unique_urls) >= 3:
+                return "high"
+            if len(unique_urls) >= 1:
+                return "medium"
+            return "low"
+
+        source_quality = self._infer_source_quality(sources)
+
+        packets: list[dict[str, Any]] = []
+        for idx, fact in enumerate(facts[:6], start=1):
+            fact_text = str(fact).strip()
+            if not fact_text:
+                continue
+            packets.append(
+                {
+                    "packet_id": f"{task_key}-fact-{idx}",
+                    "claim": fact_text,
+                    "confidence": _confidence(),
+                    "claim_type": self._infer_claim_type(fact_text, kind="fact"),
+                    "source_quality": source_quality,
+                    "source_urls": unique_urls,
+                    "source_notes": unique_notes,
+                    "metadata": {
+                        "task_key": task_key,
+                        "worker": self.name,
+                        "objective": objective,
+                        "kind": "fact",
+                        "source_quality": source_quality,
+                    },
+                }
+            )
+
+        for idx, question in enumerate(open_questions[:3], start=1):
+            question_text = str(question).strip()
+            if not question_text:
+                continue
+            packets.append(
+                {
+                    "packet_id": f"{task_key}-gap-{idx}",
+                    "claim": question_text,
+                    "confidence": "low",
+                    "claim_type": "gap",
+                    "source_quality": source_quality,
+                    "source_urls": unique_urls,
+                    "source_notes": unique_notes,
+                    "metadata": {
+                        "task_key": task_key,
+                        "worker": self.name,
+                        "objective": objective,
+                        "kind": "open_question",
+                        "source_quality": source_quality,
+                    },
+                }
+            )
+        return packets
+
+    @staticmethod
+    def _infer_claim_type(text: str, *, kind: str) -> str:
+        if kind == "open_question":
+            return "gap"
+        lowered = text.lower()
+        if any(token in lowered for token in ("may ", "might ", "could ", "plausible", "indicative", "appears likely")):
+            return "hypothesis"
+        if any(token in lowered for token in ("suggests", "suggest", "implies", "points to", "likely")):
+            return "inference"
+        return "fact"
+
+    @staticmethod
+    def _infer_source_quality(sources: list[Any]) -> str:
+        if not sources:
+            return "low"
+        high_markers = (
+            "annual report",
+            "investor",
+            "financial statement",
+            "geschäftsbericht",
+            ".pdf",
+        )
+        for item in sources:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).lower()
+            url = str(item.get("url", "")).lower()
+            source_type = str(item.get("source_type", "")).lower()
+            if source_type in {"owned", "first_party"}:
+                return "high"
+            if any(marker in title or marker in url for marker in high_markers):
+                return "high"
+        return "medium" if len(sources) >= 2 else "low"
 
     def _build_memory_context(
         self,
@@ -445,6 +744,29 @@ class ResearchWorker:
         }
 
     def _build_queries(self, *, brief: SupervisorBrief, task_key: str, current_section: dict[str, Any] | None = None) -> list[str]:
+        """Resolve queries via the central query resolver.
+
+        Delegates to ``resolve_queries()`` from ``src.research.query_resolver``.
+        When ``LIQUISTO_QUERY_RESOLVER_VERIFY=1`` both the resolver and the
+        legacy path are run and any divergence is logged for migration monitoring.
+        """
+        resolved = resolve_queries(task_key, brief, current_section=current_section)
+        if is_verify_mode():
+            import logging as _logging
+            _log = _logging.getLogger(__name__)
+            try:
+                legacy = self._build_queries_legacy(brief=brief, task_key=task_key, current_section=current_section)
+                if resolved != legacy:
+                    _log.warning(
+                        "QUERY_RESOLVER_VERIFY divergence for task '%s': "
+                        "resolver=%r legacy=%r",
+                        task_key, resolved, legacy,
+                    )
+            except Exception as exc:
+                _log.warning("QUERY_RESOLVER_VERIFY legacy path error for '%s': %s", task_key, exc)
+        return resolved
+
+    def _build_queries_legacy(self, *, brief: SupervisorBrief, task_key: str, current_section: dict[str, Any] | None = None) -> list[str]:
         hints = self._derive_research_hints(brief)
         company_name = brief.company_name
         industry_hint = hints["industry_hint"]
@@ -458,9 +780,32 @@ class ResearchWorker:
                 f"\"{company_name}\" restructuring layoffs insolvency",
                 f"\"{company_name}\" inventory write-down excess stock",
                 f"\"{company_name}\" M&A acquisition cost cutting",
+                f"\"{company_name}\" annual report results EBIT net debt",
+                f"\"{company_name}\" margin pressure CEO statement",
+                f"\"{company_name}\" Germany decline Poland plant North Carolina",
+                f"\"{company_name}\" temporary workers short-time work local for local",
+                f"site:{brief.normalized_domain} {company_name} investor relations annual report",
             ]
 
-        if task_key in {"company_fundamentals", "product_asset_scope"}:
+        if task_key == "financial_deep_dive":
+            return [
+                f"site:{brief.normalized_domain} {company_name} annual report pdf",
+                f"site:{brief.normalized_domain} {company_name} investor relations annual report pdf",
+                f"\"{company_name}\" annual report inventory working capital pdf",
+                f"\"{company_name}\" annual report net debt EBIT pdf",
+                f"\"{company_name}\" investor presentation inventory pdf",
+                f"\"{company_name}\" financial statements inventory write-down pdf",
+                f"\"{company_name}\" Geschäftsbericht Vorräte Nettoverschuldung pdf",
+                f"\"{company_name}\" annual report notes inventories write-downs pdf",
+                f"\"{company_name}\" consolidated financial statements inventory debt pdf",
+                f"site:bundesanzeiger.de \"{company_name}\" Jahresabschluss",
+                f"site:northdata.de \"{company_name}\" Jahresabschluss",
+                f"site:{brief.normalized_domain} {company_name} press release revenue margin production",
+                f"\"{company_name}\" CEO margin pressure demand Germany Poland plant",
+                f"\"{company_name}\" North Carolina investment capacity press release",
+            ]
+
+        if task_key in {"company_fundamentals", "product_asset_scope", "transaction_event_intelligence"}:
             queries = build_company_queries(company_name, brief.normalized_domain)
             if task_key == "product_asset_scope":
                 queries.extend(
@@ -469,9 +814,20 @@ class ResearchWorker:
                         f"\"{company_name}\" product portfolio materials",
                     ]
                 )
+            if task_key == "transaction_event_intelligence":
+                queries = [
+                    f"\"{company_name}\" acquisition divestiture carve-out joint venture",
+                    f"\"{company_name}\" restructuring program termination divestment",
+                    f"\"{company_name}\" IAS 8 accounting correction regulatory filing",
+                    f"\"{company_name}\" investor presentation transaction portfolio review",
+                    f"\"{company_name}\" H1 H2 2025 strategic update divestiture",
+                    f"site:{brief.normalized_domain} {company_name} press release divestiture acquisition",
+                    f"site:{brief.normalized_domain} {company_name} press release Poland North Carolina local for local",
+                    f"\"{company_name}\" data center growth strategy margin pressure press release",
+                ]
             return queries
 
-        if task_key in {"market_situation", "repurposing_circularity", "analytics_operational_improvement"}:
+        if task_key == "market_situation":
             if task_key == "market_situation":
                 # Dedicated queries for market_situation — must NOT share the
                 # generic build_market_queries() cache so the LLM receives
@@ -482,22 +838,6 @@ class ResearchWorker:
                     f"\"{company_name}\" market share competitive position",
                     f"{industry_hint} demand forecast supply pressure {company_name}",
                 ]
-            queries = build_market_queries(company_name, industry_hint, product_keywords)
-            if task_key == "repurposing_circularity":
-                queries.extend(
-                    [
-                        f"{company_name} recycling reuse materials",
-                        f"{' '.join(product_keywords[:3])} circular economy repurposing",
-                    ]
-                )
-            if task_key == "analytics_operational_improvement":
-                queries.extend(
-                    [
-                        f"\"{company_name}\" supply chain planning data",
-                        f"{industry_hint} inventory visibility analytics",
-                    ]
-                )
-            return queries
 
         if task_key in {"contact_discovery", "contact_qualification"}:
             raw_candidates = (current_section or {}).get("buyer_candidates") or []
@@ -520,16 +860,39 @@ class ResearchWorker:
                 queries.extend([
                     f'"{firm}" procurement head supply chain director',
                     f'"{firm}" COO VP operations asset management',
+                    f'site:linkedin.com/in "{firm}" procurement operations',
+                    f'"{firm}" aftermarket service director',
+                    f'"{firm}" aftermarket spare parts procurement',
+                    f'"{firm}" retrofit service operations',
+                    f'"{firm}" distributor service network procurement',
                 ])
             if not queries:
                 # No valid buyer candidates — fall back to target company + industry
                 queries = [
-                    f'"{company_name}" procurement head supply chain director',
-                    f'"{company_name}" COO VP operations asset management',
-                    f'"{company_name}" {industry_hint} key accounts customer contacts',
+                    f'{industry_hint} OEM procurement director aftermarket',
+                    f'{industry_hint} distributor spare parts procurement head',
+                    f'{industry_hint} retrofit service provider operations director',
+                    f'{industry_hint} service network procurement director',
                     f'{industry_hint} procurement director head of purchasing decision maker',
                 ]
             return queries[:10]
+
+        if task_key == "target_company_contacts":
+            return [
+                f'"{company_name}" management board executive committee procurement',
+                f'"{company_name}" CFO COO chief procurement officer',
+                f'"{company_name}" aftermarket head division president',
+                f'"{company_name}" board of management operations supply chain',
+                f'site:linkedin.com/in "{company_name}" procurement operations aftermarket',
+                f'site:{brief.normalized_domain} {company_name} leadership procurement operations',
+                f'"{company_name}" investor relations management team',
+                f'"{company_name}" divisional head aftermarket procurement',
+                f'site:{brief.normalized_domain} {company_name} management board corporate governance',
+                f'site:{brief.normalized_domain} {company_name} press release plant kupferzell poland north carolina',
+                f'"{company_name}" trade fair speaker procurement operations',
+                f'"{company_name}" association board plant operations supply chain',
+                f'"{company_name}" local registry legal entity managing director plant',
+            ]
 
         if task_key == "peer_companies":
             # Put targeted competitor queries FIRST so they survive the [:4] search cap.
@@ -551,18 +914,72 @@ class ResearchWorker:
                 f"{industry_hint} fleet operators industrial end-users {company_name}",
                 f"\"{company_name}\" customers aftermarket service",
                 f"{' '.join(product_keywords[:3])} distributors brokers marketplace",
+                f"{' '.join(product_keywords[:3])} retrofit service providers",
+                f"{' '.join(product_keywords[:3])} aftermarket partners distributors",
             ]
         return queries
 
     # Task-specific search limits: contact and peer tasks need broader coverage
     _QUERY_LIMITS: dict[str, tuple[int, int]] = {
         # task_key_prefix → (max_queries, max_results)
-        "contact_discovery": (8, 12),
-        "contact_qualification": (8, 12),
+        "contact_discovery": (10, 12),
+        "contact_qualification": (10, 12),
+        "target_company_contacts": (12, 12),
         "peer_companies": (8, 12),
-        "monetization_redeployment": (6, 8),
+        "monetization_redeployment": (8, 8),
+        "company_fundamentals": (8, 30),
+        "economic_commercial_situation": (9, 24),
+        "financial_deep_dive": (10, 12),
+        "transaction_event_intelligence": (10, 12),
     }
-    _DEFAULT_QUERY_LIMIT = (4, 5)
+    _DEFAULT_QUERY_LIMIT = (5, 8)
+
+    @staticmethod
+    def _extract_revenue_from_text(text: str) -> str:
+        import re as _re
+
+        if not text:
+            return ""
+        patterns = [
+            _re.compile(
+                r"(?:revenue|umsatz)[^.\n]{0,50}?([\d][\d.,\s]*\s?(?:mrd\.?|bn|billion|million|mio\.?)\s?(?:eur|€)?)",
+                _re.IGNORECASE,
+            ),
+            _re.compile(r"([\d][\d.,\s]*\s?(?:mrd\.?|bn|billion|million|mio\.?)\s?(?:eur|€))", _re.IGNORECASE),
+            _re.compile(r"(?:revenue|umsatz)[^.\n]{0,30}?([\d][\d.,\s]*\s?(?:eur|€))", _re.IGNORECASE),
+        ]
+        for pattern in patterns:
+            match = pattern.search(text)
+            if match:
+                return " ".join(match.group(1).split()).strip(" ,.;:")
+        return ""
+
+    @staticmethod
+    def _extract_employees_from_text(text: str) -> str:
+        import re as _re
+
+        if not text:
+            return ""
+        patterns = [
+            _re.compile(
+                r"(?:employees|mitarbeiter(?:innen)?|headcount|belegschaft)[^.\n]{0,30}?([\d][\d.,\s]{2,12})",
+                _re.IGNORECASE,
+            ),
+            _re.compile(r"([\d][\d.,\s]{2,12})\s*(?:employees|mitarbeiter(?:innen)?)", _re.IGNORECASE),
+        ]
+        candidates: list[int] = []
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                raw = match.group(1)
+                digits = "".join(character for character in raw if character.isdigit())
+                if not digits:
+                    continue
+                value = int(digits)
+                if 100 <= value <= 2_000_000:
+                    candidates.append(value)
+        if not candidates:
+            return ""
+        return f"{max(candidates):,}".replace(",", ".")
 
     def _search_queries(
         self,
@@ -584,7 +1001,11 @@ class ResearchWorker:
                 continue
             if query not in self._search_cache:
                 search_calls += 1
-                self._search_cache[query] = perform_search(query, max_results=3, timeout=3)
+                primary_timeout = max(18, min(45, int(get_openai_timeout_seconds())))
+                batch = perform_search(query, max_results=max_results, timeout=primary_timeout)
+                if not batch:
+                    batch = perform_search(query, max_results=max_results, timeout=max(primary_timeout, 35))
+                self._search_cache[query] = batch
             for item in self._search_cache.get(query, []):
                 url = str(item.get("url", "")).strip()
                 if not url or url in seen_urls:
@@ -619,14 +1040,16 @@ class ResearchWorker:
                         "page_title": str(item.get("title", "n/v")),
                         "meta_description": "",
                         "visible_text_excerpt": "",
+                        "content_type": "",
+                        "is_pdf": "no",
                     }
-                    for item in results[:2]
+                    for item in results[:4]
                 ],
                 0,
             )
         page_evidence: list[dict[str, str]] = []
         fetches = 0
-        for item in results[:2]:
+        for item in results[:4]:
             url = str(item.get("url", "")).strip()
             if not url.startswith("http"):
                 continue
@@ -642,6 +1065,8 @@ class ResearchWorker:
                     "page_title": str(snapshot.get("title", "")),
                     "meta_description": str(snapshot.get("meta_description", "")),
                     "visible_text_excerpt": summarize_visible_text(str(snapshot.get("visible_text", "")), limit=500),
+                    "content_type": str(snapshot.get("content_type", "")),
+                    "is_pdf": "yes" if snapshot.get("is_pdf") else "no",
                 }
             )
         return page_evidence, fetches
@@ -658,7 +1083,11 @@ class ResearchWorker:
 
     def _client_instance(self) -> OpenAI:
         if self._client is None:
-            self._client = OpenAI(api_key=get_openai_api_key())
+            self._client = OpenAI(
+                api_key=get_openai_api_key(),
+                timeout=get_openai_timeout_seconds(),
+                max_retries=get_openai_max_retries(),
+            )
         return self._client
 
     def _llm_synthesis(self, evidence_pack: dict[str, Any], *, model_name: str | None = None) -> dict[str, Any]:
@@ -713,6 +1142,17 @@ class ResearchWorker:
                 "If the evidence says 'reduction of 14,000 employees', that is NOT the headcount — look for the total."
             )
 
+        if task_key == "financial_deep_dive":
+            system_parts.append(
+                "For financial_deep_dive: you MUST populate payload_updates.financial_deep_dive with these fields: "
+                "latest_fiscal_year, key_financials, inventory_positions, inventory_risks, balance_sheet_signals, assessment. "
+                "Prioritize annual reports, investor presentations, audited statements, and PDF disclosures. "
+                "Extract concrete figures for revenue, EBIT, net loss, net debt, inventories, working capital, "
+                "write-downs, and one-off effects when they appear. "
+                "If a PDF excerpt or report title contains a financial figure, capture it explicitly in key_financials. "
+                "Do not flatten these into generic facts only; they must appear inside financial_deep_dive."
+            )
+
         if task_key in {"contact_discovery", "contact_qualification"}:
             system_parts.append(
                 "For contact tasks: extract REAL person names, job titles, and companies directly from "
@@ -724,7 +1164,21 @@ class ResearchWorker:
                 "If a person's name appears in a title like 'John Smith, Head of Procurement at Acme Corp', "
                 "extract all fields into a structured contact object in payload_updates.contacts. "
                 "Do NOT put contacts only in facts — they MUST appear in payload_updates.contacts. "
-                "Return an empty list only if NO real names appear anywhere in the evidence."
+                "Return an empty list only if NO real names appear anywhere in the evidence. "
+                "Think in buying groups, not single champions: look for procurement, operations, supply chain, aftermarket, plant, and finance coverage. "
+                "Reject weak contacts, recruiters, generic job titles, or buyer roles with no plausible asset-fit."
+            )
+
+        if task_key == "target_company_contacts":
+            system_parts.append(
+                "For target_company_contacts: extract REAL person names at the target company itself. "
+                "Populate payload_updates.target_company_contacts as a list of objects with name, firma, rolle_titel, "
+                "funktion, senioritaet, quelle, relevance_reason, suggested_outreach_angle. "
+                "Also populate payload_updates.target_company_prioritized_contacts with the 1-5 best entry points "
+                "for a Liquisto inventory-to-cash discussion, and set payload_updates.target_company_summary. "
+                "Prioritize procurement, operations, plant, supply chain, aftermarket, divisional leadership, and finance roles before generic prominence. "
+                "Do not mix in buyer-firm contacts here. "
+                "If names are missing, leave them out of target_company_contacts and instead surface the role gap via the summary and open questions."
             )
 
         if task_key == "market_situation":
@@ -740,28 +1194,6 @@ class ResearchWorker:
                 "excess_stock_indicators (paragraph if evidence exists, otherwise 'n/v'). "
                 "Extract concrete data points from the search results and page excerpts. "
                 "Only use 'n/v' if the field is genuinely absent from ALL evidence."
-            )
-
-        if task_key == "repurposing_circularity":
-            system_parts.append(
-                "For repurposing_circularity: you MUST populate repurposing_signals "
-                "(list of at least 2 concrete circularity or reuse statements from the evidence). "
-                "Look specifically in: CDP climate questionnaires, sustainability reports, "
-                "annual reports, press releases about recycling or remanufacturing. "
-                "If no explicit circularity program is documented, infer plausible signals from "
-                "the company's product types and restructuring news "
-                "(e.g. deconsolidated product lines may become redeployable assets). "
-                "Also update assessment and key_trends if the evidence contains relevant market context. "
-                "Only return an empty list if the evidence contains absolutely no environmental, "
-                "sustainability, or product-lifecycle signals."
-            )
-
-        if task_key == "analytics_operational_improvement":
-            system_parts.append(
-                "For analytics_operational_improvement: you MUST populate analytics_signals "
-                "(list of at least 2 concrete operational improvement or analytics statements from the evidence). "
-                "Also update assessment if the evidence contains relevant operational context. "
-                "Extract concrete data points. Only use 'n/v' if genuinely absent from ALL evidence."
             )
 
         if task_key == "monetization_redeployment":
@@ -818,6 +1250,14 @@ class ResearchWorker:
                 "Only return an empty list if no specific product families appear anywhere in the evidence."
             )
 
+        if task_key == "transaction_event_intelligence":
+            system_parts.append(
+                "For transaction_event_intelligence: populate payload_updates.transaction_event_intelligence with "
+                "strategic_events, carve_out_signals, regulatory_signals, and assessment. "
+                "Look for M&A, divestitures, carve-outs, JVs, restructuring program terminations, accounting corrections, "
+                "and regulatory disclosures. Capture concrete dates, counterparties, and why each event matters for Liquisto."
+            )
+
         # Revision-request injection: make the LLM address specific gaps.
         # P1 fix: also inject the already-collected payload so the LLM has the
         # concrete evidence context and does not re-produce the same empty output.
@@ -838,7 +1278,7 @@ class ResearchWorker:
             if current_section:
                 revision_note_parts.append(
                     "Current payload (already collected — fill the MISSING fields, keep the existing ones): "
-                    + json.dumps(current_section, ensure_ascii=False)[:800]
+                    + strict_json_dumps(current_section, ensure_ascii=False)[:800]
                 )
             system_parts.append(" ".join(revision_note_parts))
 
@@ -849,25 +1289,28 @@ class ResearchWorker:
             ctx_lines = ["Previously collected facts from other tasks (use as additional context, do not fabricate):"]
             for ctx_key, ctx_val in memory_context.items():
                 if ctx_val and ctx_val != "n/v":
-                    ctx_lines.append(f"  {ctx_key}: {json.dumps(ctx_val, ensure_ascii=False)[:500]}")
+                    ctx_lines.append(f"  {ctx_key}: {strict_json_dumps(ctx_val, ensure_ascii=False)[:500]}")
             if len(ctx_lines) > 1:
                 system_parts.append(" ".join(ctx_lines))
 
         effective_model = model_name or str(config["structured_model"])
-        response = self._client_instance().chat.completions.create(
-            model=effective_model,
-            temperature=float(config["temperature"]),
-            response_format={"type": "json_object"},
-            messages=[
+        request_payload: dict[str, Any] = {
+            "model": effective_model,
+            "response_format": {"type": "json_object"},
+            "messages": [
                 {
                     "role": "system",
                     "content": " ".join(system_parts),
                 },
                 {
                     "role": "user",
-                    "content": json.dumps(evidence_pack, ensure_ascii=False),
+                    "content": strict_json_dumps(evidence_pack, ensure_ascii=False),
                 },
             ],
+        }
+        request_payload.update(temperature_param(effective_model, config.get("temperature")))
+        response = self._client_instance().chat.completions.create(
+            **request_payload,
         )
         raw_content = response.choices[0].message.content or "{}"
         try:
@@ -919,12 +1362,48 @@ class ResearchWorker:
                     "financial_pressure": "n/v",
                 }
                 next_actions.append("Validate commercial pressure and stock dynamics directly in the meeting.")
+            if task_key == "financial_deep_dive":
+                payload_updates["financial_deep_dive"] = {
+                    "latest_fiscal_year": "n/v",
+                    "key_financials": titles[:3],
+                    "inventory_positions": [
+                        title for title in titles if any(
+                            token in title.lower() for token in ("inventory", "inventories", "vorr", "stock")
+                        )
+                    ][:3],
+                    "inventory_risks": [
+                        "Primary-source inventory write-down or obsolescence details remain to be validated."
+                    ],
+                    "balance_sheet_signals": [
+                        title for title in titles if any(
+                            token in title.lower() for token in ("debt", "ebit", "loss", "cash", "working capital")
+                        )
+                    ][:3],
+                    "assessment": "Primary financial-source coverage is still partial and should be strengthened with annual-report PDFs.",
+                }
+                next_actions.append("Validate inventory, debt, and working-capital figures in the latest annual report.")
             if task_key == "product_asset_scope":
                 payload_updates["product_asset_scope"] = [
-                    f"{keyword} appears likely to matter for buyer, resale, redeployment, repurposing, or aftermarket analysis."
+                    f"{keyword} appears likely to matter for buyer, resale, redeployment, or aftermarket analysis."
                     for keyword in brief["product_keywords"][:4]
                 ] or ["No specific product family or asset scope was validated yet."]
                 next_actions.append("Validate which SKUs, spare parts, materials, or assets are commercially movable.")
+            if task_key == "transaction_event_intelligence":
+                payload_updates["transaction_event_intelligence"] = {
+                    "strategic_events": titles[:3],
+                    "carve_out_signals": [
+                        title for title in titles if any(
+                            token in title.lower() for token in ("carve", "divest", "sale", "joint venture", "portfolio")
+                        )
+                    ][:3],
+                    "regulatory_signals": [
+                        title for title in titles if any(
+                            token in title.lower() for token in ("ias", "ifrs", "filing", "regulatory", "correction")
+                        )
+                    ][:3],
+                    "assessment": "Strategic-event evidence is indicative and should be strengthened with primary company disclosures.",
+                }
+                next_actions.append("Validate whether recent portfolio actions create excess-inventory or carve-out angles.")
 
         elif evidence_pack["target_section"] == "industry_analysis":
             market_signals = titles[:3]
@@ -935,18 +1414,6 @@ class ResearchWorker:
                 "demand_outlook": "Public demand signals are mixed and require validation." if titles else "n/v",
                 "assessment": "Market evidence is indicative and should be strengthened with deeper external sources.",
             }
-            if task_key == "repurposing_circularity":
-                payload_updates["repurposing_signals"] = [
-                    f"Adjacent reuse of {keyword} may be plausible but remains unvalidated."
-                    for keyword in brief["product_keywords"][:3]
-                ] or ["No validated repurposing path found yet."]
-                next_actions.append("Test adjacent reuse and circular-economy partners for unused materials.")
-            if task_key == "analytics_operational_improvement":
-                payload_updates["analytics_signals"] = [
-                    "Operational visibility and planning signals should be validated during discovery."
-                ]
-                next_actions.append("Probe forecasting, inventory visibility, and reporting bottlenecks in the meeting.")
-
         elif evidence_pack["target_section"] == "market_network":
             buyer_hypotheses = titles[:3]
             companies = [
@@ -997,20 +1464,54 @@ class ResearchWorker:
             for result in results[:6]:
                 title = str(result.get("title", "n/v"))
                 url = str(result.get("url", ""))
-                parsed = self._parse_contact_from_title(title, url)
+                parsed = self._parse_contact_from_title(title, url, brief.get("buyer_candidates"))
                 if parsed:
                     contacts.append(parsed)
             payload_updates = {
                 "contacts": contacts,
-                "prioritized_contacts": [],
+                "prioritized_contacts": self._prioritize_contact_records(
+                    contacts,
+                    preferred_company_names=brief.get("buyer_candidates"),
+                ),
                 "firms_searched": len({c["firma"] for c in contacts if c["firma"] != "n/v"}),
                 "contacts_found": len(contacts),
-                "coverage_quality": "low" if contacts else "n/v",
-                "narrative_summary": "Contact intelligence coverage is limited. Further targeted research required.",
+                "coverage_quality": _assess_contact_coverage_impl(
+                    contacts=contacts,
+                    prioritized_contacts=self._prioritize_contact_records(
+                        contacts,
+                        preferred_company_names=brief.get("buyer_candidates"),
+                    ),
+                    target_contacts=[],
+                ),
+                "narrative_summary": (
+                    f"Indicative buyer-side contact map with {len(contacts)} contacts."
+                    if contacts
+                    else "Contact intelligence coverage is limited. Further targeted research required."
+                ),
                 "open_questions": ["Which decision-makers at buyer firms are most relevant for Liquisto?"],
                 "sources": [],
             }
-            open_questions.append("No verified contacts found — validate decision-makers directly before outreach.")
+            if not contacts:
+                open_questions.append("No verified contacts found — validate decision-makers directly before outreach.")
+            if task_key == "target_company_contacts":
+                prioritized_target_contacts = self._prioritize_contact_records(
+                    contacts,
+                    preferred_company_names=[brief["company_name"]],
+                    target_company_mode=True,
+                )
+                payload_updates = {
+                    "target_company_contacts": contacts,
+                    "target_company_prioritized_contacts": prioritized_target_contacts,
+                    "target_company_summary": (
+                        f"Indicative target-company stakeholder map with {len(contacts)} validated contacts."
+                        if contacts
+                        else "Target-company stakeholder coverage is limited and needs stronger validation."
+                    ),
+                    "open_questions": ["Which target-company stakeholder owns inventory, working capital, or portfolio actions?"],
+                    "sources": [],
+                }
+                if not contacts:
+                    open_questions.append("No verified target-company stakeholder found — validate finance, procurement, or operations leadership directly.")
 
         if not results:
             open_questions.append(f"No external search evidence found for {task_key}.")
@@ -1054,16 +1555,22 @@ class ResearchWorker:
         if section == "contact_intelligence":
             merged.setdefault("contacts", [])
             merged.setdefault("prioritized_contacts", [])
+            merged.setdefault("target_company_contacts", [])
+            merged.setdefault("target_company_prioritized_contacts", [])
             # Derive counters from actual contacts — fixes bug where LLM
             # delivers contacts but not the metadata counters, leaving them
             # at the schema default of 0.
-            actual_contacts = merged.get("contacts", [])
+            actual_contacts = [
+                *list(merged.get("contacts", []) or []),
+                *list(merged.get("target_company_contacts", []) or []),
+            ]
             merged["contacts_found"] = len(actual_contacts)
             merged["firms_searched"] = len(
                 {c.get("firma", "") for c in actual_contacts
                  if isinstance(c, dict) and c.get("firma") not in {"n/v", "", None}}
             )
             merged.setdefault("coverage_quality", "n/v")
+            merged.setdefault("target_company_summary", "n/v")
             merged.setdefault("narrative_summary", "n/v")
             merged.setdefault("open_questions", [])
         merged = self._sanitize_for_section(section, merged)
@@ -1119,6 +1626,21 @@ class ResearchWorker:
 
     def _coerce_contact_records(self, items: Any) -> list[dict[str, str]]:
         return _coerce_contact_records_impl(items)
+
+    def _prioritize_contact_records(
+        self,
+        contacts: list[dict[str, Any]],
+        *,
+        preferred_company_names: list[str] | None = None,
+        limit: int = 5,
+        target_company_mode: bool = False,
+    ) -> list[dict[str, str]]:
+        return _prioritize_contact_records_impl(
+            contacts,
+            preferred_company_names=preferred_company_names,
+            limit=limit,
+            target_company_mode=target_company_mode,
+        )
 
     def _normalize_contact_fields(self, item: dict[str, Any]) -> dict[str, str]:
         return _normalize_contact_fields_impl(item)

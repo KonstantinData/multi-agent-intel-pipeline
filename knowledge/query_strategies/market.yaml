@@ -1,0 +1,13 @@
+{
+  "department": "MarketDepartment",
+  "tasks": {
+    "market_situation": {
+      "queries": [
+        "\"{company}\" market demand supply trend",
+        "{industry} market outlook growth decline overcapacity",
+        "\"{company}\" market share competitive position",
+        "{industry} demand forecast supply pressure {company}"
+      ]
+    }
+  }
+}

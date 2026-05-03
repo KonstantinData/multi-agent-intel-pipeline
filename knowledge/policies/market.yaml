@@ -1,0 +1,31 @@
+{
+  "department": "MarketDepartment",
+  "required_fields": [
+    "industry_name",
+    "assessment",
+    "key_trends",
+    "demand_outlook",
+    "trend_direction"
+  ],
+  "source_priority": [
+    "official_statistics",
+    "industry_publications",
+    "search_trends"
+  ],
+  "min_evidence_rules": {
+    "min_sources": 2,
+    "min_completed_tasks": 2
+  },
+  "gate_rules": {
+    "require_any_accepted_task": true,
+    "missing_field_availability": "public",
+    "missing_field_owner": "Market Department",
+    "missing_field_next_step": "Widen market scan across official statistics and industry associations."
+  },
+  "blocker_templates": {
+    "missing_required_field": "Required market field '{field}' is missing or placeholder.",
+    "insufficient_sources": "Insufficient market-source coverage ({actual}/{required}).",
+    "insufficient_completed_tasks": "Insufficient completed market tasks ({actual}/{required}).",
+    "no_accepted_task": "No market task reached accepted status."
+  }
+}

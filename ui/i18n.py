@@ -36,8 +36,8 @@ _DE: Labels = {
     # ── briefing tab ─────────────────────────────────────────────────────
     "recommendation": "Liquisto-Empfehlung",
     "primary_rec": "Primäre Empfehlung",
-    "secondary_rec": "Zweite Option",
-    "low_relevance": "Aktuell weniger relevant",
+    "secondary_rec": "Einordnung",
+    "low_relevance": "Derzeit nicht freigegeben",
     "no_recommendation": "Keine ausreichende Datenbasis für eine Empfehlung — Recherche vertiefen oder Follow-up nutzen.",
     "fallback_note": "Empfehlung basiert auf strukturierter Datenauswertung (kein AG2-Syntheselauf).",
     "talk_about": "Im Termin ansprechen",
@@ -60,12 +60,8 @@ _DE: Labels = {
     "confidence_low": "🔴 Geringe Konfidenz",
     # ── service areas ────────────────────────────────────────────────────
     "svc_excess_inventory": "Überschuss-Inventar-Verwertung",
-    "svc_repurposing": "Repurposing & Kreislaufwirtschaft",
-    "svc_analytics": "Analytics & Entscheidungsunterstützung",
     "svc_further_validation": "Weitere Validierung erforderlich",
     "svc_desc_excess_inventory": "Wiederverkauf, Redeployment und Sekundärmarktpfade für Güter und Anlagen",
-    "svc_desc_repurposing": "Kreislaufwirtschaft und Nachnutzungspfade für Materialien und Komponenten",
-    "svc_desc_analytics": "Lagertransparenz, Entscheidungsunterstützung und operative Berichtsverbesserungen",
     # ── goods classification ─────────────────────────────────────────────
     "goods_manufacturer": "Hersteller",
     "goods_distributor": "Händler / Großhändler",
@@ -84,8 +80,6 @@ _DE: Labels = {
     "asset_scope": "Asset-Scope",
     "market_industry": "Markt und Industrie",
     "demand_outlook": "Nachfrage-Outlook",
-    "repurposing_signals": "Repurposing-Signale",
-    "analytics_signals": "Analytics-Signale",
     "buyer_network": "Käufer- und Wettbewerbernetzwerk",
     "competitors": "Wettbewerber",
     "downstream_buyers": "Downstream-Käufer",
@@ -158,8 +152,8 @@ _EN: Labels = {
     # ── briefing tab ─────────────────────────────────────────────────────
     "recommendation": "Liquisto Recommendation",
     "primary_rec": "Primary recommendation",
-    "secondary_rec": "Second option",
-    "low_relevance": "Currently less relevant",
+    "secondary_rec": "Assessment",
+    "low_relevance": "Not approved at present",
     "no_recommendation": "Insufficient data for a recommendation — deepen research or use follow-up.",
     "fallback_note": "Recommendation based on structured data analysis (no AG2 synthesis run).",
     "talk_about": "Discuss in meeting",
@@ -182,12 +176,8 @@ _EN: Labels = {
     "confidence_low": "🔴 Low confidence",
     # ── service areas ────────────────────────────────────────────────────
     "svc_excess_inventory": "Excess Inventory Recovery",
-    "svc_repurposing": "Repurposing & Circular Economy",
-    "svc_analytics": "Analytics & Decision Support",
     "svc_further_validation": "Further Validation Required",
     "svc_desc_excess_inventory": "Resale, redeployment and secondary market paths for goods and assets",
-    "svc_desc_repurposing": "Circular economy and reuse paths for materials and components",
-    "svc_desc_analytics": "Inventory transparency, decision support and operational reporting improvements",
     # ── goods classification ─────────────────────────────────────────────
     "goods_manufacturer": "Manufacturer",
     "goods_distributor": "Distributor / Wholesaler",
@@ -206,8 +196,6 @@ _EN: Labels = {
     "asset_scope": "Asset Scope",
     "market_industry": "Market & Industry",
     "demand_outlook": "Demand Outlook",
-    "repurposing_signals": "Repurposing Signals",
-    "analytics_signals": "Analytics Signals",
     "buyer_network": "Buyer & Competitor Network",
     "competitors": "Competitors",
     "downstream_buyers": "Downstream Buyers",
@@ -259,19 +247,13 @@ def get_labels(lang: str = "de") -> Labels:
 
 _SERVICE_KEYS: dict[str, str] = {
     "excess_inventory": "svc_excess_inventory",
-    "repurposing": "svc_repurposing",
-    "analytics": "svc_analytics",
     "further_validation_required": "svc_further_validation",
 }
 _SERVICE_DESC_KEYS: dict[str, str] = {
     "excess_inventory": "svc_desc_excess_inventory",
-    "repurposing": "svc_desc_repurposing",
-    "analytics": "svc_desc_analytics",
 }
 _SERVICE_ICONS: dict[str, str] = {
     "excess_inventory": "📦",
-    "repurposing": "♻️",
-    "analytics": "📊",
     "further_validation_required": "🔍",
 }
 _GOODS_KEYS: dict[str, str] = {

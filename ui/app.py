@@ -19,9 +19,11 @@ os.chdir(PROJECT_ROOT)
 
 from src.app.use_cases import build_standard_backlog
 from src.config import summarize_runtime_models
+from src.exporters.json_export import export_binary_artifact
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
-from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline
+from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
+from ui.components.dashboard_renderer import render_dashboard
 from ui.i18n import (
     confidence_badge,
     get_labels,
@@ -202,28 +204,66 @@ def _ranked_service_paths(synthesis: dict) -> list[dict]:
     return positive + unclear
 
 
+def _build_pdf_export(lang: str) -> tuple[bytes, str]:
+    """Generate and persist the current PDF export for the active run."""
+    if not (st.session_state.run_id and st.session_state.pipeline_data):
+        return b"", ""
+    lang_suffix = lang.upper()
+    file_name = f"liquisto_briefing_{st.session_state.run_id}_{lang_suffix}.pdf"
+    pdf_payload = dict(st.session_state.pipeline_data)
+    if isinstance(st.session_state.run_context.get("report_package"), dict):
+        pdf_payload.setdefault("report_package", st.session_state.run_context.get("report_package", {}))
+    pdf_payload.setdefault("run_id", st.session_state.run_id)
+    pdf_bytes = generate_pdf(pdf_payload, lang=lang)
+    export_binary_artifact(
+        run_dir=RUNS_DIR / st.session_state.run_id,
+        relative_path=f"reports/{file_name}",
+        content=pdf_bytes,
+    )
+    return pdf_bytes, file_name
+
+
 def _render_pdf_downloads(L: dict) -> None:
     if not (st.session_state.run_id and st.session_state.pipeline_data):
         return
     col_de, col_en = st.columns(2)
     with col_de:
-        pdf_de = generate_pdf(st.session_state.pipeline_data, lang="de")
+        pdf_de, file_name_de = _build_pdf_export("de")
         st.download_button(
             L["download_pdf_de"],
             data=pdf_de,
-            file_name=f"liquisto_briefing_{st.session_state.run_id}_DE.pdf",
+            file_name=file_name_de,
             mime="application/pdf",
             use_container_width=True,
         )
     with col_en:
-        pdf_en = generate_pdf(st.session_state.pipeline_data, lang="en")
+        pdf_en, file_name_en = _build_pdf_export("en")
         st.download_button(
             L["download_pdf_en"],
             data=pdf_en,
-            file_name=f"liquisto_briefing_{st.session_state.run_id}_EN.pdf",
+            file_name=file_name_en,
             mime="application/pdf",
             use_container_width=True,
         )
+
+
+def _render_dashboard_tab() -> None:
+    """Render the shared DashboardBundle from pipeline_data."""
+    bundle_data = st.session_state.pipeline_data.get("dashboard_bundle")
+    if not bundle_data:
+        # Compose on-the-fly from current session state if not persisted
+        from src.orchestration.dashboard_composer import compose_dashboard
+        bundle = compose_dashboard(
+            run_id=st.session_state.run_id or "",
+            status=st.session_state.status or "",
+            pipeline_data=st.session_state.pipeline_data,
+            run_context=st.session_state.run_context,
+            budget=st.session_state.budget,
+        )
+    else:
+        from src.models.visualization import DashboardBundle
+        bundle = DashboardBundle.model_validate(bundle_data)
+    render_dashboard(bundle)
 
 
 def _render_briefing_tab(L: dict) -> None:
@@ -250,6 +290,26 @@ def _render_briefing_tab(L: dict) -> None:
         st.caption(caption_line)
     if description:
         st.write(description[:400] + ("..." if len(description) > 400 else ""))
+
+    # ── KPI Cards (dashboard-style) ───────────────────────────────────────────
+    revenue_val = _nv(company.get("revenue"), "—")
+    employees_val = _nv(company.get("employees"), "—")
+    founded_val = _nv(company.get("founded"), "—")
+    readiness_data = pipeline_data.get("research_readiness", {})
+    readiness_score = readiness_data.get("score", 0)
+
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.metric(L.get("revenue", "Revenue"), revenue_val)
+    with kpi2:
+        st.metric(L.get("employees", "Employees"), employees_val)
+    with kpi3:
+        st.metric(L.get("founded", "Founded"), founded_val)
+    with kpi4:
+        st.metric(L.get("readiness_score", "Readiness"), f"{readiness_score}/100")
+
+    if readiness_score > 0:
+        st.progress(min(readiness_score / 100, 1.0))
 
     econ = company.get("economic_situation", {})
     econ_assessment = _nv(econ.get("assessment", "") if isinstance(econ, dict) else "")
@@ -280,39 +340,6 @@ def _render_briefing_tab(L: dict) -> None:
             if pdesc:
                 st.caption(pdesc)
 
-        if len(ranked) > 1:
-            secondary = ranked[1]
-            sarea = secondary.get("service_area", "")
-            slabel = service_label(sarea, L)
-            sicon = service_icon(sarea)
-            sreasoning = _nv(secondary.get("reasoning", ""))
-
-            has_third = len(ranked) > 2
-            if has_third:
-                col_sec, col_low = st.columns([2, 1])
-            else:
-                col_sec = st.columns(1)[0]
-                col_low = None
-
-            with col_sec:
-                with st.container(border=True):
-                    st.markdown(f"**{sicon} {slabel}**")
-                    st.caption(L["secondary_rec"])
-                    if sreasoning:
-                        st.caption(sreasoning[:200])
-
-            if has_third and col_low is not None:
-                third = ranked[2]
-                tarea = third.get("service_area", "")
-                tlabel = service_label(tarea, L)
-                with col_low:
-                    with st.container(border=True):
-                        st.markdown(f"**{tlabel}**")
-                        st.caption(L["low_relevance"])
-                        reasoning_text = _nv(third.get("reasoning", ""))
-                        if reasoning_text:
-                            st.caption(reasoning_text[:140])
-
     gen_mode = synthesis.get("generation_mode", "normal")
     if gen_mode == "fallback":
         st.caption(f"_{L['fallback_note']}_")
@@ -324,14 +351,23 @@ def _render_briefing_tab(L: dict) -> None:
 
     with col_talk:
         st.markdown(f"### {L['talk_about']}")
-        next_steps = synthesis.get("next_steps", [])
+        structured_steps = synthesis.get("recommended_next_steps", [])
+        next_steps = synthesis.get("research_backlog", synthesis.get("next_steps", []))
         buyer_summary = _nv(market.get("downstream_buyers", {}).get("assessment", ""))
         peer_count = len(market.get("peer_competitors", {}).get("companies", []))
 
         points: list[str] = []
+        for step in structured_steps[:4]:
+            if isinstance(step, dict):
+                action = _nv(step.get("action", ""))
+                target = _nv(step.get("target_person", ""))
+                if action:
+                    points.append(f"{action}{f' -> {target}' if target else ''}")
         for step in next_steps[:4]:
+            if len(points) >= 4:
+                break
             s = _nv(step)
-            if s:
+            if s and s not in points:
                 points.append(s)
         if buyer_summary and len(points) < 4:
             points.append(f"{L['buyer_market']}: {buyer_summary[:200]}")
@@ -346,9 +382,15 @@ def _render_briefing_tab(L: dict) -> None:
 
     with col_validate:
         st.markdown(f"### {L['validate']}")
+        questions = synthesis.get("critical_open_questions", [])
         key_risks = synthesis.get("key_risks", [])
         open_gaps = quality.get("open_gaps", [])
         hypotheses: list[str] = []
+        for item in questions[:3]:
+            if isinstance(item, dict):
+                q = _nv(item.get("question", ""))
+                if q:
+                    hypotheses.append(q)
         for risk in key_risks[:3]:
             r = _nv(risk)
             if r:
@@ -396,15 +438,28 @@ def _render_briefing_tab(L: dict) -> None:
 
     # ── Next action ───────────────────────────────────────────────────────────
     st.markdown(f"### {L['next_step']}")
-    next_steps_all = synthesis.get("next_steps", [])
-    if next_steps_all:
-        st.success(_nv(next_steps_all[0], L["default_next_step"]))
+    # RA-06: meeting_actions are the primary action output
+    memory_snap = st.session_state.run_context.get("short_term_memory", {})
+    meeting_actions = memory_snap.get("meeting_actions", [])
+    if meeting_actions:
+        action_icons = {"prepare_meeting": "🎯", "collect_missing_evidence": "🔍", "ask_user_selection": "📋", "hold": "⏸️"}
+        for action in meeting_actions[:4]:
+            icon = action_icons.get(action.get("action_type", ""), "▸")
+            title = _nv(action.get("title", ""), "—")
+            desc = _nv(action.get("description", ""))
+            st.write(f"{icon} **{title}**")
+            if desc:
+                st.caption(desc[:200])
     else:
-        readiness_reasons = pipeline_data.get("research_readiness", {}).get("reasons", [])
-        if readiness_reasons:
-            st.info(_nv(readiness_reasons[0], L["default_next_step"]))
+        next_steps_all = synthesis.get("next_steps", [])
+        if next_steps_all:
+            st.success(_nv(next_steps_all[0], L["default_next_step"]))
         else:
-            st.info(L["default_next_step"])
+            readiness_reasons = pipeline_data.get("research_readiness", {}).get("reasons", [])
+            if readiness_reasons:
+                st.info(_nv(readiness_reasons[0], L["default_next_step"]))
+            else:
+                st.info(L["default_next_step"])
 
     st.divider()
 
@@ -474,21 +529,6 @@ def _render_research_tab(L: dict) -> None:
             tv = _nv(trend)
             if tv:
                 st.write(f"- {tv}")
-        repurposing = industry.get("repurposing_signals", [])
-        if repurposing:
-            st.markdown(f"**{L['repurposing_signals']}:**")
-            for item in repurposing[:5]:
-                iv = _nv(item)
-                if iv:
-                    st.write(f"- {iv}")
-        analytics = industry.get("analytics_signals", [])
-        if analytics:
-            st.markdown(f"**{L['analytics_signals']}:**")
-            for item in analytics[:5]:
-                iv = _nv(item)
-                if iv:
-                    st.write(f"- {iv}")
-
     with st.expander(L["buyer_network"]):
         peers = market.get("peer_competitors", {})
         if peers:
@@ -574,6 +614,25 @@ def _render_research_tab(L: dict) -> None:
         else:
             st.caption(L["no_contacts_found"])
 
+    synthesis = pipeline_data.get("synthesis", {})
+    research_backlog = synthesis.get("research_backlog", synthesis.get("next_steps", []))
+    if research_backlog:
+        with st.expander("Research Backlog", expanded=False):
+            for item in research_backlog[:12]:
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
+
+    memory = st.session_state.run_context.get("short_term_memory", {})
+    evidence_packets = memory.get("evidence_packets", [])
+    if evidence_packets:
+        with st.expander("Evidence Packets", expanded=False):
+            for packet in evidence_packets[:12]:
+                if isinstance(packet, dict):
+                    packet_id = _nv(packet.get("packet_id", ""))
+                    task_key = _nv((packet.get("metadata") or {}).get("task_key", ""))
+                    st.write(f"- {packet_id or 'packet'}{f' — {task_key}' if task_key else ''}")
+
 
 def _render_follow_up_panel(L: dict) -> None:
     current_run_id = st.session_state.run_id or ""
@@ -644,48 +703,105 @@ def _render_quality_tab(L: dict) -> None:
     pipeline_data = st.session_state.pipeline_data
     quality = pipeline_data.get("quality_review", {})
     readiness = pipeline_data.get("research_readiness", {})
+    run_context = st.session_state.run_context
+    answer_matrix = run_context.get("answer_matrix", {})
+    budget = st.session_state.budget
 
-    with st.expander(L["research_quality"]):
-        col1, col2, col3 = st.columns(3)
-        col1.metric(L["readiness_score"], _nv(str(readiness.get("score", "")), "—"))
-        col2.metric(L["evidence_quality"], _nv(quality.get("evidence_health", ""), "—"))
-        col3.metric(L["status"], _nv(st.session_state.status or "", "—"))
-        if readiness.get("reasons"):
-            for r in readiness["reasons"]:
-                rv = _nv(r)
-                if rv:
-                    st.write(f"- {rv}")
-        if quality.get("open_gaps"):
-            st.markdown(f"**{L['open_gaps']}:**")
-            for g in quality["open_gaps"][:10]:
-                gv = _nv(g)
-                if gv:
-                    st.write(f"- {gv}")
+    # ── Dashboard KPI row ─────────────────────────────────────────────────
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric(L["readiness_score"], _nv(str(readiness.get("score", "")), "—"))
+    with k2:
+        st.metric(L["evidence_quality"], _nv(quality.get("evidence_health", ""), "—"))
+    with k3:
+        st.metric(L["status"], _nv(st.session_state.status or "", "—"))
+    with k4:
+        cost = budget.get("estimated_cost_usd", 0)
+        st.metric("Cost", f"${cost:.3f}" if cost else "—")
 
-    with st.expander(L["task_status"]):
+    st.divider()
+
+    # ── Answer Matrix (dashboard-style) ───────────────────────────────────
+    if answer_matrix:
+        st.markdown(f"**{L.get('answer_matrix', 'Meeting Question Coverage')}**")
+        status_colors = {
+            "answered": "🟢", "partially_answered": "🟡",
+            "blocked": "🔴", "pending": "⚪",
+        }
+        cols_per_row = 3
+        items = list(answer_matrix.items())
+        for row_start in range(0, len(items), cols_per_row):
+            row_items = items[row_start:row_start + cols_per_row]
+            cols = st.columns(cols_per_row)
+            for col, (qid, entry) in zip(cols, row_items):
+                status = entry.get("status", "pending")
+                icon = status_colors.get(status, "⚪")
+                label = qid.replace("q_", "").replace("_", " ").title()
+                with col:
+                    with st.container(border=True):
+                        st.markdown(f"{icon} **{label}**")
+                        st.caption(status)
+        st.divider()
+
+    # ── Task status ───────────────────────────────────────────────────────
+    with st.expander(L["task_status"], expanded=False):
         status_icons = {"accepted": "✅", "degraded": "🟡", "rejected": "❌", "skipped": "⏭️", "pending": "⏳"}
         for row in _task_rows():
             icon = status_icons.get(row["status"], "·")
             st.write(f"{icon} {row['label']} — `{row['assignee']}` — `{row['status']}`")
 
+    # ── Open gaps ─────────────────────────────────────────────────────────
+    open_gaps = quality.get("open_gaps", [])
+    if open_gaps:
+        with st.expander(f"{L.get('open_gaps', 'Open Gaps')} ({len(open_gaps)})", expanded=False):
+            for g in open_gaps[:12]:
+                gv = _nv(g)
+                if gv:
+                    st.write(f"- {gv}")
+    synthesis = pipeline_data.get("synthesis", {})
+    research_backlog = synthesis.get("research_backlog", synthesis.get("next_steps", []))
+    if research_backlog:
+        with st.expander("Research Backlog", expanded=False):
+            for item in research_backlog[:12]:
+                iv = _nv(item)
+                if iv:
+                    st.write(f"- {iv}")
+    memory = run_context.get("short_term_memory", {})
+    evidence_packets = memory.get("evidence_packets", [])
+    if evidence_packets:
+        with st.expander("Evidence Packets", expanded=False):
+            for packet in evidence_packets[:15]:
+                if isinstance(packet, dict):
+                    packet_id = _nv(packet.get("packet_id", "packet"))
+                    task_key = _nv((packet.get("metadata") or {}).get("task_key", ""))
+                    st.write(f"- {packet_id}{f' — {task_key}' if task_key else ''}")
+
+    # ── Run metadata ──────────────────────────────────────────────────────
+    with st.expander(L["run_metadata"], expanded=False):
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("LLM Calls", budget.get("llm_calls_used", "—"))
+            st.metric("Search Calls", budget.get("search_calls_used", "—"))
+        with m2:
+            st.metric("Page Fetches", budget.get("page_fetches_used", "—"))
+            st.metric("Pipeline Events", budget.get("total_pipeline_events", "—"))
+        with m3:
+            elapsed = budget.get("elapsed_seconds", 0)
+            st.metric("Duration", f"{elapsed:.0f}s" if elapsed else "—")
+            st.metric("Run ID", st.session_state.run_id or "—")
+        timings = budget.get("department_timings", {})
+        if timings:
+            st.markdown("**Department Timings**")
+            for dept, secs in timings.items():
+                pct = (secs / elapsed * 100) if elapsed else 0
+                st.write(f"- {dept}: {secs:.1f}s ({pct:.0f}%)")
+
     packages = _department_packages()
     if packages:
-        with st.expander(L["department_packages"]):
+        with st.expander(L["department_packages"], expanded=False):
             for dept_name, package in packages.items():
                 st.markdown(f"**{dept_name}**")
                 st.json(package)
-
-    with st.expander(L["run_metadata"]):
-        budget = st.session_state.budget
-        st.json({
-            "run_id": st.session_state.run_id,
-            "llm_calls": budget.get("llm_calls_used"),
-            "search_calls": budget.get("search_calls_used"),
-            "page_fetches": budget.get("page_fetches_used"),
-            "estimated_cost_usd": budget.get("estimated_cost_usd"),
-            "elapsed_seconds": budget.get("elapsed_seconds"),
-            "department_timings": budget.get("department_timings", {}),
-        })
 
 
 def _start_pipeline(company_name: str, web_domain: str) -> None:
@@ -809,22 +925,84 @@ if st.session_state.done and st.session_state.run_id:
         st.session_state.pipeline_data.get("company_profile", {}).get("company_name", ""),
         st.session_state.run_id,
     )
-    if status == "completed":
+
+    # ── Resolution Dashboard (needs_user_selection) ───────────────────────
+    if status == "needs_user_selection":
+        st.warning(f"{L.get('needs_selection', 'User selection required')} — {company_label}")
+        resolution_state = st.session_state.run_context.get("resolution_state", {})
+        dashboard = resolution_state.get("dashboard_state", {})
+        plan = resolution_state.get("resolution_plan", {})
+        unresolved = plan.get("unresolved", {})
+        optional_qs = unresolved.get("optional_depth_not_selected", [])
+        confirmation_items = unresolved.get("customer_confirmation_items", [])
+        answer_matrix = st.session_state.run_context.get("answer_matrix", {})
+
+        with st.container(border=True):
+            st.markdown(f"### {L.get('resolution_dashboard', 'Resolution Dashboard')}")
+
+            # Answered core questions
+            answered = [qid for qid, e in answer_matrix.items() if e.get("status") == "answered"]
+            if answered:
+                st.markdown(f"**{L.get('answered_questions', 'Answered')}** ({len(answered)})")
+                for qid in answered:
+                    st.write(f"✅ {qid}")
+
+            # Optional depth areas
+            if optional_qs:
+                st.markdown(f"**{L.get('optional_depth', 'Optional depth areas')}**")
+                selected = []
+                for qid in optional_qs:
+                    label = answer_matrix.get(qid, {}).get("notes", qid)
+                    if st.checkbox(f"{qid}: {label}", key=f"sel_{qid}"):
+                        selected.append(qid)
+
+            # Customer confirmation items
+            if confirmation_items:
+                st.markdown(f"**{L.get('customer_confirmation', 'Customer confirmation required')}**")
+                for item in confirmation_items:
+                    st.write(f"🔒 {item}")
+
+            # Resume button
+            skipped = [q for q in optional_qs if q not in (selected if optional_qs else [])]
+            if st.button(L.get("resume_run", "Resume run with selections"), use_container_width=True):
+                with st.spinner(L.get("resuming", "Resuming...")):
+                    result = resume_pipeline(
+                        run_id=st.session_state.run_id,
+                        user_selections={
+                            "selected_questions": selected if optional_qs else [],
+                            "skipped_questions": skipped,
+                        },
+                    )
+                    if result.get("error"):
+                        st.error(result["error"])
+                    else:
+                        st.session_state.status = result["status"]
+                        st.session_state.run_context = result.get("run_context", {})
+                        st.session_state.pipeline_data = result.get("pipeline_data", {})
+                        st.rerun()
+
+    elif status == "completed" or status == "meeting_ready":
         st.success(f"{L['briefing_ready']} — {company_label}")
     elif status == "completed_partial":
         st.warning(f"{L['briefing_partial']} — {company_label}")
+    elif status == "blocked_not_meeting_ready":
+        st.error(f"{L.get('briefing_blocked', 'Briefing blocked — not meeting ready')} ({company_label})")
     elif status == "completed_but_not_usable":
         st.error(f"{L['briefing_unusable']} ({company_label})")
     elif st.session_state.loaded_notice == st.session_state.run_id:
         st.info(f"{L['run_loaded']} — {company_label}")
 
-    tab_briefing, tab_research, tab_followup, tab_quality, tab_log = st.tabs([
+    tab_dashboard, tab_briefing, tab_research, tab_followup, tab_quality, tab_log = st.tabs([
+        L.get("tab_dashboard", "📊 Dashboard"),
         L["tab_briefing"],
         L["tab_research"],
         L["tab_followup"],
         L["tab_quality"],
         L["tab_log"],
     ])
+
+    with tab_dashboard:
+        _render_dashboard_tab()
 
     with tab_briefing:
         _render_briefing_tab(L)

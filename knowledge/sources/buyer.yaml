@@ -1,0 +1,70 @@
+{
+  "department": "BuyerDepartment",
+  "source_priority": [
+    "company_disclosures",
+    "trade_sources",
+    "marketplaces"
+  ],
+  "sources": [
+    {
+      "name": "DGAP Corporate News",
+      "url": "https://www.dgap.de/",
+      "department": "BuyerDepartment",
+      "priority": "company_disclosures",
+      "free_access": "public",
+      "evidence_type": "hard",
+      "confidence_weight": 0.85,
+      "search_patterns_de": [
+        "<buyer> pressemitteilung restposten ankauf lager",
+        "<buyer> unternehmensnachricht inventar übernahme",
+        "<buyer> akquisition gebrauchtanlage asset deal"
+      ],
+      "search_patterns_en": [
+        "<buyer> press release inventory acquisition surplus",
+        "<buyer> corporate announcement asset purchase deal",
+        "<buyer> used equipment acquisition redeployment"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Maschinenmarkt",
+      "url": "https://www.maschinenmarkt.vogel.de/",
+      "department": "BuyerDepartment",
+      "priority": "trade_sources",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.65,
+      "search_patterns_de": [
+        "<branche> händler restposten gebrauchtmaschinen ankauf",
+        "<branche> aftermarket partner wiederverwendung redeployment",
+        "<branche> liquidation sekundärmarkt surplus"
+      ],
+      "search_patterns_en": [
+        "<industry> aftermarket distributor used equipment resale",
+        "<industry> secondary market buyers redeployment channels",
+        "<industry> liquidation surplus disposal"
+      ],
+      "fallback_label": "keine freien Quellen"
+    },
+    {
+      "name": "Surplex Industrial Auctions",
+      "url": "https://www.surplex.com/",
+      "department": "BuyerDepartment",
+      "priority": "marketplaces",
+      "free_access": "public",
+      "evidence_type": "indicative",
+      "confidence_weight": 0.6,
+      "search_patterns_de": [
+        "surplex <anlagenkategorie> auktion gebraucht ankauf",
+        "surplex <branche> maschinenauktion restbestand",
+        "<anlagenkategorie> industrieauktion wiederverkauf redeployment"
+      ],
+      "search_patterns_en": [
+        "surplex <asset category> industrial auction used",
+        "surplex <industry> machinery surplus sale",
+        "<asset category> auction aftermarket redeployment secondary"
+      ],
+      "fallback_label": "keine freien Quellen"
+    }
+  ]
+}

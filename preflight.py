@@ -120,10 +120,36 @@ def main() -> int:
     check("src.pipeline_runner", lambda: __import__("src.pipeline_runner") and "ok", counters)
     check("src.exporters.pdf_report", lambda: __import__("src.exporters.pdf_report") and "ok", counters)
 
-    print(f"\n7. Port {STREAMLIT_PORT}")
+    print("\n7. Query strategy files")
+    for dept in ("company", "market", "buyer", "contact"):
+        strategy_path = _project_path("knowledge", "query_strategies", f"{dept}.yaml")
+        check(
+            f"knowledge/query_strategies/{dept}.yaml exists",
+            lambda p=strategy_path: (
+                "exists" if p.is_file() else (_ for _ in ()).throw(FileNotFoundError(f"NOT FOUND: {p}"))
+            ),
+            counters,
+        )
+
+    def _validate_strategies() -> str:
+        sys.path.insert(0, str(ROOT))
+        from src.research.query_resolver import validate_all_strategies, clear_strategy_cache
+        clear_strategy_cache()
+        errors = validate_all_strategies()
+        if errors:
+            msgs = []
+            for slug, errs in errors.items():
+                for e in errs:
+                    msgs.append(f"{slug}: {e}")
+            raise ValueError("\n  ".join(msgs))
+        return "all strategy entries valid"
+
+    check("query strategy content", _validate_strategies, counters)
+
+    print(f"\n8. Port {STREAMLIT_PORT}")
     check(f"Port {STREAMLIT_PORT}", lambda: _port_status(STREAMLIT_PORT), counters)
 
-    print("\n8. Streamlit CLI")
+    print("\n9. Streamlit CLI")
     check("streamlit.web.cli", lambda: __import__("streamlit.web.cli") and "ok", counters)
 
     print("\n" + "=" * 60)

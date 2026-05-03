@@ -1,0 +1,14 @@
+{
+  "language": "de",
+  "sections": [
+    {"section_id": "executive_dashboard", "heading": "Executive-Dashboard"},
+    {"section_id": "opportunity_thesis", "heading": "Opportunity-These"},
+    {"section_id": "company_snapshot", "heading": "Unternehmens-Snapshot"},
+    {"section_id": "financial_inventory", "heading": "Finanz- und Inventarsignale"},
+    {"section_id": "buyer_map", "heading": "Käufer- und Weiterverwendungslandkarte"},
+    {"section_id": "stakeholder_map", "heading": "Stakeholder-Map"},
+    {"section_id": "validation_plan", "heading": "Offene Fragen und Validierungsplan"}
+  ],
+  "summary_style": "entscheidungsvorbereitung",
+  "max_key_points_per_section": 4
+}

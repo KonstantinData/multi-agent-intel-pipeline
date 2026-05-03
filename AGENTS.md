@@ -61,10 +61,31 @@ The research plane is split into four bounded domain departments:
 Each department is a real AG2 GroupChat with bounded multi-agent collaboration.
 The output is **not** raw chat. The output is a validated `DepartmentPackage`.
 
+### Department Knowledge Base and Acceptance Gates
+
+Each domain department uses a department-specific knowledge base:
+
+- `knowledge/sources/<department>.yaml`
+- `knowledge/policies/<department>.yaml`
+- `knowledge/query_strategies/<department>.yaml`
+
+Design intent:
+
+- source KB carries source registry metadata: priorities, evidence type, provenance notes — **not** runtime search queries
+- query strategy KB is the single runtime authority for query construction per task (canonical `{placeholder}` templates, expanded by `src/research/query_resolver.py`)
+- policy KB defines required output fields and minimum evidence thresholds
+- quality checks are executed at package finalization / acceptance time
+
+Important boundary:
+- KB and policy gates **do not script turn-by-turn conversation flow**
+- departments remain conversation-driven and autonomous inside GroupChat
+
 ### Synthesis Plane
 
 After domain departments complete, the Synthesis Department performs cross-domain
 interpretation and produces the final `synthesis` section.
+The runtime then passes artifacts through a dedicated `ReportWriter` runtime
+node that assembles the final `report_package`.
 
 ---
 
@@ -76,6 +97,7 @@ The architecture follows a **fixed contract, autonomous execution** model:
 - the Department Lead operationalizes that contract
 - the department group chooses how to execute internally
 - the group may retry, critique, escalate, adapt strategy, and use coding support
+- the group may use KB-recommended sources or alternate sources when justified
 - the department must continue until required items are:
   - answered with sufficient support, or
   - explicitly unresolved with justified evidence gaps
@@ -229,13 +251,20 @@ When working on tests:
 | `src/orchestration/supervisor_loop.py` | supervisor-controlled department routing loop |
 | `src/orchestration/department_runtime.py` | bounded department group runtime |
 | `src/orchestration/synthesis_runtime.py` | synthesis department runtime |
+| `src/orchestration/report_runtime.py` | report writer runtime node (`report_writer`) |
 | `src/orchestration/follow_up.py` | run loading, follow-up routing, persisted follow-up answers |
 | `src/orchestration/contracts.py` | typed runtime contracts and department artifact state |
+| `src/orchestration/department_knowledge.py` | department source/policy KB loading and acceptance-gate evaluation |
 | `src/orchestration/speaker_selector.py` | guardrail-only selector for department group chats |
 | `src/agents/lead.py` | department lead lifecycle and package finalization |
+| `src/agents/report_writer.py` | report package assembly agent used by report runtime |
 | `src/memory/short_term_store.py` | run-scoped memory including department run states |
 | `src/memory/consolidation.py` | process-pattern consolidation into long-term memory |
 | `docs/target_runtime_architecture.md` | canonical detailed runtime architecture reference |
+| `knowledge/sources/*.yaml` | department-specific source registry: priorities, evidence type, provenance notes |
+| `knowledge/policies/*.yaml` | department-specific required fields, evidence minima, and gate rules |
+| `knowledge/query_strategies/*.yaml` | runtime query templates per task — single query-strategy authority |
+| `src/research/query_resolver.py` | central runtime query resolver: placeholder expansion, validation, buyer expansion |
 
 ---
 

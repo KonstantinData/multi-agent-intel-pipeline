@@ -1,0 +1,708 @@
+<mxfile host="65bd71144e">
+    <diagram id="updated-runtime-architecture" name="Updated Runtime Architecture">
+        <mxGraphModel dx="1461" dy="705" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="2500" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" value="Liquisto Runtime Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="24" width="620" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · department-specific source/policy KB + query strategy KB + acceptance gates · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="58" width="1800" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_entry" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="110" width="260" height="2220" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_supervisor" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="110" width="360" height="2220" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_departments" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="110" width="1020" height="2220" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_synthesis" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
+                    <mxGeometry x="1770" y="110" width="360" height="2220" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_output" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
+                    <mxGeometry x="2160" y="110" width="430" height="2220" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_entry" value="Entry Points" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="126" width="180" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_supervisor" value="Supervisor Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="126" width="220" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_departments" value="Domain Departments" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="740" y="126" width="220" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_synthesis" value="Cross-Domain Synthesis" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="1790" y="126" width="220" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="lbl_output" value="Delivery" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
+                    <mxGeometry x="2180" y="126" width="140" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="user" value="&lt;b&gt;User&lt;/b&gt;&lt;br&gt;provides only `company_name` and `web_domain`" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=13;spacing=8;fontColor=#0c4a6e;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="190" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui" value="&lt;b&gt;Streamlit UI&lt;/b&gt;&lt;br&gt;Starts the run · streams agent messages · triggers DE/EN PDF download" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=13;spacing=8;fontColor=#0c4a6e;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="320" width="200" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="runner" value="&lt;b&gt;Pipeline Runner&lt;/b&gt;&lt;br&gt;creates run_id, initializes memory/artifacts, orchestrates Company+Market parallel first pass, Buyer→Contact sequence, synthesis, report_writer, and final export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="180" width="260" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="supervisor" value="&lt;b&gt;Supervisor&lt;/b&gt;&lt;br&gt;builds intake brief · dispatches department briefs · applies admission + policy gates · manages resolution buckets and finalization readiness" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="340" width="260" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="supervisor_note" value="&lt;b&gt;Supervisor Rule&lt;/b&gt;&lt;br&gt;Does not judge domain facts or script turn-by-turn group chat. Enforces package admission, department policy gates, question coverage, resolution state, and meeting-readiness gates." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="530" width="260" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="global_run_memory" value="&lt;b&gt;ShortTermMemoryStore&lt;/b&gt;&lt;br&gt;evidence_packets · gap_candidates · answer_matrix_updates · task_statuses · meeting_actions · department_run_states · snapshot()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="690" width="260" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="handoff" value="&lt;b&gt;Department Handoffs&lt;/b&gt;&lt;br&gt;each department returns a package; Supervisor writes admission envelope (admission, raw_package, admitted_payload) and stores policy_gate result per department" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="870" width="260" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="department_kb" value="&lt;b&gt;Department Knowledge Base&lt;/b&gt;&lt;br&gt;knowledge/sources/*.yaml — source metadata (priorities, evidence type, provenance notes; not runtime queries)&lt;br&gt;knowledge/policies/*.yaml — required fields, evidence minima, blocker templates&lt;br&gt;knowledge/query_strategies/*.yaml — runtime query templates per task; single query-strategy authority&lt;br&gt;query_resolver.py — placeholder expansion, validation, buyer expansion&lt;br&gt;guidance only; conversation remains free inside GroupChat" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="1035" width="260" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="dept_company" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#86efac;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="160" width="960" height="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_header" value="Company Department  →  section: company_profile" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#14532d;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="170" width="620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_scope" value="Scope: company fundamentals · legal form · revenue · products · economic signals · visible goods and inventory positions · primary-source financial signals" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#166534;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="189" width="760" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_lead" value="&lt;b&gt;CompanyLead&lt;/b&gt;&lt;br&gt;builds investigation plan · classifies goods · owns domain package · calls finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="255" width="240" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_research" value="&lt;b&gt;CompanyResearcher&lt;/b&gt;&lt;br&gt;run_research() · OpenAI web_search_preview · fetch_page() · ingest_worker_report()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1">
+                    <mxGeometry x="1065" y="255" width="230" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_critic" value="&lt;b&gt;CompanyCritic&lt;/b&gt;&lt;br&gt;review_research() · checks evidence rigor · approve or reject with open_points" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1325" y="255" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_judge" value="&lt;b&gt;Judge&lt;/b&gt;&lt;br&gt;judge_decision()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1561" y="255" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_code" value="&lt;b&gt;CodingSpecialist&lt;/b&gt;&lt;br&gt;suggest_refined_queries()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1561" y="311" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_stm" value="&lt;b&gt;Working Memory (STM)&lt;/b&gt;&lt;br&gt;live facts · sources · open_questions · interim results" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="390" width="310" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_ltm" value="&lt;b&gt;Strategy Memory (LTM)&lt;/b&gt;&lt;br&gt;reusable search and classification patterns" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="1125" y="390" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_output" value="&lt;b&gt;company_profile&lt;/b&gt;&lt;br&gt;CompanyProfile schema · evidence · gaps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="1455" y="390" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="dept_market" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#fdba74;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="560" width="960" height="375" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_header" value="Market Department  →  section: industry_analysis" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#9a3412;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="570" width="620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_scope" value="Scope: market situation · demand pressure · overcapacity · excess-stock-relevant market signals · official statistics first" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#9a3412;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="594" width="700" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_lead" value="&lt;b&gt;MarketLead&lt;/b&gt;&lt;br&gt;defines market hypotheses · owns assessment of market and inventory-pressure signals · finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=12;spacing=8;fontColor=#9a3412;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="650" width="240" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_research" value="&lt;b&gt;MarketResearcher&lt;/b&gt;&lt;br&gt;run_research() · OpenAI web_search_preview · trend sources · competitor signals" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=12;spacing=8;fontColor=#9a3412;" parent="1" vertex="1">
+                    <mxGeometry x="1065" y="650" width="230" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_critic" value="&lt;b&gt;MarketCritic&lt;/b&gt;&lt;br&gt;review_research() · checks explanatory power and market logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1325" y="650" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_judge" value="&lt;b&gt;Judge&lt;/b&gt;&lt;br&gt;judge_decision()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1560" y="650" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_code" value="&lt;b&gt;CodingSpecialist&lt;/b&gt;&lt;br&gt;suggest_refined_queries()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1560" y="706" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_stm" value="&lt;b&gt;Working Memory (STM)&lt;/b&gt;&lt;br&gt;market signals · open hypotheses · partial assessments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="785" width="310" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_ltm" value="&lt;b&gt;Strategy Memory (LTM)&lt;/b&gt;&lt;br&gt;reusable patterns for market and inventory-pressure cases" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="1125" y="785" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_output" value="&lt;b&gt;industry_analysis&lt;/b&gt;&lt;br&gt;IndustryAnalysis schema · evidence · gaps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="1455" y="785" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="dept_buyer" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfeff;strokeColor=#67e8f9;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="950" width="960" height="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_header" value="Buyer Department  →  section: market_network" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#155e75;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="963" width="620" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_scope" value="Scope: peer companies · buyer paths · downstream OEMs · monetization · redeployment options" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#155e75;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="987" width="620" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_lead" value="&lt;b&gt;BuyerLead&lt;/b&gt;&lt;br&gt;assesses peers, buyer chains, monetizable paths, redeployment options · finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cffafe;strokeColor=#06b6d4;fontSize=12;spacing=8;fontColor=#155e75;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="1045" width="240" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_research" value="&lt;b&gt;BuyerResearcher&lt;/b&gt;&lt;br&gt;run_research() · OpenAI web_search_preview · peer networks · secondary market signals" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cffafe;strokeColor=#06b6d4;fontSize=12;spacing=8;fontColor=#155e75;" parent="1" vertex="1">
+                    <mxGeometry x="1065" y="1045" width="230" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_critic" value="&lt;b&gt;BuyerCritic&lt;/b&gt;&lt;br&gt;review_research() · checks buyer path plausibility and commercial evidence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1325" y="1045" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_judge" value="&lt;b&gt;Judge&lt;/b&gt;&lt;br&gt;judge_decision()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1557" y="1045" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_code" value="&lt;b&gt;CodingSpecialist&lt;/b&gt;&lt;br&gt;suggest_refined_queries()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1557" y="1101" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_stm" value="&lt;b&gt;Working Memory (STM)&lt;/b&gt;&lt;br&gt;peer list · buyer hypotheses · assessment notes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="1180" width="310" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_ltm" value="&lt;b&gt;Strategy Memory (LTM)&lt;/b&gt;&lt;br&gt;reusable buyer and redeployment research paths" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="1125" y="1180" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_output" value="&lt;b&gt;market_network&lt;/b&gt;&lt;br&gt;MarketNetwork schema · peers · buyers · gaps" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="1455" y="1180" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="dept_contact" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fdf2f8;strokeColor=#f0abfc;strokeWidth=2;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="1340" width="960" height="385" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_header" value="Contact Department  →  section: contact_intelligence" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#701a75;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="1352" width="680" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_scope" value="Scope: target-company stakeholders + buyer-side contacts · procurement/operations coverage · runs after BuyerDepartment · explicit label for &quot;keine freien Quellen&quot; gaps" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#701a75;" parent="1" vertex="1">
+                    <mxGeometry x="785" y="1376" width="760" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_lead" value="&lt;b&gt;ContactLead&lt;/b&gt;&lt;br&gt;reads buyer_candidates from market_network · builds contact queries per firm · finalize_package()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fae8ff;strokeColor=#c026d3;fontSize=12;spacing=8;fontColor=#701a75;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="1440" width="240" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_research" value="&lt;b&gt;ContactResearcher&lt;/b&gt;&lt;br&gt;run_research() · OpenAI web_search_preview · procurement head / COO queries per buyer firm" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fae8ff;strokeColor=#c026d3;fontSize=12;spacing=8;fontColor=#701a75;" parent="1" vertex="1">
+                    <mxGeometry x="1065" y="1440" width="230" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_critic" value="&lt;b&gt;ContactCritic&lt;/b&gt;&lt;br&gt;review_research() · checks contact verifiability and role relevance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1325" y="1440" width="180" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_judge" value="&lt;b&gt;Judge&lt;/b&gt;&lt;br&gt;judge_decision()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1563" y="1440" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_code" value="&lt;b&gt;CodingSpecialist&lt;/b&gt;&lt;br&gt;suggest_refined_queries()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=11;spacing=8;fontColor=#713f12;" parent="1" vertex="1">
+                    <mxGeometry x="1563" y="1496" width="120" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_stm" value="&lt;b&gt;Working Memory (STM)&lt;/b&gt;&lt;br&gt;contact candidates · verification status · open points" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="790" y="1575" width="310" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_ltm" value="&lt;b&gt;Strategy Memory (LTM)&lt;/b&gt;&lt;br&gt;reusable contact search patterns per industry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="1125" y="1575" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_output" value="&lt;b&gt;contact_intelligence&lt;/b&gt;&lt;br&gt;ContactIntelligenceSection schema · target_company_contacts · prioritized_contacts · coverage_quality" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="1455" y="1575" width="200" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="synth_analyst" value="&lt;b&gt;Synthesis Department (AG2)&lt;/b&gt;&lt;br&gt;SynthesisLead/Analyst/Critic/Judge connect admitted domain packages · detect cross-domain tensions · produce synthesis framing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=13;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="220" width="280" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="synth_functions" value="&lt;b&gt;Synthesis + Finalization Functions&lt;/b&gt;&lt;br&gt;build_quality_review() + build_synthesis_context() + harmonize_synthesis_output()&lt;br&gt;build_playbook_assets() + assess_research_readiness() + MeetingReadinessGate&lt;br&gt;includes department_gate_overview and policy-gate blockers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="400" width="280" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="synth_output" value="&lt;b&gt;Strategic Synthesis Output&lt;/b&gt;&lt;br&gt;synthesis section + quality_review + research_readiness + meeting_actions input for final export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="570" width="280" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="report_writer" value="&lt;b&gt;Report Writer Runtime&lt;/b&gt;&lt;br&gt;run() builds report_package from validated pipeline_data + department envelopes · emits ReportWriter telemetry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=13;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="730" width="280" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="synth_note" value="&lt;b&gt;Synthesis + Readiness Rule&lt;/b&gt;&lt;br&gt;Works only with admitted packages. Does not invent domain facts. Finalization is blocked when meeting-critical public gaps or policy-gate blockers remain unresolved.&lt;br&gt;Status split: meeting_ready vs discovery_ready_not_execution_ready vs blocked_not_meeting_ready." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="900" width="280" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="pdf" value="&lt;b&gt;PDF Report&lt;/b&gt;&lt;br&gt;generate_pdf(lang=&quot;de&quot;/&quot;en&quot;) via UI export path&lt;br&gt;DE: _translate_content() via OpenAI gpt-4.1-mini&lt;br&gt;Executive dashboard · primary recommendation · finance/inventory page · stakeholder map&lt;br&gt;Persisted under artifacts/runs/{run_id}/reports/ · no evidence appendix in PDF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="220" width="280" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="artifact_store" value="&lt;b&gt;Run Artifacts&lt;/b&gt;&lt;br&gt;artifacts/runs/{run_id}/ · pipeline_data.json · run_context.json · run_meta.json · checkpoints/* · report_package in run context" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="410" width="280" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ltm_store" value="&lt;b&gt;Long-Term Memory&lt;/b&gt;&lt;br&gt;artifacts/memory/long_term_memory.json&lt;br&gt;domain strategies · role patterns consolidated after each run" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="565" width="280" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="employee" value="&lt;b&gt;Liquisto Employee&lt;/b&gt;&lt;br&gt;receives actionable meeting report with priorities, risks, and next questions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=13;spacing=8;fontColor=#0c4a6e;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="750" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="delivery_note" value="&lt;b&gt;Target Output&lt;/b&gt;&lt;br&gt;Not just data collection — an actionable pre-meeting briefing: what matters, why it matters, what to do next." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="910" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_ui" value="&lt;b&gt;Follow-up UI Panel&lt;/b&gt;&lt;br&gt;Employee enters `run_id` and a focused question after reviewing the report" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=13;spacing=8;fontColor=#0c4a6e;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="1810" width="220" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_note" value="&lt;b&gt;Follow-up Key&lt;/b&gt;&lt;br&gt;`run_id` is the primary key for loading the exact frozen run context." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="1960" width="220" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="run_resolver" value="&lt;b&gt;Run Context Resolver&lt;/b&gt;&lt;br&gt;loads frozen run memory, domain packages, review history, and sources for the requested `run_id`" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="1790" width="260" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_router" value="&lt;b&gt;Supervisor Follow-up Router&lt;/b&gt;&lt;br&gt;classifies question as company / market / buyer / contact / cross-domain and routes to the right path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=13;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="1940" width="260" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_session" value="&lt;b&gt;Follow-up Session Memory&lt;/b&gt;&lt;br&gt;stores new questions and answers without overwriting the frozen memory of the original run" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="2100" width="260" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="company_followup" value="&lt;b&gt;Company Follow-up Path&lt;/b&gt;&lt;br&gt;answers from stored company package; targeted refresh only if required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1">
+                    <mxGeometry x="760" y="1830" width="215" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="market_followup" value="&lt;b&gt;Market Follow-up Path&lt;/b&gt;&lt;br&gt;answers from stored market package; targeted refresh only if required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#f97316;fontSize=12;spacing=8;fontColor=#9a3412;" parent="1" vertex="1">
+                    <mxGeometry x="990" y="1830" width="215" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="buyer_followup" value="&lt;b&gt;Buyer Follow-up Path&lt;/b&gt;&lt;br&gt;answers from stored buyer package; targeted refresh only if required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cffafe;strokeColor=#06b6d4;fontSize=12;spacing=8;fontColor=#155e75;" parent="1" vertex="1">
+                    <mxGeometry x="1220" y="1830" width="215" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="contact_followup" value="&lt;b&gt;Contact Follow-up Path&lt;/b&gt;&lt;br&gt;answers from stored contact package; targeted refresh only if required" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fae8ff;strokeColor=#c026d3;fontSize=12;spacing=8;fontColor=#701a75;" parent="1" vertex="1">
+                    <mxGeometry x="1450" y="1830" width="215" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_dept_note" value="&lt;b&gt;Follow-up Rule&lt;/b&gt;&lt;br&gt;Departments answer from the historical run first. Any extra research must be explicit and minimal." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="2090" width="380" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="cross_followup" value="&lt;b&gt;Cross-Domain Follow-up&lt;/b&gt;&lt;br&gt;used when question spans multiple departments or requires a revised integrated view" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=13;spacing=8;fontColor=#4c1d95;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="1840" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="cross_followup_note" value="&lt;b&gt;Answering Principle&lt;/b&gt;&lt;br&gt;The same Supervisor coordinates both modes: initial briefing and follow-up Q&amp;A." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="1810" y="2090" width="280" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_answer" value="&lt;b&gt;Follow-up Answer / Addendum&lt;/b&gt;&lt;br&gt;clear response with cited run context, limitations, and optional targeted update note" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=13;spacing=8;fontColor=#78350f;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="1840" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="followup_artifacts" value="&lt;b&gt;Follow-up Artifacts&lt;/b&gt;&lt;br&gt;stores question, answer, and addendum trace linked to original `run_id`" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1">
+                    <mxGeometry x="2200" y="1990" width="280" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#0284c7;endArrow=block;" parent="1" source="user" target="ui" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ui_runner" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;endArrow=block;" parent="1" source="ui" target="runner" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="220" y="310"/>
+                            <mxPoint x="430" y="310"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_runner_supervisor" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;endArrow=block;" parent="1" source="runner" target="supervisor" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_runner_memory" value="initialize STM" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;fontColor=#7f1d1d;endArrow=block;" parent="1" source="runner" target="global_run_memory" edge="1">
+                    <mxGeometry x="0.3383" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="310" y="235"/>
+                            <mxPoint x="310" y="745"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_company" value="brief" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;exitX=0.75;exitY=0;exitDx=0;exitDy=0;" parent="1" source="supervisor" target="company_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="575" y="305"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_market" value="brief" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;exitX=1;exitY=0.75;exitDx=0;exitDy=0;" parent="1" source="supervisor" target="market_lead" edge="1">
+                    <mxGeometry x="0.2" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="690" y="437"/>
+                            <mxPoint x="690" y="680"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_buyer" value="brief" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;" parent="1" source="supervisor" target="buyer_lead" edge="1">
+                    <mxGeometry x="0.0742" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="750" y="370"/>
+                            <mxPoint x="750" y="1095"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_contact" value="brief + buyer_candidates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#c026d3;fontColor=#701a75;endArrow=block;" parent="1" source="supervisor" target="contact_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="710" y="405"/>
+                            <mxPoint x="710" y="1490"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_kb" value="load KB policies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="supervisor" target="department_kb" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_kb_company" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="company_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="740" y="1100"/>
+                            <mxPoint x="740" y="290"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_kb_market" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="market_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="755" y="1100"/>
+                            <mxPoint x="755" y="690"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_kb_buyer" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="buyer_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="760" y="1115"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_kb_contact" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="contact_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="745" y="1115"/>
+                            <mxPoint x="745" y="1480"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_global" value="task board" style="edgeStyle=elbowEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;fontColor=#7f1d1d;endArrow=block;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" parent="1" source="supervisor" target="global_run_memory" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="350" y="580"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_company_lead_research" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#16a34a;endArrow=block;" parent="1" source="company_lead" target="company_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_company_research_critic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#16a34a;endArrow=block;" parent="1" source="company_research" target="company_critic" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_company_critic_lead" value="approved / revision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ca8a04;fontColor=#713f12;endArrow=block;" parent="1" source="company_critic" target="company_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1415" y="230"/>
+                            <mxPoint x="940" y="230"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_company_critic_judge" value="escalate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="company_critic" target="company_judge" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_company_critic_code" value="blocker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="company_critic" target="company_code" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_company_stm_lead" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="company_stm" target="company_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_company_ltm_research" value="patterns" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="company_ltm" target="company_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_company_lead_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#2563eb;endArrow=block;" parent="1" source="company_lead" target="company_output" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="910" y="210"/>
+                            <mxPoint x="1700" y="210"/>
+                            <mxPoint x="1700" y="430"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_company_output_supervisor" value="approved package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;" parent="1" source="company_output" target="handoff" edge="1">
+                    <mxGeometry x="-0.0549" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1555" y="520"/>
+                            <mxPoint x="660" y="520"/>
+                            <mxPoint x="660" y="920"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_market_lead_research" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#f97316;endArrow=block;" parent="1" source="market_lead" target="market_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_market_research_critic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#f97316;endArrow=block;" parent="1" source="market_research" target="market_critic" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_market_critic_lead" value="approved / revision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ca8a04;fontColor=#713f12;endArrow=block;" parent="1" source="market_critic" target="market_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1415" y="630"/>
+                            <mxPoint x="910" y="630"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_market_critic_judge" value="escalate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="market_critic" target="market_judge" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_market_critic_code" value="blocker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="market_critic" target="market_code" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_market_stm_lead" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="market_stm" target="market_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_market_ltm_research" value="patterns" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="market_ltm" target="market_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_market_lead_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#2563eb;endArrow=block;" parent="1" source="market_lead" target="market_output" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="880" y="620"/>
+                            <mxPoint x="1700" y="620"/>
+                            <mxPoint x="1700" y="825"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_market_output_supervisor" value="approved package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;" parent="1" source="market_output" target="handoff" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1555" y="890"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_buyer_lead_research" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#06b6d4;endArrow=block;" parent="1" source="buyer_lead" target="buyer_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_buyer_research_critic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#06b6d4;endArrow=block;" parent="1" source="buyer_research" target="buyer_critic" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_buyer_critic_lead" value="approved / revision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ca8a04;fontColor=#713f12;endArrow=block;" parent="1" source="buyer_critic" target="buyer_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1415" y="1020"/>
+                            <mxPoint x="950" y="1020"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_buyer_critic_judge" value="escalate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="buyer_critic" target="buyer_judge" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_buyer_critic_code" value="blocker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="buyer_critic" target="buyer_code" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_buyer_stm_lead" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="buyer_stm" target="buyer_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_buyer_ltm_research" value="patterns" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="buyer_ltm" target="buyer_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_buyer_lead_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#2563eb;endArrow=block;" parent="1" source="buyer_lead" target="buyer_output" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="910" y="1010"/>
+                            <mxPoint x="1700" y="1010"/>
+                            <mxPoint x="1700" y="1220"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_buyer_output_supervisor" value="approved package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;" parent="1" source="buyer_output" target="handoff" edge="1">
+                    <mxGeometry x="-0.1264" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1555" y="1310"/>
+                            <mxPoint x="560" y="1310"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_contact_lead_research" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#c026d3;endArrow=block;" parent="1" source="contact_lead" target="contact_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_contact_research_critic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#c026d3;endArrow=block;" parent="1" source="contact_research" target="contact_critic" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_contact_critic_lead" value="approved / revision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ca8a04;fontColor=#713f12;endArrow=block;" parent="1" source="contact_critic" target="contact_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1415" y="1410"/>
+                            <mxPoint x="940" y="1410"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_contact_critic_judge" value="escalate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="contact_critic" target="contact_judge" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_contact_critic_code" value="blocker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ca8a04;endArrow=block;" parent="1" source="contact_critic" target="contact_code" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_contact_stm_lead" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="contact_stm" target="contact_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_contact_ltm_research" value="patterns" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#dc2626;dashed=1;endArrow=block;" parent="1" source="contact_ltm" target="contact_research" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_contact_lead_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#2563eb;endArrow=block;" parent="1" source="contact_lead" target="contact_output" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="910" y="1400"/>
+                            <mxPoint x="1700" y="1400"/>
+                            <mxPoint x="1700" y="1615"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_contact_output_supervisor" value="approved package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#c026d3;fontColor=#701a75;endArrow=block;" parent="1" source="contact_output" target="handoff" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1555" y="1700"/>
+                            <mxPoint x="510" y="1700"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_buyer_to_contact" value="buyer_candidates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#c026d3;dashed=1;fontColor=#701a75;endArrow=block;" parent="1" source="buyer_output" target="contact_lead" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1520" y="1280"/>
+                            <mxPoint x="740" y="1280"/>
+                            <mxPoint x="740" y="1470"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_handoff_supervisor" value="all packages ready" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="handoff" target="supervisor" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="509.5800000000002" y="870" as="sourcePoint"/>
+                        <mxPoint x="509.5800000000002" y="470" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="240" y="920"/>
+                            <mxPoint x="240" y="440"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_supervisor_synth" value="admitted packages + synthesis context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#7c3aed;fontColor=#4c1d95;endArrow=block;" parent="1" source="supervisor" target="synth_analyst" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="590" y="500"/>
+                            <mxPoint x="1790" y="500"/>
+                            <mxPoint x="1790" y="285"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_synth_functions" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#7c3aed;endArrow=block;" parent="1" source="synth_analyst" target="synth_functions" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_synth_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#7c3aed;endArrow=block;" parent="1" source="synth_functions" target="synth_output" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_synth_writer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#7c3aed;endArrow=block;" parent="1" source="synth_output" target="report_writer" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_writer_pdf" value="report_package context for export" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#d97706;fontColor=#78350f;endArrow=block;" parent="1" source="report_writer" target="pdf" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1990" y="690"/>
+                            <mxPoint x="2550" y="690"/>
+                            <mxPoint x="2550" y="310"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_writer_artifacts" value="persist report_package + run artifacts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#d97706;fontColor=#78350f;endArrow=block;" parent="1" source="report_writer" target="artifact_store" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="2030" y="710"/>
+                            <mxPoint x="2530" y="710"/>
+                            <mxPoint x="2530" y="465"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_writer_ltm" value="pipeline consolidation stage" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#d97706;fontColor=#78350f;dashed=1;endArrow=block;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="report_writer" target="ltm_store" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="2120" y="785"/>
+                            <mxPoint x="2120" y="730"/>
+                            <mxPoint x="2340" y="730"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_pdf_employee" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#0284c7;endArrow=block;" parent="1" source="pdf" target="employee" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="2570" y="285"/>
+                            <mxPoint x="2570" y="800"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_artifacts_ui" value="reload / download" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#0284c7;fontColor=#0c4a6e;endArrow=block;entryX=0.75;entryY=1;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="artifact_store" target="ui" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="2340" y="540"/>
+                            <mxPoint x="220" y="540"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_ui_followup" value="follow-up mode" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#0284c7;fontColor=#0c4a6e;endArrow=block;exitX=0.5;exitY=1;" parent="1" source="ui" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="170" y="1810"/>
+                        </Array>
+                        <mxPoint x="170" y="1810" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_followup_resolver" value="run_id +&amp;nbsp;&lt;div&gt;question&lt;/div&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;entryX=0;entryY=0.5;" parent="1" target="run_resolver" edge="1">
+                    <mxGeometry x="0.0024" relative="1" as="geometry">
+                        <mxPoint x="290" y="1845" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="290" y="1845"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_artifacts_resolver" value="load frozen run" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#d97706;fontColor=#78350f;endArrow=block;exitX=0;exitY=0.5;" parent="1" source="artifact_store" target="run_resolver" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="2140" y="465"/>
+                            <mxPoint x="2140" y="1750"/>
+                            <mxPoint x="510" y="1750"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_resolver_router" value="resolved context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="1" source="run_resolver" target="followup_router" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_router_company_followup" value="company question" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;exitX=0.75;exitY=0;entryX=0;entryY=0.5;exitDx=0;exitDy=0;" parent="1" source="followup_router" target="company_followup" edge="1">
+                    <mxGeometry x="-0.2245" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="575" y="1920"/>
+                            <mxPoint x="730" y="1920"/>
+                            <mxPoint x="730" y="1880"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_router_market_followup" value="market question" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;exitX=1;exitY=0.25;entryX=0.5;entryY=1;exitDx=0;exitDy=0;entryDx=0;entryDy=0;" parent="1" source="followup_router" target="market_followup" edge="1">
+                    <mxGeometry x="-0.397" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1097" y="1970"/>
+                            <mxPoint x="1097" y="1930"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_router_buyer_followup" value="buyer question" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2563eb;fontColor=#1e3a8a;endArrow=block;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" target="buyer_followup" edge="1">
+                    <mxGeometry x="-0.4114" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="640" y="1990"/>
+                            <mxPoint x="1328" y="1990"/>
+                        </Array>
+                        <mxPoint x="640" y="1990" as="sourcePoint"/>
+                        <mxPoint x="1220" y="1930" as="targetPoint"/>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_router_contact_followup" value="contact question" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#c026d3;fontColor=#701a75;endArrow=block;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" target="contact_followup" edge="1">
+                    <mxGeometry x="-0.4186" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="640" y="2010"/>
+                            <mxPoint x="1558" y="2010"/>
+                        </Array>
+                        <mxPoint x="640" y="2010" as="sourcePoint"/>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_router_cross" value="cross-domain" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#7c3aed;fontColor=#4c1d95;endArrow=block;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="followup_router" target="cross_followup" edge="1">
+                    <mxGeometry x="-0.4714" relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1950" y="2030"/>
+                        </Array>
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_cross_answer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#7c3aed;endArrow=block;" parent="1" source="cross_followup" target="followup_answer" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_answer_artifacts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#d97706;endArrow=block;" parent="1" source="followup_answer" target="followup_artifacts" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

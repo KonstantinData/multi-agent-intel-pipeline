@@ -1,0 +1,25 @@
+{
+  "pdf_rules": {
+    "hide_evidence_register": true,
+    "hide_long_source_list": true,
+    "runtime_fields": ["run_id", "run_status"]
+  },
+  "phrases": {
+    "de": {
+      "no_free_sources": "keine freien Quellen"
+    },
+    "en": {
+      "no_free_sources": "no free public sources"
+    }
+  },
+  "language_rules": {
+    "de": {
+      "prefer_terms": ["und", "mit", "für", "nicht", "daten", "kontakt", "unternehmen"],
+      "avoid_terms": ["the", "with", "and", "for", "company", "contact"]
+    },
+    "en": {
+      "prefer_terms": ["and", "with", "for", "not", "data", "contact", "company"],
+      "avoid_terms": ["und", "mit", "für", "unternehmen", "kontakt", "daten"]
+    }
+  }
+}

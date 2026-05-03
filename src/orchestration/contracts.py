@@ -16,6 +16,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -80,6 +82,56 @@ ADMISSION_DECISIONS: frozenset[str] = frozenset({
 
 
 # ---------------------------------------------------------------------------
+# Department policy contracts
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class DepartmentPolicy:
+    """Department-specific acceptance contract.
+
+    This policy is evaluated only during package finalization/acceptance.
+    It does NOT prescribe a fixed speaker sequence or tool flow and therefore
+    keeps Conversable-Agent autonomy intact.
+    """
+
+    department: str
+    required_fields: tuple[str, ...] = ()
+    source_priority: tuple[str, ...] = ("primary", "secondary")
+    min_evidence_rules: dict[str, int] = field(default_factory=dict)
+    gate_rules: dict[str, Any] = field(default_factory=dict)
+    blocker_templates: dict[str, str] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "department": self.department,
+            "required_fields": list(self.required_fields),
+            "source_priority": list(self.source_priority),
+            "min_evidence_rules": dict(self.min_evidence_rules),
+            "gate_rules": dict(self.gate_rules),
+            "blocker_templates": dict(self.blocker_templates),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "DepartmentPolicy":
+        return cls(
+            department=str(payload.get("department", "")),
+            required_fields=tuple(str(item) for item in payload.get("required_fields", []) if str(item).strip()),
+            source_priority=tuple(str(item) for item in payload.get("source_priority", []) if str(item).strip()) or ("primary", "secondary"),
+            min_evidence_rules={
+                str(k): int(v)
+                for k, v in dict(payload.get("min_evidence_rules", {})).items()
+                if str(k).strip()
+            },
+            gate_rules=dict(payload.get("gate_rules", {})),
+            blocker_templates={
+                str(k): str(v)
+                for k, v in dict(payload.get("blocker_templates", {})).items()
+                if str(k).strip()
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
 # Contract violation record (F4)
 # ---------------------------------------------------------------------------
 
@@ -123,6 +175,7 @@ class TaskArtifact:
     objective: str = ""
     contract_violations: list[ContractViolation] = field(default_factory=list)
     needs_contract_review: bool = False
+    evidence_packages: list[EvidencePacket] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -138,6 +191,7 @@ class TaskArtifact:
             "objective": self.objective,
             "contract_violations": [v.to_dict() for v in self.contract_violations],
             "needs_contract_review": self.needs_contract_review,
+            "evidence_packages": [packet.model_dump(mode="json") for packet in self.evidence_packages],
         }
 
     @classmethod
@@ -154,6 +208,10 @@ class TaskArtifact:
             open_questions=list(report.get("open_questions", [])),
             strategy_notes=str(report.get("strategy_notes", "")),
             objective=str(report.get("objective", "")),
+            evidence_packages=[
+                EvidencePacket.model_validate(item)
+                for item in report.get("evidence_packages", report.get("evidence_packets", []))
+            ],
         )
 
 
@@ -329,6 +387,9 @@ class DepartmentRunState:
     strategy_changes: list[dict[str, Any]] = field(default_factory=list)
     coding_support_used: list[dict[str, Any]] = field(default_factory=list)
     judge_escalations: list[dict[str, Any]] = field(default_factory=list)
+    evidence_packages: list[EvidencePacket] = field(default_factory=list)
+    gap_candidates: list[GapCandidate] = field(default_factory=list)
+    answer_matrix_updates: list[AnswerMatrixUpdate] = field(default_factory=list)
 
     # Guardrail state (used by speaker_selector)
     _consecutive_text_turns: dict[str, int] = field(default_factory=dict)
@@ -339,6 +400,7 @@ class DepartmentRunState:
 
     def record_task_artifact(self, artifact: TaskArtifact) -> None:
         self.task_artifacts.setdefault(artifact.task_key, []).append(artifact)
+        self.evidence_packages.extend(artifact.evidence_packages)
         # Keep backward-compat flat view
         self.task_results[artifact.task_key] = artifact.to_dict()
         logger.debug(
@@ -466,6 +528,9 @@ class DepartmentRunState:
             "strategy_changes": self.strategy_changes,
             "coding_support_used": self.coding_support_used,
             "judge_escalations": self.judge_escalations,
+            "evidence_packages": [packet.model_dump(mode="json") for packet in self.evidence_packages],
+            "gap_candidates": [gap.model_dump(mode="json") for gap in self.gap_candidates],
+            "answer_matrix_updates": [item.model_dump(mode="json") for item in self.answer_matrix_updates],
         }
 
     def guardrail_state(self) -> dict[str, Any]:

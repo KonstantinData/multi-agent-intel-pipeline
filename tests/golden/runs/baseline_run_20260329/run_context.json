@@ -1,0 +1,24 @@
+{
+  "run_id": "baseline_run_20260329",
+  "status": "meeting_ready",
+  "answer_matrix": {
+    "q_company_fundamentals": {
+      "status": "answered"
+    },
+    "q_contact_intelligence": {
+      "status": "partially_answered"
+    }
+  },
+  "resolution_state": {
+    "resume_entrypoint": "supervisor_finalization_entrypoint",
+    "first_round_resolution": {
+      "bucket": "NOT_MEETING_CRITICAL"
+    }
+  },
+  "short_term_memory": {
+    "task_statuses": {
+      "company_fundamentals": "accepted",
+      "contact_discovery": "degraded"
+    }
+  }
+}

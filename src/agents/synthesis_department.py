@@ -21,7 +21,7 @@ from typing import Annotated, Any, Callable
 
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
-from src.config.settings import get_openai_api_key, get_role_model_selection
+from src.config.settings import get_openai_api_key, get_role_model_selection, resolve_model_temperature
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
 from src.orchestration.envelope import resolve_raw_package, resolve_report_segment, resolve_confidence
@@ -105,6 +105,7 @@ class SynthesisDepartmentAgent:
             name=executor_name,
             human_input_mode="NEVER",
             code_execution_config=False,
+            llm_config=self._llm_config(self.name),
         )
 
         # ── Tool closures ──────────────────────────────────────────────
@@ -293,8 +294,11 @@ class SynthesisDepartmentAgent:
             ctx_summary = {
                 "service_relevance": synthesis_context.get("liquisto_service_relevance", []),
                 "recommended_paths": synthesis_context.get("recommended_engagement_paths", []),
+                "opportunity_summary": synthesis_context.get("opportunity_assessment_summary", "n/v"),
                 "key_risks": synthesis_context.get("key_risks", []),
                 "buyer_market_summary": synthesis_context.get("buyer_market_summary", "n/v"),
+                "primary_source_stage": synthesis_context.get("primary_source_stage", {}),
+                "contact_enrichment_stage": synthesis_context.get("contact_enrichment_stage", {}),
             }
         initiation_message = json.dumps(
             {
@@ -392,6 +396,10 @@ You do NOT conduct research yourself. You read, integrate, and judge.
 ## Rules
 - Always address the next agent explicitly by name
 - Executive summary must be briefing-ready: concrete, specific, actionable
+- Think decision-first, not completeness-first
+- Prioritize deal logic over generic coverage language
+- Open questions must be 3-5 deal-critical validation questions, not a raw data-gap dump
+- Next steps must read like a first-meeting playbook / mutual action plan with owners, timing, and outcomes
 - Do not guess — base everything on what the segments contain
 """
 
@@ -409,6 +417,8 @@ Look for:
 - Buyer candidates that match company product scope
 - Contact intelligence that enables concrete outreach
 - Contradictions or gaps that weaken the overall picture
+- Which few open questions would actually change the lead path, stakeholder plan, or NDA request
+- Which next steps are commercial actions versus mere research backlog
 """
 
     def _critic_system_prompt(self) -> str:
@@ -423,6 +433,9 @@ After {self.analyst_name} presents findings:
 4. Report: APPROVED (synthesis is solid) or REJECTED with specific issues
 
 If rejected, clearly name which department's segment is the problem and why.
+- Reject generic "search for more data" next steps and generic market gaps that do not change the deal path.
+- Do NOT accept a synthesis as meeting-ready when the only remaining path would require an ungrounded alternative service angle.
+- Missing buyer-side contacts may be tolerated only when the excess-inventory case is otherwise strongly grounded by financial evidence and target-company stakeholder coverage is sufficient.
 """
 
     def _judge_system_prompt(self) -> str:
@@ -445,7 +458,10 @@ When {self.name} asks for a final decision:
         api_key = get_openai_api_key()
         if not api_key:
             return False  # type: ignore[return-value]
-        return {
+        cfg: dict[str, Any] = {
             "config_list": [{"model": model, "api_key": api_key}],
-            "temperature": 0.1,
         }
+        temperature = resolve_model_temperature(model, 0.1)
+        if temperature is not None:
+            cfg["temperature"] = temperature
+        return cfg

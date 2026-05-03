@@ -2,9 +2,9 @@
 
 Multi-agent intelligence pipeline that builds Liquisto pre-meeting briefings.
 The system takes `company_name` and `web_domain` as input and produces a
-structured research briefing with company analysis, market context, buyer
-landscape, contact intelligence, strategic synthesis, and an operator-facing
-report.
+**meeting-ready** briefing with company analysis, market context, buyer
+landscape, contact intelligence, strategic synthesis, and concrete meeting
+actions.
 
 Built on [AG2 (AutoGen)](https://github.com/ag2ai/ag2) group chats with
 bounded department collaboration, coordinated by a single Supervisor.
@@ -32,8 +32,8 @@ streamlit run ui/app.py
 
 ## Architecture
 
-Architecture spec: [docs/target_runtime_architecture.md](docs/target_runtime_architecture.md) ·
-Diagram: [docs/updated_runtime_architecture.drawio](docs/updated_runtime_architecture.drawio)
+Architecture spec: [docs/drawio/target_runtime_architecture.md](docs/drawio/target_runtime_architecture.md) ·
+Diagram: [docs/drawio/runtime_architecture.drawio](docs/drawio/runtime_architecture.drawio)
 
 ### Control Plane
 
@@ -42,12 +42,15 @@ Diagram: [docs/updated_runtime_architecture.drawio](docs/updated_runtime_archite
 
 ### Research Plane
 
-Four domain departments, each implemented as a bounded AG2 GroupChat:
+Four domain departments, each implemented as a bounded AG2 GroupChat.
+Departments are **question-coverage contributors**: their primary outputs are
+evidence packets, gap candidates, and answer-matrix updates for mapped meeting
+questions.
 
 | Department | Scope |
 |------------|-------|
 | Company Department | Company fundamentals, economic/commercial situation, product and asset scope. The CompanyLead owns the goods classification (made vs distributed vs held-in-stock) as a domain judgment |
-| Market Department | Market situation, repurposing/circularity, analytics and operational improvement signals |
+| Market Department | Market situation, demand pressure, overcapacity, and excess-stock signals |
 | Buyer Department | Peer companies, monetization and redeployment paths |
 | Contact Department | Contact discovery and qualification at prioritized buyer firms |
 
@@ -61,89 +64,90 @@ Each department group contains:
 | Judge (optional) | gpt-4.1 | `judge_decision` |
 | Coding Specialist (optional) | gpt-4.1-mini | `suggest_refined_queries` |
 
-The Lead decides retry, coding support, and Judge escalation autonomously
-inside the department contract. The Supervisor does not participate in
-intra-department decisions.
+Department execution stays conversation-driven. Quality enforcement is
+department-specific and checked at package finalization via Knowledge Base:
 
-Turn routing uses a guardrail-only speaker selector that enforces tool-call
-routing, loop prevention, and termination recognition. The Lead drives the
-internal workflow through explicit agent addressing — the selector does not
-maintain workflow state.
+- `knowledge/sources/<department>.yaml` (source registry, priorities, evidence type, provenance notes — not runtime queries)
+- `knowledge/policies/<department>.yaml` (required fields, evidence minimums, gate rules)
+- `knowledge/query_strategies/<department>.yaml` (runtime query templates per task — the single query-strategy authority)
 
 ### Synthesis Plane
 
-- **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment. Contains SynthesisLead, SynthesisAnalyst, SynthesisCritic, and SynthesisJudge.
-- **Report rendering** — turns the approved analysis into a professional operator-facing report for PDF export (German + English). This is a rule-based rendering step, not an agent.
+- **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment.
+- **Report Writer Runtime** — dedicated runtime node (`report_writer`) that assembles `report_package` from validated pipeline sections and emits `ReportWriter` telemetry events.
+- **Report rendering/export** — UI/export layer generates operator-facing PDF output (German + English) from the finalized run artifacts.
+
+### Meeting-Readiness Layer
+
+The runtime plans around **meeting questions**, not only departments.
+
+- **Question Registry** — 11 meeting questions with deterministic task-to-question mapping
+- **Answer Matrix** — tracks coverage status per question, updated by each task outcome
+- **Resolution Controller** — classifies the run into one of 5 resolution buckets after the first department round
+- **Meeting-Readiness Gate** — blocks finalization when meeting-critical questions remain unresolved
+- **Final Briefing Composer** — produces concrete `meeting_actions` as the primary action output
 
 ## Runtime Modes
 
 ### Initial briefing
 
 1. Supervisor normalizes intake → `SupervisorBrief`
-2. Task router builds assignments from the standard Liquisto scope
+2. Question registry + answer matrix built before department execution
 3. Departments run in two phases:
    - **Parallel**: Company + Market (via ThreadPoolExecutor)
    - **Sequential**: Buyer → Contact (Contact depends on Buyer output)
-4. Each department returns a validated `DepartmentPackage`
-5. Synthesis Department builds the cross-domain interpretation via AG2 GroupChat
-6. Report rendering produces the operator-facing report package
-7. Artifacts exported to `artifacts/runs/<run_id>/`
+4. Each department returns evidence packets, gap candidates, and answer-matrix updates
+5. Resolution Controller classifies the run state (AUTO_CLOSE / USER_DECISION / CUSTOMER_CONFIRMATION / NOT_MEETING_CRITICAL / BLOCKING_FAILURE)
+6. Bounded closure loop for publicly researchable meeting-critical gaps
+7. Synthesis Department builds the cross-domain interpretation
+8. Meeting-Readiness Gate evaluates finalization eligibility
+9. Final Briefing Composer produces meeting actions
+10. Artifacts exported to `artifacts/runs/<run_id>/` with phase-aware checkpoints
+
+### Dashboard pause/resume
+
+1. Run pauses with `needs_user_selection` when optional depth decisions are required
+2. UI shows resolution dashboard with answered questions, optional depth checkboxes, customer confirmation items
+3. `resume_pipeline()` applies user selections and re-evaluates the finalization gate
 
 ### Follow-up
 
 1. User enters `run_id` and a question in the UI
-2. System loads the historical run context (full run brain including department artifact history)
-3. Supervisor routes the question to the correct department or synthesis layer
+2. System loads the historical run context (answer matrix + evidence packets as primary grounding)
+3. Supervisor routes the question to the correct department
 4. Answer is generated from stored run memory and persisted as a follow-up artifact
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| [src/pipeline_runner.py](src/pipeline_runner.py) | Public runtime entrypoint for UI and CLI |
+| [src/pipeline_runner.py](src/pipeline_runner.py) | Public runtime entrypoint: `run_pipeline()` and `resume_pipeline()` |
 | [src/orchestration/supervisor_loop.py](src/orchestration/supervisor_loop.py) | Supervisor-controlled department routing loop |
 | [src/orchestration/department_runtime.py](src/orchestration/department_runtime.py) | Bounded department group runtime |
 | [src/orchestration/synthesis_runtime.py](src/orchestration/synthesis_runtime.py) | Synthesis department AG2 runtime |
+| [src/orchestration/report_runtime.py](src/orchestration/report_runtime.py) | Report writer runtime wrapper used as real pipeline agent |
 | [src/orchestration/task_router.py](src/orchestration/task_router.py) | Supervisor mandate → department assignments |
-| [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, persisted follow-up answers |
+| [src/orchestration/meeting_questions.py](src/orchestration/meeting_questions.py) | Question registry, answer matrix, task-to-question mapping |
+| [src/orchestration/resolution_controller.py](src/orchestration/resolution_controller.py) | 5-bucket resolution classification |
+| [src/orchestration/meeting_readiness.py](src/orchestration/meeting_readiness.py) | MeetingReadinessGate + FinalBriefingComposer |
+| [src/orchestration/runtime_guardrails.py](src/orchestration/runtime_guardrails.py) | Phase budgets, structured-output validation, deterministic ordering |
+| [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, answer-matrix-grounded follow-up |
 | [src/orchestration/contracts.py](src/orchestration/contracts.py) | Typed runtime contracts: TaskArtifact, TaskReviewArtifact, TaskDecisionArtifact, DepartmentRunState |
-| [src/orchestration/speaker_selector.py](src/orchestration/speaker_selector.py) | Guardrail-only speaker selectors for department and synthesis GroupChats |
-| [src/orchestration/tool_policy.py](src/orchestration/tool_policy.py) | Per-role tool allow-lists |
-| [src/agents/specs.py](src/agents/specs.py) | Agent and pipeline step metadata (AGENT_SPECS) |
-| [src/agents/runtime_factory.py](src/agents/runtime_factory.py) | Runtime agent instantiation |
-| [src/agents/lead.py](src/agents/lead.py) | DepartmentLeadAgent — owns the AG2 group lifecycle |
+| [src/orchestration/speaker_selector.py](src/orchestration/speaker_selector.py) | Guardrail-only speaker selectors |
+| [src/orchestration/department_knowledge.py](src/orchestration/department_knowledge.py) | Department KB loading + policy-gate evaluation (acceptance-time) |
+| [src/models/meeting_ready.py](src/models/meeting_ready.py) | Typed models: EvidencePacket, GapCandidate, AnswerMatrixUpdate, MeetingAction, MeetingReadinessAssessment, FinalBriefing |
+| [src/agents/lead.py](src/agents/lead.py) | DepartmentLeadAgent — evidence-first AG2 group lifecycle |
+| [src/agents/worker.py](src/agents/worker.py) | ResearchWorker — evidence packets as primary output |
+| [src/research/query_resolver.py](src/research/query_resolver.py) | Central runtime query resolver — single authority for query construction per task |
 | [src/agents/supervisor.py](src/agents/supervisor.py) | SupervisorAgent — intake, routing, package acceptance |
-| [src/agents/worker.py](src/agents/worker.py) | ResearchWorker — web search, page fetch, LLM synthesis |
+| [src/agents/report_writer.py](src/agents/report_writer.py) | ReportWriterAgent — report package assembly from pipeline artifacts |
 | [src/agents/critic.py](src/agents/critic.py) | CriticAgent — deterministic rule-based review |
 | [src/agents/judge.py](src/agents/judge.py) | JudgeAgent — deterministic three-outcome quality gate |
-| [src/agents/coding_assistant.py](src/agents/coding_assistant.py) | CodingAssistantAgent — query refinement for stuck tasks |
-| [src/agents/synthesis_department.py](src/agents/synthesis_department.py) | SynthesisDepartmentAgent — AG2 GroupChat for cross-domain synthesis |
-| [src/orchestration/synthesis.py](src/orchestration/synthesis.py) | Cross-domain synthesis context, quality review, report package assembly |
-| [src/app/use_cases.py](src/app/use_cases.py) | Liquisto standard scope, task backlog, and validation rules |
+| [src/app/use_cases.py](src/app/use_cases.py) | Liquisto standard scope, task backlog, resolution plan helpers |
 | [src/config/settings.py](src/config/settings.py) | Model selection, role defaults, API key resolution |
-| [src/models/schemas.py](src/models/schemas.py) | Pydantic schemas for pipeline data |
-| [src/models/registry.py](src/models/registry.py) | Task sub-schemas, SCHEMA_REGISTRY, section assembly |
 | [src/exporters/pdf_report.py](src/exporters/pdf_report.py) | PDF report generation (DE + EN) |
 | [src/exporters/json_export.py](src/exporters/json_export.py) | Run artifact JSON export |
-| [ui/app.py](ui/app.py) | Streamlit UI |
-
-## Memory
-
-### Short-term (per run)
-
-Stored under `artifacts/runs/<run_id>/`. Contains:
-supervisor brief, task statuses, department packages, department run states
-(full artifact history: task artifacts, review artifacts, decision artifacts,
-strategy changes, judge escalations, coding support events), conversation
-traces, validated pipeline data, report package, follow-up history.
-
-### Long-term (cross-run)
-
-Stored at `artifacts/memory/long_term_memory.json`. Contains reusable process
-patterns only — structural query patterns (scrubbed of company identifiers),
-critique heuristics, judge decision principles, coding method tactics, and
-retry trigger patterns. Never stores company-specific facts, evidence, or
-contact names.
+| [ui/app.py](ui/app.py) | Streamlit UI with resolution dashboard |
 
 ## Output Artifacts
 
@@ -151,36 +155,52 @@ Each run writes to `artifacts/runs/<run_id>/`:
 
 | File | Content |
 |------|---------|
-| `run_meta.json` | Run metadata (company, domain, status, timing, cost) |
+| `run_meta.json` | Run metadata (company, domain, status, timing, cost, meeting_readiness) |
 | `chat_history.json` | Full message trace |
 | `pipeline_data.json` | Structured research output |
-| `run_context.json` | Supervisor brief, task statuses, department packages, department run states |
-| `memory_snapshot.json` | Short-term memory snapshot |
+| `run_context.json` | Supervisor brief, answer matrix, question registry, resolution state, department packages, department run states |
+| `memory_snapshot.json` | Short-term memory: evidence packets, gap candidates, meeting actions, resolution plans |
+| `checkpoints/*.json` | Phase-aware checkpoints (after_first_pass, after_closure, after_finalization) |
 | `follow_up_history.json` | Follow-up Q&A (when applicable) |
 
-## UI
+## Success-Path Semantics
 
-The Streamlit UI supports:
-- Starting a fresh run with company name and web domain
-- Live progress tracking across all pipeline steps
-- Loading an existing run by `run_id`
-- Viewing the briefing tab with Liquisto recommendation, meeting preparation, and contacts
-- Viewing detailed research per section (company, market, buyer, contact)
-- Asking follow-up questions routed to the correct department
-- Downloading German and English PDF briefings
+A successful run (`meeting_ready`) contains:
+- `meeting_actions` — concrete, evidence-referenced preparation items
+- `customer_confirmation_items` — items requiring customer-side validation
+- `optional_depth_not_selected` — user-skipped depth areas
+
+A successful run does **not** contain:
+- generic `open_questions` block
+- unresolved publicly researchable meeting-critical questions
 
 ## Configuration
 
 - **API key**: set `OPENAI_API_KEY` in `.env` or as environment variable
-- **Model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` env vars
+- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env or `.env`)
+- **Role env key format**: preferred snake-case (for example `OPENAI_MODEL_COMPANY_RESEARCHER`), legacy compact keys (for example `OPENAI_MODEL_COMPANYRESEARCHER`) are still supported
+- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env or `.env`)
+- **OpenAI request controls**: `LIQUISTO_OPENAI_TIMEOUT_SECONDS`, `LIQUISTO_OPENAI_MAX_RETRIES`
+- **Runtime cost calculation**: `estimated_cost_usd` in `run_meta.json` is computed from
+  tracked LLM token usage plus `web_search_preview` call fees
 - **Defaults**: defined in `src/config/settings.py` → `ROLE_MODEL_DEFAULTS`
+- **Pricing defaults**: defined in `src/config/pricing.py` (`gpt-5*` and `gpt-4.1*`)
+- **Per-model pricing overrides**:
+  `OPENAI_PRICE_INPUT_PER_1M_<MODEL>` and `OPENAI_PRICE_OUTPUT_PER_1M_<MODEL>`
+  (example: `OPENAI_PRICE_INPUT_PER_1M_GPT_5_MINI`)
+- **Web search call pricing overrides**:
+  `OPENAI_PRICE_WEB_SEARCH_PREVIEW_REASONING_PER_1K_CALLS` and
+  `OPENAI_PRICE_WEB_SEARCH_PREVIEW_NON_REASONING_PER_1K_CALLS`
+- **Strict profile loading**: `LIQUISTO_STRICT_PROFILE_LOADING=1` disables silent fallback for department source profiles and policies (raises on missing/malformed file)
+- **Query resolver verify mode**: `LIQUISTO_QUERY_RESOLVER_VERIFY=1` runs both the resolver and legacy path in parallel and logs divergence (migration monitoring)
 - **Max retries**: `LIQUISTO_MAX_TASK_RETRIES` env var (default: 3)
 - **Token budgets**: `LIQUISTO_SOFT_TOKEN_BUDGET` and `LIQUISTO_HARD_TOKEN_CAP` env vars
+- **Phase budgets**: `LIQUISTO_FIRST_PASS_TOKEN_BUDGET`, `LIQUISTO_CLOSURE_TOKEN_BUDGET`, `LIQUISTO_OPTIONAL_DEPTH_TOKEN_BUDGET`
 - **Streamlit**: `.streamlit/config.toml`
 
 ## Validation
 
 ```bash
 python preflight.py   # environment, packages, project files, API key, import chain, port
-pytest                # unit tests
+pytest                # unit tests (400+ tests covering behavior, negative paths, golden traces, query parity, query consistency)
 ```

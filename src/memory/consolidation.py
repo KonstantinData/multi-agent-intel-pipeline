@@ -24,6 +24,7 @@ import json
 import re
 from typing import Any
 
+from src.app.use_cases import SUCCESS_RUN_STATUS
 from src.utils import dedup_safe as _dedup_safe
 
 # ---------------------------------------------------------------------------
@@ -134,6 +135,8 @@ RETRIEVABLE_ROLES: frozenset[str] = frozenset(
 # Deterministic iteration order for reproducible run initialisation.
 RETRIEVABLE_ROLE_ORDER: tuple[str, ...] = tuple(sorted(RETRIEVABLE_ROLES))
 
+_MEMORY_SUCCESS_STATUSES = frozenset({"completed", SUCCESS_RUN_STATUS})
+
 
 # ---------------------------------------------------------------------------
 # Main consolidation entry point
@@ -154,7 +157,7 @@ def consolidate_role_patterns(
     CHG-09 policy: only process-level guidance is retained. Evidence, findings,
     company profiles, and contact names are explicitly excluded.
     """
-    if status != "completed" or not usable:
+    if status not in _MEMORY_SUCCESS_STATUSES or not usable:
         return []
 
     short_term_memory = run_context.get("short_term_memory", {})

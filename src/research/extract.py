@@ -6,6 +6,14 @@ import logging
 import os
 import re
 
+from src.config.settings import (
+    get_extraction_model,
+    get_openai_api_key,
+    get_openai_max_retries,
+    get_openai_timeout_seconds,
+    temperature_param,
+)
+
 
 # Words that appear in website chrome, not in product descriptions
 _STOPWORDS = {
@@ -57,16 +65,19 @@ def _llm_extract_keywords(text: str, *, company_name: str = "") -> list[str]:
     """Use a cheap LLM call to extract product keywords."""
     try:
         from openai import OpenAI
-        from src.config.settings import get_openai_api_key
         api_key = get_openai_api_key()
         if not api_key:
             return []
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4.1-nano",
-            temperature=0.0,
-            response_format={"type": "json_object"},
-            messages=[
+        client = OpenAI(
+            api_key=api_key,
+            timeout=get_openai_timeout_seconds(),
+            max_retries=get_openai_max_retries(),
+        )
+        model_name = get_extraction_model()
+        request_payload = {
+            "model": model_name,
+            "response_format": {"type": "json_object"},
+            "messages": [
                 {"role": "system", "content": (
                     "Extract 4-8 product/service keywords from the company website text. "
                     "Return JSON: {\"keywords\": [\"keyword1\", ...]}. "
@@ -76,6 +87,10 @@ def _llm_extract_keywords(text: str, *, company_name: str = "") -> list[str]:
                 )},
                 {"role": "user", "content": f"Company: {company_name}\nText: {text[:800]}"},
             ],
+        }
+        request_payload.update(temperature_param(model_name, 0.0))
+        response = client.chat.completions.create(
+            **request_payload,
         )
         raw = json.loads(response.choices[0].message.content or "{}")
         keywords = raw.get("keywords", [])
