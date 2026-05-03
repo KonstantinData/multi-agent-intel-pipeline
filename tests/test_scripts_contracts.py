@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -205,3 +207,49 @@ def test_validate_attestation_rejects_failed_gate(tmp_path: Path) -> None:
     path.write_text(json.dumps(invalid), encoding="utf-8")
     with pytest.raises(SystemExit):
         val_audit.validate_release_attestation(path)
+
+
+def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if shell is None:
+        pytest.skip("PowerShell is required to execute init_multi_role_task.ps1")
+
+    script = SCRIPTS_DIR / "init_multi_role_task.ps1"
+    output = tmp_path / "current-task.md"
+    subprocess.run(
+        [
+            shell,
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(script),
+            "-Task",
+            "Update security workflow hardening",
+            "-TargetState",
+            "Release-ready",
+            "-Scope",
+            ".github/workflows scripts",
+            "-BlockingThreshold",
+            "P0",
+            "-OutputPath",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "Task: Update security workflow hardening" in text
+    assert "Target State: Release-ready" in text
+    assert "Blocking Threshold: P0" in text
+    assert "security-architect - Goal:" in text
+    assert "ai-compliance-owner - Goal:" in text
+    assert "release-manager - Goal:" in text
+    assert "code-reviewer - Goal:" in text
+    assert "maintainer - Goal:" in text
+    assert (
+        "Conflict resolver: security-architect > ai-compliance-owner > release-manager"
+        in text
+    )
