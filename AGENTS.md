@@ -64,11 +64,15 @@ The output is **not** raw chat. The output is a validated `DepartmentPackage`.
 ### Department Knowledge Base and Acceptance Gates
 
 Each domain department uses a department-specific knowledge base:
+
 - `knowledge/sources/<department>.yaml`
 - `knowledge/policies/<department>.yaml`
+- `knowledge/query_strategies/<department>.yaml`
 
 Design intent:
-- source KB suggests free-source priorities and search patterns
+
+- source KB carries source registry metadata: priorities, evidence type, provenance notes — **not** runtime search queries
+- query strategy KB is the single runtime authority for query construction per task (canonical `{placeholder}` templates, expanded by `src/research/query_resolver.py`)
 - policy KB defines required output fields and minimum evidence thresholds
 - quality checks are executed at package finalization / acceptance time
 
@@ -257,8 +261,10 @@ When working on tests:
 | `src/memory/short_term_store.py` | run-scoped memory including department run states |
 | `src/memory/consolidation.py` | process-pattern consolidation into long-term memory |
 | `docs/target_runtime_architecture.md` | canonical detailed runtime architecture reference |
-| `knowledge/sources/*.yaml` | department-specific free-source priorities and search patterns |
+| `knowledge/sources/*.yaml` | department-specific source registry: priorities, evidence type, provenance notes |
 | `knowledge/policies/*.yaml` | department-specific required fields, evidence minima, and gate rules |
+| `knowledge/query_strategies/*.yaml` | runtime query templates per task — single query-strategy authority |
+| `src/research/query_resolver.py` | central runtime query resolver: placeholder expansion, validation, buyer expansion |
 
 ---
 
