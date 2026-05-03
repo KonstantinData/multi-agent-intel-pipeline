@@ -5,13 +5,21 @@
 # -------------------------------------------------------------------
 # Global fallback (everything not matched below)
 # -------------------------------------------------------------------
-* @KonstantinData
+* @KonstantinData @liquisto/security-governance
 
 # -------------------------------------------------------------------
 # High-impact governance / supply-chain paths
 # -------------------------------------------------------------------
 /.github/ @KonstantinData
-/.github/workflows/ @KonstantinData
+/.github/workflows/ @KonstantinData @liquisto/security-governance
+
+/src/orchestration/ @KonstantinData @liquisto/runtime-review
+/src/agents/ @KonstantinData @liquisto/runtime-review
+/src/memory/ @KonstantinData @liquisto/security-governance
+/knowledge/ @KonstantinData @liquisto/runtime-review
+/requirements.txt @KonstantinData @liquisto/security-governance
+/requirements.lock @KonstantinData @liquisto/security-governance
+/pyproject.toml @KonstantinData @liquisto/security-governance
 
 /policies/ @KonstantinData
 /bom/ @KonstantinData

@@ -209,6 +209,30 @@ def test_validate_attestation_rejects_failed_gate(tmp_path: Path) -> None:
         val_audit.validate_release_attestation(path)
 
 
+def test_codeowners_high_impact_paths_have_independent_review_paths() -> None:
+    codeowners = ROOT / ".github" / "CODEOWNERS"
+    lines = [
+        line.strip()
+        for line in codeowners.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    required = [
+        "/src/orchestration/",
+        "/src/agents/",
+        "/src/memory/",
+        "/knowledge/",
+        "/.github/workflows/",
+        "/requirements.txt",
+        "/requirements.lock",
+        "/pyproject.toml",
+    ]
+    by_pattern = {line.split()[0]: line.split()[1:] for line in lines}
+    missing = [pattern for pattern in required if pattern not in by_pattern]
+    assert not missing, f"Missing high-impact CODEOWNERS patterns: {missing}"
+    single_owner = [pattern for pattern in required if len(set(by_pattern[pattern])) < 2]
+    assert not single_owner, f"High-impact paths need at least two review owners: {single_owner}"
+
+
 def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:
     shell = shutil.which("pwsh") or shutil.which("powershell")
     if shell is None:
