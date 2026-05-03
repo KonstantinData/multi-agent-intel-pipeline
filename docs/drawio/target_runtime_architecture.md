@@ -12,6 +12,26 @@ The system supports two runtime modes:
 
 Both modes are coordinated by the `Supervisor`.
 
+## Operational Security And Governance Layer
+
+Security and governance are cross-cutting runtime boundaries, not department
+chat participants. The runtime diagram therefore represents them as an
+outer operational layer around entry, configuration, CI, and artifact handling.
+
+The layer covers:
+
+- secret resolution: process/deployment secret first, OS keyring second,
+  plaintext `.env` only when `LIQUISTO_ALLOW_DOTENV_SECRETS=1`;
+- `preflight.py`: dependency, import-chain, query-strategy, API-key-source, and
+  Streamlit-port readiness checks before local UI startup;
+- CI and review gates: CODEOWNERS, secret scan, workflow hardening,
+  architecture/runtime contract tests, and release attestation;
+- runtime guardrails: safe `run_id` path resolution, artifact locking/atomic
+  JSON writes, audit minimization, and strict profile loading when enabled.
+
+This layer constrains how the runtime is started, reviewed, and persisted. It
+does not route department work and does not participate in AG2 GroupChat turns.
+
 ## Current Runtime Phase Order
 
 `src/pipeline_runner.py::run_pipeline()` is the public phase orchestrator.

@@ -7,7 +7,7 @@
                 <mxCell id="title" value="Liquisto Runtime Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=24;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1">
                     <mxGeometry x="40" y="24" width="620" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · department-specific source/policy KB + query strategy KB + acceptance gates · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
+                <mxCell id="subtitle" value="Supervisor-managed runtime · 4 domain departments (AG2 GroupChats) · department-specific source/policy KB + query strategy KB + acceptance gates · operational security/governance layer · AG2 synthesis + report_writer runtime · DE/EN PDF export via UI" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=12;fontColor=#475569;" parent="1" vertex="1">
                     <mxGeometry x="40" y="58" width="1800" height="20" as="geometry"/>
                 </mxCell>
                 <mxCell id="lane_entry" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1">
@@ -701,6 +701,27 @@
                 </mxCell>
                 <mxCell id="e_answer_artifacts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#d97706;endArrow=block;" parent="1" source="followup_answer" target="followup_artifacts" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_layer" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#e11d48;strokeWidth=2;dashed=1;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="2350" width="2550" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_layer_label" value="Operational Security + Governance Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#881337;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="2360" width="360" height="22" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_secrets" value="&lt;b&gt;Secret Resolution&lt;/b&gt;&lt;br&gt;process/deployment secret → OS keyring → .env only with LIQUISTO_ALLOW_DOTENV_SECRETS=1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="2395" width="470" height="58" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_preflight" value="&lt;b&gt;Preflight Gate&lt;/b&gt;&lt;br&gt;packages · runtime imports · query strategy validation · key source · Streamlit port" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="2395" width="430" height="58" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_ci" value="&lt;b&gt;CI / Review Gates&lt;/b&gt;&lt;br&gt;CODEOWNERS · secret scan · workflow hardening · architecture/runtime contract tests · release attestation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
+                    <mxGeometry x="1070" y="2395" width="520" height="58" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_runtime_guardrails" value="&lt;b&gt;Runtime Guardrails&lt;/b&gt;&lt;br&gt;safe run_id path resolution · artifact locking/atomic writes · no plaintext secret logs · strict KB/profile loading option" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
+                    <mxGeometry x="1640" y="2395" width="560" height="58" as="geometry"/>
+                </mxCell>
+                <mxCell id="security_scope" value="&lt;b&gt;Boundary&lt;/b&gt;&lt;br&gt;Cross-cutting layer around operator entry, CI, artifact export, and runtime configuration; not a department chat participant." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;spacing=8;fontColor=#7c2d12;" parent="1" vertex="1">
+                    <mxGeometry x="2250" y="2395" width="310" height="58" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>

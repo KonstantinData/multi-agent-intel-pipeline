@@ -318,10 +318,27 @@ class ShortTermMemoryStore:
         if other.final_briefing is not None:
             self.final_briefing = other.final_briefing
         self.meeting_readiness_assessment = other.meeting_readiness_assessment
+        # task_statuses: pending is an intermediate worker state and must not
+        # overwrite a terminal Supervisor/Lead status during parallel merge.
+        for key, value in other.task_statuses.items():
+            current = self.task_statuses.get(key)
+            if current is None or current == value:
+                self.task_statuses[key] = value
+                continue
+            if value == "pending" and current != "pending":
+                continue
+            if current == "pending" and value != "pending":
+                self.task_statuses[key] = value
+                continue
+            logging.warning(
+                "merge_from: unexpected key conflict in task_statuses: %s (last-writer-wins)",
+                {key},
+            )
+            self.task_statuses[key] = value
+
         # Dicts: update with disjointness assertion for task-keyed fields
         _DISJOINT_DICTS = [
             ("task_outputs", self.task_outputs, other.task_outputs),
-            ("task_statuses", self.task_statuses, other.task_statuses),
             ("critic_approvals", self.critic_approvals, other.critic_approvals),
             ("critic_reviews", self.critic_reviews, other.critic_reviews),
             ("accepted_points", self.accepted_points, other.accepted_points),
@@ -332,7 +349,11 @@ class ShortTermMemoryStore:
             ("department_workspaces", self.department_workspaces, other.department_workspaces),
         ]
         for name, target, source in _DISJOINT_DICTS:
-            conflicts = set(target.keys()) & set(source.keys())
+            conflicts = {
+                key
+                for key in set(target.keys()) & set(source.keys())
+                if target.get(key) != source.get(key)
+            }
             if conflicts:
                 logging.warning(
                     "merge_from: unexpected key conflict in %s: %s (last-writer-wins)",
