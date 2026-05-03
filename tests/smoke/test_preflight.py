@@ -25,18 +25,52 @@ class _OkHandler(BaseHTTPRequestHandler):
 def test_load_openai_api_key_rejects_empty_or_commented_value(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    (tmp_path / ".env").write_text("# OPENAI_API_KEY=test\nOPENAI_API_KEY=\n", encoding="utf-8")
+    monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": ""})
     with pytest.raises(ValueError):
         preflight._load_openai_api_key()
 
 
-def test_load_openai_api_key_accepts_non_empty_env_file(tmp_path, monkeypatch):
+def test_load_openai_api_key_accepts_env_file_only_when_explicitly_allowed(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    (tmp_path / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+    monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "test-key"})
     key, source = preflight._load_openai_api_key()
     assert key == "test-key"
-    assert source == ".env"
+    assert source == ".env explicit fallback"
+
+
+def test_load_openai_api_key_ignores_env_file_by_default(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LIQUISTO_ALLOW_DOTENV_SECRETS", raising=False)
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})
+    with pytest.raises(ValueError):
+        preflight._load_openai_api_key()
+
+
+def test_load_openai_api_key_prefers_process_environment(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "process-key")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})
+    key, source = preflight._load_openai_api_key()
+    assert key == "process-key"
+    assert source == "environment"
+
+
+def test_load_openai_api_key_reads_os_keyring_before_env_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "keyring-key")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})
+    key, source = preflight._load_openai_api_key()
+    assert key == "keyring-key"
+    assert source == "keyring:liquisto-department-runtime/OPENAI_API_KEY"
 
 
 def test_port_status_accepts_reachable_local_http_service():

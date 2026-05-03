@@ -2,6 +2,7 @@
 # Update this file together with requirements.txt and the compatibility notes in README.md.
 ag2==0.11.4
 filelock==3.16.1
+keyring==25.7.0
 openai==2.29.0
 pydantic==2.12.5
 pypdf==5.4.0

@@ -8,8 +8,6 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from dotenv import dotenv_values
-
 
 ROOT = Path(__file__).resolve().parent
 STREAMLIT_PORT = 8501
@@ -21,17 +19,13 @@ def _project_path(*parts: str) -> Path:
 
 
 def _load_openai_api_key() -> tuple[str, str]:
-    env_path = _project_path(".env")
-    env_values = dotenv_values(env_path) if env_path.exists() else {}
-    env_file_key = str(env_values.get("OPENAI_API_KEY", "") or "").strip()
-    if env_file_key:
-        return env_file_key, ".env"
+    sys.path.insert(0, str(ROOT))
+    from src.config.settings import resolve_openai_api_key
 
-    process_key = str(os.environ.get("OPENAI_API_KEY", "") or "").strip()
-    if process_key:
-        return process_key, "environment"
-
-    raise ValueError("OPENAI_API_KEY not found or empty in .env/environment")
+    key, source = resolve_openai_api_key()
+    if key:
+        return key, source
+    raise ValueError("OPENAI_API_KEY not found in environment, OS keyring, or explicit .env fallback")
 
 
 def _port_status(port: int) -> str:
@@ -78,6 +72,7 @@ def main() -> int:
         ("openai", "openai"),
         ("pydantic", "pydantic"),
         ("python-dotenv", "dotenv"),
+        ("keyring", "keyring"),
         ("reportlab", "reportlab"),
     ]:
         check(pkg, lambda i=imp: (m := __import__(i)) and getattr(m, "__version__", "ok"), counters)
@@ -91,7 +86,6 @@ def main() -> int:
         "src/models/schemas.py",
         "src/exporters/pdf_report.py",
         "src/exporters/json_export.py",
-        ".env",
         ".streamlit/config.toml",
     ]:
         check(

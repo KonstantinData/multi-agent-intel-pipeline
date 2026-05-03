@@ -20,8 +20,8 @@ python -m venv .venv
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Set OpenAI API key
-echo OPENAI_API_KEY=sk-... > .env
+# 3. Store OpenAI API key in the OS keyring
+python -m keyring set liquisto-department-runtime OPENAI_API_KEY
 
 # 4. Validate environment
 python preflight.py
@@ -177,10 +177,14 @@ A successful run does **not** contain:
 
 ## Configuration
 
-- **API key**: set `OPENAI_API_KEY` in `.env` or as environment variable
-- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env or `.env`)
+- **API key**: prefer platform secrets or the OS keyring. Local lookup order is process environment, OS keyring, then `.env` only when `LIQUISTO_ALLOW_DOTENV_SECRETS=1`.
+- **Local OS keyring setup**:
+  `python -m keyring set liquisto-department-runtime OPENAI_API_KEY`
+- **Deployment/CI secret**: set `OPENAI_API_KEY` as a platform secret or environment variable injected by the deployment system.
+- **Plaintext `.env`**: disabled for API-key lookup by default. Use only as an explicit local fallback with `LIQUISTO_ALLOW_DOTENV_SECRETS=1`; do not use for production, CI, or shared environments.
+- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env first, then local `.env` fallback)
 - **Role env key format**: preferred snake-case (for example `OPENAI_MODEL_COMPANY_RESEARCHER`), legacy compact keys (for example `OPENAI_MODEL_COMPANYRESEARCHER`) are still supported
-- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env or `.env`)
+- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env first, then local `.env` fallback)
 - **OpenAI request controls**: `LIQUISTO_OPENAI_TIMEOUT_SECONDS`, `LIQUISTO_OPENAI_MAX_RETRIES`
 - **Runtime cost calculation**: `estimated_cost_usd` in `run_meta.json` is computed from
   tracked LLM token usage plus `web_search_preview` call fees

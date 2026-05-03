@@ -23,6 +23,8 @@ SOFT_TOKEN_BUDGET = int(os.getenv("LIQUISTO_SOFT_TOKEN_BUDGET", "200000"))
 HARD_TOKEN_CAP = int(os.getenv("LIQUISTO_HARD_TOKEN_CAP", "500000"))
 ROOT = Path(__file__).resolve().parents[2]
 TEMPERATURE_LOCKED_MODEL_PREFIXES = ("gpt-5",)
+DEFAULT_KEYRING_SERVICE = "liquisto-department-runtime"
+DEFAULT_OPENAI_KEYRING_ACCOUNT = "OPENAI_API_KEY"
 ROLE_MODEL_DEFAULTS = {
     "Supervisor": "gpt-4.1",
     "CompanyDepartment": "gpt-4.1",
@@ -108,9 +110,54 @@ def _get_env_value(key: str) -> str:
     return _dotenv_lookup().get(key, "").strip()
 
 
+def _truthy_env(key: str) -> bool:
+    return os.getenv(key, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _keyring_lookup(service: str, account: str) -> str:
+    try:
+        import keyring
+    except Exception:
+        return ""
+    try:
+        return str(keyring.get_password(service, account) or "").strip()
+    except Exception:
+        return ""
+
+
+def resolve_openai_api_key() -> tuple[str, str]:
+    """Resolve the OpenAI API key and the source used.
+
+    Source precedence is:
+    1. process environment / deployment secret
+    2. OS keyring
+    3. local .env only when LIQUISTO_ALLOW_DOTENV_SECRETS=1
+    """
+    process_value = os.getenv("OPENAI_API_KEY", "").strip()
+    if process_value:
+        return process_value, "environment"
+
+    service = os.getenv("LIQUISTO_KEYRING_SERVICE", DEFAULT_KEYRING_SERVICE).strip() or DEFAULT_KEYRING_SERVICE
+    account = (
+        os.getenv("OPENAI_API_KEY_KEYRING_ACCOUNT", DEFAULT_OPENAI_KEYRING_ACCOUNT).strip()
+        or DEFAULT_OPENAI_KEYRING_ACCOUNT
+    )
+    keyring_value = _keyring_lookup(service, account)
+    if keyring_value:
+        return keyring_value, f"keyring:{service}/{account}"
+
+    if _truthy_env("LIQUISTO_ALLOW_DOTENV_SECRETS"):
+        dotenv_value = _dotenv_lookup().get("OPENAI_API_KEY", "").strip()
+        if dotenv_value:
+            return dotenv_value, ".env explicit fallback"
+
+    return "", ""
+
+
 def get_openai_api_key() -> str:
-    """Resolve the OpenAI API key from environment or local .env."""
-    return _get_env_value("OPENAI_API_KEY")
+    """Resolve the OpenAI API key without using plaintext .env by default."""
+    value, _source = resolve_openai_api_key()
+    return value
 
 
 def get_model_selection() -> tuple[str, str]:
