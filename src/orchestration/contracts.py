@@ -75,6 +75,14 @@ OUTCOME_TO_TASK_STATUS: dict[str, str] = {
 TASK_LIFECYCLE_STATUSES: frozenset[str] = frozenset({
     "pending", "pending_synthesis", "accepted", "degraded", "blocked", "skipped",
 })
+TaskStatus = Literal[
+    "pending",
+    "pending_synthesis",
+    "accepted",
+    "degraded",
+    "blocked",
+    "skipped",
+]
 
 ADMISSION_DECISIONS: frozenset[str] = frozenset({
     "accepted", "accepted_with_gaps", "rejected",

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from src.orchestration.department_knowledge import (
+    _read_json_payload,
     evaluate_department_policy_gate,
     load_department_policy,
     load_department_source_profile,
@@ -52,3 +56,23 @@ def test_contact_policy_gate_uses_internal_customer_when_no_free_sources():
     assert result["passed"] is False
     assert result["blockers"]
     assert all(item.get("availability") == "internal_customer" for item in result["blockers"])
+
+
+def test_kb_strict_payload_reader_raises_with_path_and_department(tmp_path: Path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("{not-json", encoding="utf-8")
+    try:
+        _read_json_payload(bad, strict=True, department="CompanyDepartment")
+    except ValueError as exc:
+        message = str(exc)
+        assert "CompanyDepartment" in message
+        assert str(bad) in message
+    else:
+        raise AssertionError("strict KB loading should raise on malformed payload")
+
+
+def test_all_kb_files_parse_in_strict_json_mode():
+    for base in (Path("knowledge/sources"), Path("knowledge/policies"), Path("knowledge/query_strategies")):
+        for path in base.glob("*.yaml"):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            assert isinstance(payload, dict), f"KB file must parse as object: {path}"

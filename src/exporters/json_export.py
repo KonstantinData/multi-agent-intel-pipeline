@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from src.app.use_cases import (
     DISCOVERY_READY_RUN_STATUS,
@@ -14,6 +17,25 @@ from src.app.use_cases import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def atomic_write_json(path: str | Path, payload: Any) -> None:
+    """Write JSON atomically via a same-directory tempfile and replace."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        handle.write(encoded)
+        handle.flush()
+        temp_name = handle.name
+    Path(temp_name).replace(target)
 
 
 def _sanitize_pipeline_data_for_status(
@@ -92,22 +114,16 @@ def export_run(
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
 
-    (path / "run_meta.json").write_text(json.dumps(run_meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    (path / "chat_history.json").write_text(json.dumps(chat_history, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(path / "run_meta.json", run_meta)
+    atomic_write_json(path / "chat_history.json", chat_history)
     sanitized_pipeline_data = _sanitize_pipeline_data_for_status(
         status=status,
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
-    (path / "pipeline_data.json").write_text(
-        json.dumps(sanitized_pipeline_data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    (path / "run_context.json").write_text(json.dumps(run_context, indent=2, ensure_ascii=False), encoding="utf-8")
-    (path / "memory_snapshot.json").write_text(
-        json.dumps(run_context.get("short_term_memory", {}), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    atomic_write_json(path / "pipeline_data.json", sanitized_pipeline_data)
+    atomic_write_json(path / "run_context.json", run_context)
+    atomic_write_json(path / "memory_snapshot.json", run_context.get("short_term_memory", {}))
     if sanitized_pipeline_data:
         try:
             from src.exporters.pdf_report import generate_pdf
@@ -129,11 +145,13 @@ def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> N
     path = Path(run_dir)
     path.mkdir(parents=True, exist_ok=True)
     target = path / "follow_up_history.json"
-    history: list[dict[str, Any]] = []
-    if target.exists():
-        history = json.loads(target.read_text(encoding="utf-8"))
-    history.append(follow_up_answer)
-    target.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    lock = FileLock(str(target) + ".lock")
+    with lock:
+        history: list[dict[str, Any]] = []
+        if target.exists():
+            history = json.loads(target.read_text(encoding="utf-8"))
+        history.append(follow_up_answer)
+        atomic_write_json(target, history)
 
 
 def export_binary_artifact(

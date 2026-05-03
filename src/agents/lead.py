@@ -100,6 +100,7 @@ from src.config.settings import (
 from src.domain.intake import SupervisorBrief
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import DepartmentPackage, DomainReportSegment
+from src.orchestration.contract_validation import validate_payload_against_task_schema
 from src.orchestration.contracts import (
     ContractViolation,
     DepartmentPolicy,
@@ -113,67 +114,19 @@ from src.orchestration.department_knowledge import (
     load_department_policy,
     load_department_source_profile,
 )
+from src.orchestration.followup_config import FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT
 from src.orchestration.task_router import Assignment, DEPARTMENT_RESEARCHERS
 from src.orchestration.tool_policy import resolve_allowed_tools
 from src.models.registry import resolve_output_schema
 from src.research.extract import extract_product_keywords, infer_industry
+from src.research.query_resolver import validate_query_overrides
 
 logger = logging.getLogger(__name__)
 
-_FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT = {
-    "CompanyDepartment": "company_profile",
-    "MarketDepartment": "industry_analysis",
-    "BuyerDepartment": "market_network",
-    "ContactDepartment": "contact_intelligence",
-}
+_FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT = FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT
 
 
-def _validate_payload_against_task_schema(
-    schema_key: str,
-    payload_updates: dict[str, Any],
-) -> list[ContractViolation]:
-    """F4: Validate payload_updates (delta) against the task-level schema.
-
-    Returns a list of ContractViolation records.  Uses Pydantic validation
-    errors to produce structured violations.
-    """
-    if not schema_key:
-        return []
-    try:
-        schema_cls = resolve_output_schema(schema_key)
-    except KeyError:
-        return []
-    try:
-        schema_cls.model_validate(payload_updates)
-        return []
-    except Exception as exc:
-        violations: list[ContractViolation] = []
-        errors = getattr(exc, "errors", lambda: [])() if hasattr(exc, "errors") else []
-        if errors:
-            for err in errors:
-                field_path = ".".join(str(p) for p in err.get("loc", ["unknown"]))
-                err_type = str(err.get("type", "unknown"))
-                violation_type = "type_mismatch" if "type" in err_type else "missing_required_field"
-                violations.append(ContractViolation(
-                    field_path=field_path,
-                    violation_type=violation_type,
-                    severity="medium",
-                    message=str(err.get("msg", str(exc)))[:200],
-                ))
-        else:
-            violations.append(ContractViolation(
-                field_path="*",
-                violation_type="type_mismatch",
-                severity="high",
-                message=str(exc)[:200],
-            ))
-        # Severity escalation: if no expected field has a non-default value
-        schema_fields = set(schema_cls.model_fields.keys()) - {"sources"}
-        filled = {k for k, v in payload_updates.items() if k in schema_fields and v and v != "n/v"}
-        if not filled:
-            for v in violations:
-                v.severity = "high"
-        return violations
+_validate_payload_against_task_schema = validate_payload_against_task_schema
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -510,13 +463,10 @@ class DepartmentLeadAgent:
                         "blocked_by": dep_key,
                     }, ensure_ascii=False)
 
-            # Track attempts
-            attempt = run_state.attempts.get(task_key, 0)
-            run_state.attempts[task_key] = attempt + 1
-
             # Skip duplicate execution when no revision was requested.
             # Exception: blocked_by_dependency artifacts are NOT real completions —
             # if the dependency is now satisfied, the task must re-run.
+            current_attempt = run_state.attempts.get(task_key, 0)
             if (
                 task_key in run_state.task_artifacts
                 and task_key not in run_state.revision_requests
@@ -553,6 +503,27 @@ class DepartmentLeadAgent:
                             ensure_ascii=False,
                         )
                 elif needs_retry:
+                    if current_attempt >= MAX_TASK_RETRIES:
+                        decision = TaskDecisionArtifact(
+                            task_key=task_key,
+                            attempt=current_attempt,
+                            outcome="closed_unresolved",
+                            task_status="degraded",
+                            decided_by="runtime",
+                            confidence="low",
+                            open_questions=list(latest_review.missing_points or latest_review.issues or latest_review.rejected_points),
+                            reason=f"Retry limit reached ({MAX_TASK_RETRIES}); research closed unresolved.",
+                        )
+                        run_state.record_decision_artifact(decision)
+                        return json.dumps(
+                            {
+                                "task_key": task_key,
+                                "status": "retry_limit_reached",
+                                "next_required_action": f"judge_decision(task_key='{task_key}')",
+                                "open_questions": decision.open_questions[:5],
+                            },
+                            ensure_ascii=False,
+                        )
                     logger.info(
                         "run_research: task=%s has rejected latest review — allowing retry",
                         task_key,
@@ -571,6 +542,7 @@ class DepartmentLeadAgent:
                         ensure_ascii=False,
                     )
 
+            run_state.attempts[task_key] = current_attempt + 1
             logger.info(
                 "run_research: task=%s attempt=%d department=%s",
                 task_key, run_state.attempts[task_key], self.department,
@@ -748,13 +720,31 @@ class DepartmentLeadAgent:
                 logger.error("suggest_refined_queries failed: task=%s error=%s", task_key, exc)
                 return json.dumps({"error": f"suggest_refined_queries failed: {exc}", "task_key": task_key})
 
-            run_state.query_overrides[task_key] = support["query_overrides"]
-            run_state.record_coding_support(task_key, support["query_overrides"])
+            try:
+                validated_overrides = validate_query_overrides(support.get("query_overrides", []))
+            except ValueError as exc:
+                err = {"tool": "suggest_refined_queries", "task_key": task_key, "error": str(exc)}
+                run_state.tool_errors.append(err)
+                return json.dumps(
+                    {"error": f"invalid query_overrides: {exc}", "task_key": task_key},
+                    ensure_ascii=False,
+                )
+
+            run_state.query_overrides[task_key] = validated_overrides
+            run_state.record_coding_support(task_key, validated_overrides)
+            run_state.strategy_changes.append({
+                "task_key": task_key,
+                "attempt": run_state.attempts.get(task_key, 0),
+                "agent": self.coding_name,
+                "reason": "coding_specialist_query_override",
+                "review_issue": list(review_dict.get("issues", []))[:5],
+                "query_override_count": len(validated_overrides),
+            })
 
             return json.dumps(
                 {
                     "task_key": task_key,
-                    "query_overrides": support["query_overrides"],
+                    "query_overrides": validated_overrides,
                     "summary": support["summary"],
                 },
                 ensure_ascii=False,
@@ -764,9 +754,50 @@ class DepartmentLeadAgent:
             task_key: Annotated[str, "The task_key to decide on"],
         ) -> str:
             """Make a final edge-case decision when retries are exhausted."""
+            assignment = next((a for a in assignments if a.task_key == task_key), None)
+            if not assignment:
+                return json.dumps({
+                    "error": f"Unknown task_key: {task_key}",
+                    "decision": "closed_unresolved",
+                    "task_status": "degraded",
+                    "confidence": "low",
+                    "open_questions": [f"Unknown task_key: {task_key}"],
+                }, ensure_ascii=False)
+
+            artifact = run_state.latest_artifact(task_key)
+            if artifact is None:
+                attempt = run_state.attempts.get(task_key, 0)
+                result = {
+                    "decision": "closed_unresolved",
+                    "task_status": "degraded",
+                    "confidence": "low",
+                    "reason": "Judge cannot accept a task before a TaskArtifact exists.",
+                    "open_questions": [f"Run run_research(task_key='{task_key}') before judge_decision."],
+                }
+                run_state.record_decision_artifact(
+                    TaskDecisionArtifact.from_judge_result(
+                        result, task_key=task_key, attempt=attempt
+                    )
+                )
+                return json.dumps(result, ensure_ascii=False)
+
             review = run_state.latest_review(task_key)
-            review_dict = review.to_dict() if review else {}
-            attempt = run_state.attempts.get(task_key, 0)
+            if review is None:
+                review = TaskReviewArtifact(
+                    task_key=task_key,
+                    attempt=artifact.attempt,
+                    approved=False,
+                    reviewer="runtime_fallback",
+                    issues=["No Critic review existed before judge_decision."],
+                    missing_points=list(artifact.open_questions),
+                    evidence_strength="weak",
+                    feedback_to_worker=[
+                        "Judge fallback review generated because no Critic review was stored."
+                    ],
+                )
+                run_state.record_review_artifact(review)
+            review_dict = review.to_dict()
+            attempt = artifact.attempt
 
             logger.info(
                 "judge_decision: task=%s attempt=%d department=%s",
@@ -782,6 +813,7 @@ class DepartmentLeadAgent:
                 err = {"tool": "judge_decision", "task_key": task_key, "error": str(exc)}
                 run_state.tool_errors.append(err)
                 result = {
+                    "decision": "closed_unresolved",
                     "task_status": "degraded",
                     "reason": f"Judge failed: {exc}",
                     "open_questions": [str(exc)],
@@ -858,7 +890,16 @@ class DepartmentLeadAgent:
                             f"{high_count} high-severity schema mismatches"
                         )
 
-                if decision:
+                if decision and not artifact:
+                    task_status = "degraded"
+                    task_accepted = []
+                    task_open = _dedup(
+                        decision.open_questions
+                        + [f"Decision for {task_key} ignored as accepted evidence because no TaskArtifact exists."]
+                    )
+                    task_sources = []
+                    task_summary = assignment.objective
+                elif decision:
                     # Primary path (CHG-07): use stored decision — no re-judging
                     task_status = decision.task_status
                     task_accepted = review.accepted_points if review else []

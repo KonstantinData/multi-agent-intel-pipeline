@@ -35,19 +35,49 @@ from src.utils import dedup_safe as _dedup_safe
 # domain name embedded in a query string.  We replace these with a placeholder
 # so the query becomes a structural pattern rather than a company-specific one.
 _DOMAIN_RE = re.compile(r'\b[\w\-]+\.(com|de|io|net|org|co\.uk|eu|at|ch)\b', re.IGNORECASE)
+_URL_RE = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
+_EMAIL_RE = re.compile(r'\b[\w.\-+]+@[\w.\-]+\.\w+\b', re.IGNORECASE)
 _QUOTED_NAME_RE = re.compile(r'"[A-Z][^"]{2,60}"')   # "ACME GmbH"
 _GMBH_RE = re.compile(r'\b\w[\w\s\-]{1,30}(GmbH|AG|SE|Inc|Ltd|BV|SAS|SA|NV|KG)\b', re.IGNORECASE)
 
 
-def _scrub_company_from_query(query: str) -> str:
+def _scrub_company_from_query(query: str, extra_terms: set[str] | None = None) -> str:
     """Remove company-name / domain identifiers from a query string.
 
     Returns a structural query pattern safe for long-term memory.
     """
-    q = _DOMAIN_RE.sub("{domain}", query)
+    q = _URL_RE.sub("{url}", query)
+    q = _EMAIL_RE.sub("{contact}", q)
+    q = _DOMAIN_RE.sub("{domain}", q)
     q = _QUOTED_NAME_RE.sub('"{company}"', q)
     q = _GMBH_RE.sub("{company}", q)
+    for term in sorted(extra_terms or set(), key=len, reverse=True):
+        if len(term) >= 3:
+            q = re.sub(rf"\b{re.escape(term)}\b", "{company}", q, flags=re.IGNORECASE)
     return q.strip()
+
+
+def _scrub_terms_from_context(run_context: dict[str, Any], pipeline_data: dict[str, Any]) -> set[str]:
+    terms: set[str] = set()
+    intake = run_context.get("intake", {}) if isinstance(run_context, dict) else {}
+    profile = pipeline_data.get("company_profile", {}) if isinstance(pipeline_data, dict) else {}
+    for value in (
+        intake.get("company_name"),
+        intake.get("web_domain"),
+        profile.get("company_name"),
+        profile.get("legal_name"),
+        profile.get("website"),
+    ):
+        text = str(value or "").strip()
+        if not text or text == "n/v":
+            continue
+        terms.add(text)
+        normalized = text.lower().removeprefix("https://").removeprefix("http://").removeprefix("www.").split("/", 1)[0]
+        if "." in normalized:
+            terms.add(normalized)
+            terms.update(part for part in re.split(r"[\W_]+", normalized.split(".", 1)[0]) if len(part) >= 3)
+        terms.update(part for part in re.split(r"[\W_]+", text) if len(part) >= 3)
+    return terms
 
 
 def _is_process_safe_query(query: str) -> bool:
@@ -65,12 +95,12 @@ def _is_process_safe_query(query: str) -> bool:
     return len(non_placeholder) >= 1
 
 
-def _to_structural_patterns(queries: list[str]) -> list[str]:
+def _to_structural_patterns(queries: list[str], extra_terms: set[str] | None = None) -> list[str]:
     """Convert a list of raw queries into scrubbed structural patterns."""
     seen: set[str] = set()
     out: list[str] = []
     for q in queries:
-        scrubbed = _scrub_company_from_query(str(q))
+        scrubbed = _scrub_company_from_query(str(q), extra_terms)
         if _is_process_safe_query(scrubbed) and scrubbed not in seen:
             seen.add(scrubbed)
             out.append(scrubbed)
@@ -163,9 +193,10 @@ def consolidate_role_patterns(
     short_term_memory = run_context.get("short_term_memory", {})
     industry_hint = pipeline_data.get("company_profile", {}).get("industry", "n/v")
     task_statuses = short_term_memory.get("task_statuses", {})
+    scrub_terms = _scrub_terms_from_context(run_context, pipeline_data)
 
     # Sanitise industry_hint: keep only generic industry label, strip company refs
-    safe_industry = _scrub_company_from_query(str(industry_hint))[:60] if industry_hint else "n/v"
+    safe_industry = _scrub_company_from_query(str(industry_hint), scrub_terms)[:60] if industry_hint else "n/v"
 
     patterns: list[dict[str, Any]] = []
     worker_reports: list[dict[str, Any]] = short_term_memory.get("worker_reports", [])
@@ -192,7 +223,7 @@ def consolidate_role_patterns(
         grouped_queries.setdefault(role, []).extend(raw_queries)
 
     for role_name, queries in grouped_queries.items():
-        structural_queries = _to_structural_patterns(queries)
+        structural_queries = _to_structural_patterns(queries, scrub_terms)
         if not structural_queries:
             continue
         scope = ROLE_MEMORY_CATEGORIES.get(role_name, "researcher_strategy")
@@ -235,7 +266,7 @@ def consolidate_role_patterns(
             for v in dept_reviews.values():
                 if isinstance(v, dict):
                     for msg in v.get("failed_rule_messages", []):
-                        scrubbed_msg = _scrub_company_from_query(str(msg))
+                        scrubbed_msg = _scrub_company_from_query(str(msg), scrub_terms)
                         if len(scrubbed_msg) > 8:
                             defect_classes.append(scrubbed_msg)
             patterns.append({
@@ -294,7 +325,7 @@ def consolidate_role_patterns(
         strategy_changes = run_state.get("strategy_changes", [])
         if strategy_changes:
             retry_reasons = [
-                _scrub_company_from_query(str(c.get("reason", "")))
+                _scrub_company_from_query(str(c.get("reason", "")), scrub_terms)
                 for c in strategy_changes
                 if c.get("reason")
             ]

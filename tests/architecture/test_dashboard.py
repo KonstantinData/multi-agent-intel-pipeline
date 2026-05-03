@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from pypdf import PdfReader
+import pytest
 
 from src.models.visualization import (
     ChartSeries,
@@ -22,6 +22,11 @@ from src.models.visualization import (
     TableBlock,
 )
 from src.orchestration.dashboard_composer import compose_dashboard
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> str:
+    PdfReader = pytest.importorskip("pypdf").PdfReader
+    return "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
 
 
 def _make_pipeline_data() -> dict:
@@ -319,6 +324,7 @@ def test_compose_dashboard_empty_data_does_not_crash():
 
 def test_pdf_bundle_rendering_does_not_crash():
     """Verify that generate_pdf works with a dashboard_bundle in pipeline_data."""
+    pytest.importorskip("reportlab")
     from src.exporters.pdf_report import generate_pdf
     pd = _make_pipeline_data()
     bundle = compose_dashboard(
@@ -334,6 +340,7 @@ def test_pdf_bundle_rendering_does_not_crash():
 
 def test_pdf_without_bundle_still_works():
     """Legacy fallback: PDF generation without dashboard_bundle."""
+    pytest.importorskip("reportlab")
     from src.exporters.pdf_report import generate_pdf
     pd = _make_pipeline_data()
     # No dashboard_bundle key
@@ -343,14 +350,15 @@ def test_pdf_without_bundle_still_works():
 
 
 def test_pdf_localizes_core_labels_for_german_and_english():
+    pytest.importorskip("reportlab")
     from src.exporters.pdf_report import generate_pdf
 
     pd = _make_pipeline_data()
     pdf_de = generate_pdf(pd, lang="de")
     pdf_en = generate_pdf(pd, lang="en")
 
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
-    text_en = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_en)).pages)
+    text_de = _extract_pdf_text(pdf_de)
+    text_en = _extract_pdf_text(pdf_en)
 
     assert "Management-Übersicht" in text_de
     assert "Offene Fragen & Validierungsplan" in text_de
@@ -376,6 +384,7 @@ def test_pdf_localizes_core_labels_for_german_and_english():
 
 
 def test_pdf_offline_localizes_structured_playbook_content(monkeypatch):
+    pytest.importorskip("reportlab")
     from src.config import settings
     from src.exporters.pdf_report import generate_pdf
 
@@ -384,7 +393,7 @@ def test_pdf_offline_localizes_structured_playbook_content(monkeypatch):
     pd["synthesis"]["executive_summary"] = "Conservative output — synthesis incomplete."
 
     pdf_de = generate_pdf(pd, lang="de")
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
+    text_de = _extract_pdf_text(pdf_de)
 
     assert "Konservative Ausgabe" in text_de
     assert "Wirtschaftlicher" in text_de
@@ -397,6 +406,8 @@ def test_pdf_offline_localizes_structured_playbook_content(monkeypatch):
 
 
 def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
+    pytest.importorskip("reportlab")
+    pytest.importorskip("openai")
     import openai
 
     from src.config import settings
@@ -421,7 +432,7 @@ def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
     pd["synthesis"]["executive_summary"] = "Conservative output — synthesis incomplete."
 
     pdf_de = generate_pdf(pd, lang="de")
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
+    text_de = _extract_pdf_text(pdf_de)
 
     assert pdf_de[:5] == b"%PDF-"
     assert "Konservative Ausgabe" in text_de
@@ -429,6 +440,7 @@ def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
 
 
 def test_pdf_german_has_no_nv_placeholders_and_no_truncated_action_text():
+    pytest.importorskip("reportlab")
     from src.exporters.pdf_report import generate_pdf
 
     pd = _make_pipeline_data()
@@ -455,7 +467,7 @@ def test_pdf_german_has_no_nv_placeholders_and_no_truncated_action_text():
     pd["meeting_actions"] = [{"title": "Follow-up", "description": long_action}]
 
     pdf_de = generate_pdf(pd, lang="de")
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
+    text_de = _extract_pdf_text(pdf_de)
     text_de_lower = text_de.lower()
 
     assert "n/v" not in text_de_lower

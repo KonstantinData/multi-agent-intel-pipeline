@@ -174,6 +174,26 @@ def _expand_templates(
     return result
 
 
+def validate_query_overrides(query_overrides: list[str] | None) -> list[str]:
+    """Validate adaptive runtime query overrides.
+
+    Overrides may be concrete queries or canonical ``{placeholder}`` templates,
+    but they must use the same placeholder rules as query strategies. Empty
+    strings and legacy angle-bracket placeholders are rejected.
+    """
+    cleaned: list[str] = []
+    for raw in query_overrides or []:
+        query = str(raw).strip()
+        if not query:
+            raise ValueError("Query override must not be empty.")
+        query = _normalize_aliases(query)
+        _validate_template(query)
+        cleaned.append(query)
+    if query_overrides is not None and not cleaned:
+        raise ValueError("Query overrides must contain at least one non-empty query.")
+    return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Task-specific expansion helpers
 # ---------------------------------------------------------------------------
@@ -315,7 +335,7 @@ def resolve_queries(
     """
     # Preserve current query_overrides or-idiom exactly (Option A)
     if query_overrides:
-        return list(query_overrides)
+        return validate_query_overrides(query_overrides)
 
     if task_key not in _TASK_TO_DEPARTMENT:
         raise KeyError(

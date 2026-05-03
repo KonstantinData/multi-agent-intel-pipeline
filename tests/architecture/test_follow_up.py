@@ -152,6 +152,78 @@ def test_follow_up_unknown_route_defaults_to_company(tmp_path):
         fu_mod.RUNS_DIR = original_runs
 
 
+def test_follow_up_prefers_run_brain_artifacts_over_answer_matrix(tmp_path):
+    from src.orchestration.follow_up import answer_follow_up
+    import src.orchestration.follow_up as fu_mod
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["answer_matrix"] = {
+        "q_company_fundamentals": {"status": "answered", "answer": "Matrix says old fact", "notes": ""}
+    }
+    context["short_term_memory"]["department_run_states"] = {
+        "CompanyDepartment": {
+            "task_artifacts": {
+                "company_fundamentals": [{"facts": ["Artifact says verified fact"], "open_questions": []}]
+            },
+            "review_artifacts": {"company_fundamentals": [{"approved": True, "accepted_points": []}]},
+            "decision_artifacts": {
+                "company_fundamentals": [{"outcome": "accepted", "open_questions": []}]
+            },
+        }
+    }
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="CompanyDepartment",
+            question="What is verified?",
+            pipeline_data=_make_pipeline_data(),
+            run_context=context,
+        )
+        assert result["evidence_used"][0] == "Artifact says verified fact"
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
+def test_follow_up_blocks_closed_unresolved_facts_from_evidence(tmp_path):
+    from src.orchestration.follow_up import answer_follow_up
+    import src.orchestration.follow_up as fu_mod
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["short_term_memory"]["department_run_states"] = {
+        "CompanyDepartment": {
+            "task_artifacts": {
+                "company_fundamentals": [{"facts": ["Unsupported closed fact"], "open_questions": []}]
+            },
+            "decision_artifacts": {
+                "company_fundamentals": [{
+                    "outcome": "closed_unresolved",
+                    "open_questions": ["Evidence gap remains"],
+                }]
+            },
+        }
+    }
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="CompanyDepartment",
+            question="What is verified?",
+            pipeline_data=_make_pipeline_data(),
+            run_context=context,
+        )
+        assert "Unsupported closed fact" not in result["evidence_used"]
+        assert "Evidence gap remains" in result["unresolved_points"]
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
 def test_long_term_store_has_lock(tmp_path):
     from src.memory.long_term_store import FileLongTermMemoryStore
     store = FileLongTermMemoryStore(tmp_path / "memory.json")

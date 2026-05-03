@@ -171,6 +171,14 @@ def test_override_none_uses_resolver() -> None:
     assert len(result) > 0
 
 
+@pytest.mark.parametrize("overrides", [["<firma> annual report"], ["{unknown} revenue"], [""]])
+def test_override_validation_rejects_invalid_placeholder_or_empty_values(overrides) -> None:
+    from src.research.query_resolver import validate_query_overrides
+
+    with pytest.raises(ValueError):
+        validate_query_overrides(overrides)
+
+
 # ---------------------------------------------------------------------------
 # Error contract
 # ---------------------------------------------------------------------------

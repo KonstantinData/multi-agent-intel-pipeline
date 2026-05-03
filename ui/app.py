@@ -22,6 +22,7 @@ from src.config import summarize_runtime_models
 from src.exporters.json_export import export_binary_artifact
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
+from src.orchestration.run_paths import resolve_run_dir
 from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
 from ui.components.dashboard_renderer import render_dashboard
 from ui.i18n import (
@@ -216,7 +217,7 @@ def _build_pdf_export(lang: str) -> tuple[bytes, str]:
     pdf_payload.setdefault("run_id", st.session_state.run_id)
     pdf_bytes = generate_pdf(pdf_payload, lang=lang)
     export_binary_artifact(
-        run_dir=RUNS_DIR / st.session_state.run_id,
+        run_dir=resolve_run_dir(st.session_state.run_id, runs_root=RUNS_DIR),
         relative_path=f"reports/{file_name}",
         content=pdf_bytes,
     )

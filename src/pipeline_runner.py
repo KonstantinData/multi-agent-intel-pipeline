@@ -38,9 +38,11 @@ from src.orchestration.follow_up import run_bounded_follow_up
 from src.orchestration.dashboard_composer import compose_dashboard
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
 from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
-from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry
+from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry, matrix_status_for_task_status
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
 from src.orchestration.run_context import RunContext
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
+from src.orchestration.task_router import build_synthesis_assignments
 from src.orchestration.synthesis import (
     assess_research_readiness,
     build_contact_enrichment_stage,
@@ -55,7 +57,6 @@ from src.research.normalize import normalize_domain
 
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNS_DIR = ROOT / "artifacts" / "runs"
 LONG_TERM_MEMORY_PATH = ROOT / "artifacts" / "memory" / "long_term_memory.json"
 
 
@@ -214,6 +215,16 @@ def _sync_finalization_artifacts(
     pipeline_data["final_briefing"] = final_briefing.model_dump(mode="json")
 
 
+def _admitted_packages_for_synthesis(department_packages: dict[str, Any]) -> dict[str, Any]:
+    return {
+        dept: pkg
+        for dept, pkg in department_packages.items()
+        if isinstance(pkg, dict)
+        and dept != "SynthesisDepartment"
+        and pkg.get("admission", {}).get("downstream_visible", False)
+    }
+
+
 def resume_pipeline(
     *,
     run_id: str,
@@ -225,9 +236,7 @@ def resume_pipeline(
     Loads the persisted run state, applies user decisions to the resolution
     plan and answer matrix, then re-evaluates the finalization gate.
     """
-    run_dir = RUNS_DIR / run_id
-    if not run_dir.exists():
-        raise FileNotFoundError(f"Run '{run_id}' not found.")
+    run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
 
     run_context = RunContext.from_snapshot(
         json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
@@ -347,7 +356,7 @@ def run_pipeline(
 ) -> dict[str, Any]:
     start_time = perf_counter()
     run_id = _timestamp_run_id()
-    run_dir = RUNS_DIR / run_id
+    run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)
     intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
     agents = create_runtime_agents()
 
@@ -430,21 +439,36 @@ def run_pipeline(
                     "synthesis": sections.get("synthesis", {}),
                     "quality_review": {},
                 },
-                public_gap_questions=first_round_resolution.get("meeting_critical_public_gaps", []),
+                public_gap_questions=(
+                    first_round_resolution.get("meeting_critical_public_gap_candidates")
+                    or first_round_resolution.get("meeting_critical_public_gaps", [])
+                ),
                 max_questions=4,
             )
             run_context.resolution_state["auto_close"] = {
                 "triggered": True,
                 **auto_close_result,
             }
-            # RA-04: Feed closure results back into answer matrix
+            # RA-04: Feed closure results back into answer matrix by explicit
+            # question mapping only.  Missing mappings remain unresolved.
+            mapping_missing = False
             for attempt in auto_close_result.get("attempts", []):
                 if attempt.get("resolved"):
-                    for qid, entry in run_context.answer_matrix.items():
-                        if entry.get("status") in {"pending", "blocked"}:
-                            # Mark as partially answered by closure
+                    resolved_question_ids = [
+                        str(qid).strip()
+                        for qid in attempt.get("resolved_question_ids", [])
+                        if str(qid).strip()
+                    ]
+                    if not resolved_question_ids:
+                        mapping_missing = True
+                        continue
+                    for qid in resolved_question_ids:
+                        entry = run_context.answer_matrix.get(qid)
+                        if entry and entry.get("status") in {"pending", "blocked", "partially_answered"}:
                             entry["status"] = "partially_answered"
                             entry["notes"] = f"Auto-close follow-up resolved: {attempt.get('question', '')[:80]}"
+            if mapping_missing:
+                run_context.resolution_state["auto_close"]["mapping_missing"] = True
             messages.append(
                 emit_message(
                     on_message,
@@ -468,6 +492,120 @@ def run_pipeline(
 
             # RA-07: Checkpoint after closure
             _write_checkpoint(run_dir, "after_closure", run_context)
+
+        synthesis_assignments = build_synthesis_assignments(brief)
+        for assignment in synthesis_assignments:
+            run_context.record_task(
+                assignee=assignment.assignee,
+                objective=assignment.objective,
+                section=assignment.target_section,
+                task_key=assignment.task_key,
+                model_name=assignment.model_name,
+                allowed_tools=assignment.allowed_tools,
+                status="pending_synthesis",
+            )
+
+        if "synthesis" in agents:
+            messages.append(
+                emit_message(
+                    on_message,
+                    agent="Supervisor",
+                    content=json.dumps(
+                        {"status": "synthesis_assigned", "department": "SynthesisDepartment"},
+                        ensure_ascii=False,
+                    ),
+                )
+            )
+            pre_synthesis_quality_review = build_quality_review(run_context.short_term_memory.snapshot())
+            pre_synthesis_primary_source_stage = build_primary_source_stage(
+                company_profile=sections.get("company_profile", {}),
+                industry_analysis=sections.get("industry_analysis", {}),
+                market_network=sections.get("market_network", {}),
+            )
+            pre_synthesis_contact_enrichment_stage = build_contact_enrichment_stage(
+                company_profile=sections.get("company_profile", {}),
+                contact_intelligence=sections.get("contact_intelligence", {}),
+            )
+            sections["primary_source_stage"] = pre_synthesis_primary_source_stage
+            sections["contact_enrichment_stage"] = pre_synthesis_contact_enrichment_stage
+            synthesis_ctx = build_synthesis_context(
+                company_profile=sections.get("company_profile", {}),
+                industry_analysis=sections.get("industry_analysis", {}),
+                market_network=sections.get("market_network", {}),
+                contact_intelligence=sections.get("contact_intelligence", {}),
+                quality_review=pre_synthesis_quality_review,
+                memory_snapshot=run_context.short_term_memory.snapshot(),
+                primary_source_stage=pre_synthesis_primary_source_stage,
+                contact_enrichment_stage=pre_synthesis_contact_enrichment_stage,
+            )
+            synthesis_result, synthesis_messages = agents["synthesis"].run(
+                brief=brief,
+                department_packages=_admitted_packages_for_synthesis(department_packages),
+                supervisor=agents["supervisor"],
+                departments=agents["departments"],
+                memory_store=run_context.short_term_memory,
+                on_message=on_message,
+                synthesis_context=synthesis_ctx,
+            )
+            messages.extend(synthesis_messages)
+            synthesis_acceptance = agents["supervisor"].accept_synthesis(
+                synthesis_payload=synthesis_result,
+            )
+            synthesis_decision = synthesis_acceptance.get("decision", "rejected")
+            department_packages["SynthesisDepartment"] = {
+                "admission": {
+                    "decision": synthesis_decision,
+                    "reason": synthesis_acceptance.get("reason", ""),
+                    "downstream_visible": synthesis_decision != "rejected",
+                },
+                "raw_package": synthesis_result,
+                "admitted_payload": synthesis_result if synthesis_decision != "rejected" else None,
+            }
+            sections["synthesis"] = synthesis_result
+            messages.append(
+                emit_message(
+                    on_message,
+                    agent="Supervisor",
+                    content=json.dumps(
+                        {"department": "SynthesisDepartment", "status": "synthesis_reviewed", **synthesis_acceptance},
+                        ensure_ascii=False,
+                    ),
+                )
+            )
+            synthesis_task_status = {
+                "accepted": "accepted",
+                "accepted_with_gaps": "degraded",
+                "rejected": "degraded",
+            }.get(synthesis_decision, "degraded")
+            for assignment in synthesis_assignments:
+                run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
+                run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
+                matrix_status = matrix_status_for_task_status(synthesis_task_status)
+                for question_id in assignment.question_ids:
+                    entry = run_context.answer_matrix.setdefault(
+                        question_id,
+                        {
+                            "status": "pending",
+                            "answer": "",
+                            "notes": "",
+                            "source_tasks": [],
+                            "target_section": assignment.target_section,
+                        },
+                    )
+                    if assignment.task_key not in entry["source_tasks"]:
+                        entry["source_tasks"].append(assignment.task_key)
+                    entry["status"] = matrix_status
+                    entry["notes"] = (
+                        f"Last update from task '{assignment.task_key}' "
+                        f"({synthesis_task_status}) in department '{assignment.assignee}'."
+                    )
+                completed_backlog.append({
+                    "task_key": assignment.task_key,
+                    "label": assignment.label,
+                    "target_section": assignment.target_section,
+                    "status": synthesis_task_status,
+                })
+            _write_checkpoint(run_dir, "after_synthesis", run_context)
 
         # Quality review still derived from memory snapshot
         quality_review = build_quality_review(run_context.short_term_memory.snapshot())
@@ -625,15 +763,6 @@ def run_pipeline(
         run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
         run_context.resolution_state["resolution_plan"] = resolution_plan
 
-        report_package, report_messages = agents["report_writer"].run(
-            pipeline_data=pipeline_data,
-            department_packages=department_packages,
-            on_message=on_message,
-        )
-        run_context.report_package = report_package
-        pipeline_data["report_package"] = report_package
-        messages.extend(report_messages)
-
         # RA-06: Meeting-readiness gate — enforced before finalization
         readiness_gate = MeetingReadinessGate()
         meeting_assessment = readiness_gate.evaluate(
@@ -709,6 +838,15 @@ def run_pipeline(
             status=status,
             meeting_actions=meeting_actions,
         )
+
+        report_package, report_messages = agents["report_writer"].run(
+            pipeline_data=pipeline_data,
+            department_packages=department_packages,
+            on_message=on_message,
+        )
+        run_context.report_package = report_package
+        pipeline_data["report_package"] = report_package
+        messages.extend(report_messages)
 
         # RA-08: Persist budget tracker and guardrail telemetry
         run_context.resolution_state["budget_tracker"] = budget_tracker.snapshot()

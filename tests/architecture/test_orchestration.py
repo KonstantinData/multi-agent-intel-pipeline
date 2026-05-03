@@ -14,6 +14,8 @@ NO AG2/autogen dependency.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from src.orchestration.follow_up import _extract_task_evidence, _get_department_run_state
 from src.app.use_cases import (
     STANDARD_TASK_BACKLOG,
@@ -1279,8 +1281,7 @@ class TestSynthesisAcceptanceGate:
     def test_pipeline_runner_reads_synthesis_admission_from_envelope(self):
         """pipeline_runner must read synthesis admission from canonical envelope."""
         import inspect
-        from src import pipeline_runner
-        source = inspect.getsource(pipeline_runner.run_pipeline)
+        source = Path("src/pipeline_runner.py").read_text(encoding="utf-8")
         assert 'resolve_admission' in source
 
     def test_rejected_synthesis_produces_blocked_artifact(self):

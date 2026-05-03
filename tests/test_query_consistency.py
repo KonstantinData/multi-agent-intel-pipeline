@@ -42,6 +42,7 @@ _TASK_TO_DEPARTMENT = {
 
 ROOT = Path(__file__).resolve().parent.parent
 STRATEGY_DIR = ROOT / "knowledge" / "query_strategies"
+SOURCE_DIR = ROOT / "knowledge" / "sources"
 
 
 def _strategy_path(slug: str) -> Path:
@@ -196,3 +197,17 @@ def test_validate_all_strategies_passes() -> None:
         "validate_all_strategies() reported errors:\n"
         + "\n".join(f"  {slug}: {e}" for slug, errs in errors.items() for e in errs)
     )
+
+
+def test_source_kb_contains_no_runtime_query_patterns() -> None:
+    forbidden_prefixes = ("search_patterns", "queries", "template")
+    offenders: list[str] = []
+    for path in SOURCE_DIR.glob("*.yaml"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for idx, source in enumerate(data.get("sources", [])):
+            if not isinstance(source, dict):
+                continue
+            for key in source:
+                if key.startswith(forbidden_prefixes):
+                    offenders.append(f"{path.name}: sources[{idx}].{key}")
+    assert not offenders, "Source KB must not contain runtime query templates:\n" + "\n".join(offenders)

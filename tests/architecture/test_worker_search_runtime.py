@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from src.agents.worker import ResearchWorker
+import pytest
+
 from src.domain.intake import SupervisorBrief
 from src.research.search import build_company_queries
+
+
+def _worker_cls():
+    pytest.importorskip("openai")
+    from src.agents.worker import ResearchWorker
+    return ResearchWorker
 
 
 def _brief() -> SupervisorBrief:
@@ -40,7 +47,7 @@ def test_search_queries_use_extended_timeout_and_task_result_cap(monkeypatch):
         ]
 
     monkeypatch.setattr("src.agents.worker.perform_search", _fake_search)
-    worker = ResearchWorker("CompanyResearcher")
+    worker = _worker_cls()("CompanyResearcher")
     results, _ = worker._search_queries(
         ['"Ziehl-Abegg" annual report'],
         granted_tools=("search",),
@@ -65,7 +72,7 @@ def test_company_fundamentals_extracts_revenue_and_employees_from_search_summary
         ]
 
     monkeypatch.setattr("src.agents.worker.perform_search", _fake_search)
-    worker = ResearchWorker("CompanyResearcher")
+    worker = _worker_cls()("CompanyResearcher")
     result = worker.run(
         brief=_brief(),
         task_key="company_fundamentals",

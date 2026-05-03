@@ -535,20 +535,12 @@ def run_supervisor_loop(
         )
     )
 
-    # Strategic Synthesis Department — AG2 GroupChat
+    # Strategic Synthesis Department is intentionally not run here.  The public
+    # pipeline orchestrator runs it after first-round resolution and optional
+    # auto-close so synthesis sees the final answer matrix for the domain round.
     synthesis_assignments = build_synthesis_assignments(brief)
-    for assignment in synthesis_assignments:
-        run_context.record_task(
-            assignee=assignment.assignee,
-            objective=assignment.objective,
-            section=assignment.target_section,
-            task_key=assignment.task_key,
-            model_name=assignment.model_name,
-            allowed_tools=assignment.allowed_tools,
-            status="pending_synthesis",
-        )
 
-    if "synthesis" in agents:
+    if "synthesis" in agents and getattr(run_context, "run_synthesis_inside_supervisor_loop", False):
         messages.append(
             emit_message(
                 on_message,

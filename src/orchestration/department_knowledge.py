@@ -378,28 +378,40 @@ def _slug_for_department(department: str) -> str:
     return _DEPARTMENT_TO_SLUG[department]
 
 
-def _read_json_payload(path: Path) -> dict[str, Any]:
+def _read_json_payload(path: Path, *, strict: bool = False, department: str = "") -> dict[str, Any]:
     if not path.exists():
+        if strict:
+            raise FileNotFoundError(f"KB file not found for {department or 'unknown department'}: {path}")
         return {}
     try:
         raw = path.read_text(encoding="utf-8").strip()
-    except OSError:
+    except OSError as exc:
+        if strict:
+            raise OSError(f"Cannot read KB file for {department or 'unknown department'}: {path}: {exc}") from exc
         return {}
     if not raw:
+        if strict:
+            raise ValueError(f"KB file is empty for {department or 'unknown department'}: {path}")
         return {}
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
+        if strict:
+            raise ValueError(f"Cannot parse KB file for {department or 'unknown department'}: {path}: {exc}") from exc
         logger.warning("Could not parse KB payload %s: %s", path, exc)
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        if strict:
+            raise ValueError(f"KB file must contain a JSON object for {department or 'unknown department'}: {path}")
+        return {}
+    return parsed
 
 
 @lru_cache(maxsize=8)
 def load_department_policy(department: str) -> DepartmentPolicy:
     slug = _slug_for_department(department)
     path = ROOT / "knowledge" / "policies" / f"{slug}.yaml"
-    raw_payload = _read_json_payload(path)
+    raw_payload = _read_json_payload(path, strict=_STRICT_PROFILE_LOADING, department=department)
     if not raw_payload:
         if _STRICT_PROFILE_LOADING:
             raise RuntimeError(
@@ -417,7 +429,7 @@ def load_department_policy(department: str) -> DepartmentPolicy:
 def load_department_source_profile(department: str) -> dict[str, Any]:
     slug = _slug_for_department(department)
     path = ROOT / "knowledge" / "sources" / f"{slug}.yaml"
-    raw_payload = _read_json_payload(path)
+    raw_payload = _read_json_payload(path, strict=_STRICT_PROFILE_LOADING, department=department)
     if not raw_payload:
         if _STRICT_PROFILE_LOADING:
             raise RuntimeError(
