@@ -1,0 +1,6 @@
+fail-on-severity: high
+vulnerability-check: true
+license-check: true
+fail-on-scopes:
+  - runtime
+warn-only: false

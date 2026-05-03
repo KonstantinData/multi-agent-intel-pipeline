@@ -1,0 +1,52 @@
+# .github/CODEOWNERS
+# Rules: the LAST matching pattern wins.
+# Owner format: @username (personal account) or @org/team (only if repo is in an org and teams exist).
+
+# -------------------------------------------------------------------
+# Global fallback (everything not matched below)
+# -------------------------------------------------------------------
+* @KonstantinData
+
+# -------------------------------------------------------------------
+# High-impact governance / supply-chain paths
+# -------------------------------------------------------------------
+/.github/ @KonstantinData
+/.github/workflows/ @KonstantinData
+
+/policies/ @KonstantinData
+/bom/ @KonstantinData
+/scripts/ @KonstantinData
+
+# -------------------------------------------------------------------
+# Documentation (German)
+# -------------------------------------------------------------------
+/docs/de/ @KonstantinData
+/docs/de/architecture/ @KonstantinData
+/docs/de/ai-act/ @KonstantinData
+/docs/de/ai-governance/ @KonstantinData
+/docs/de/privacy/ @KonstantinData
+/docs/de/security/ @KonstantinData
+/docs/de/models/ @KonstantinData
+/docs/de/models/model-cards/ @KonstantinData
+/docs/de/agents/ @KonstantinData
+/docs/de/agents/agent-cards/ @KonstantinData
+/docs/de/licenses/ @KonstantinData
+/docs/de/audit/ @KonstantinData
+/docs/de/risk/ @KonstantinData
+
+# -------------------------------------------------------------------
+# Documentation (English)
+# -------------------------------------------------------------------
+/docs/en/ @KonstantinData
+/docs/en/architecture/ @KonstantinData
+/docs/en/ai-act/ @KonstantinData
+/docs/en/ai-governance/ @KonstantinData
+/docs/en/privacy/ @KonstantinData
+/docs/en/security/ @KonstantinData
+/docs/en/models/ @KonstantinData
+/docs/en/models/model-cards/ @KonstantinData
+/docs/en/agents/ @KonstantinData
+/docs/en/agents/agent-cards/ @KonstantinData
+/docs/en/licenses/ @KonstantinData
+/docs/en/audit/ @KonstantinData
+/docs/en/risk/ @KonstantinData

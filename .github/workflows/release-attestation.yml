@@ -1,0 +1,65 @@
+name: release-attestation
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-attestation-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  release-attestation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Generate AI-BOM
+        run: python scripts/generate_ai_bom.py --output bom/ai-bom/ai-bom.json
+      - name: Validate AI-BOM
+        run: python scripts/validate_ai_bom.py bom/ai-bom/ai-bom.json
+      - name: Generate SBOM
+        run: python scripts/generate_sbom.py --repo-root . --output bom/sbom/sbom.json
+      - name: Validate SBOM
+        run: python scripts/validate_sbom.py bom/sbom/sbom.json
+      - name: Generate release attestation
+        run: python scripts/generate_release_attestation.py --ai-bom bom/ai-bom/ai-bom.json --sbom bom/sbom/sbom.json --output bom/attestations/release-attestation.json
+      - name: Validate release attestation schema
+        run: python scripts/validate_audit_schema.py release-attestation --path bom/attestations/release-attestation.json
+      - name: Sign build provenance attestation (public repos)
+        if: ${{ github.event.repository.private == false }}
+        uses: actions/attest@v4
+        with:
+          subject-path: bom/attestations/release-attestation.json
+      - name: Upload release attestation artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-attestation
+          path: |
+            bom/ai-bom/ai-bom.json
+            bom/sbom/sbom.json
+            bom/attestations/release-attestation.json
+          if-no-files-found: error
