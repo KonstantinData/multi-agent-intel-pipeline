@@ -8,7 +8,7 @@ where to find the canonical architecture documentation.
 
 It is intentionally brief. For full details, use:
 - `README.md`
-- `docs/target_runtime_architecture.md`
+- `docs/drawio/target_runtime_architecture.md`
 - `src/orchestration/contracts.py`
 
 ---
@@ -260,7 +260,8 @@ When working on tests:
 | `src/agents/report_writer.py` | report package assembly agent used by report runtime |
 | `src/memory/short_term_store.py` | run-scoped memory including department run states |
 | `src/memory/consolidation.py` | process-pattern consolidation into long-term memory |
-| `docs/target_runtime_architecture.md` | canonical detailed runtime architecture reference |
+| `docs/drawio/target_runtime_architecture.md` | canonical detailed runtime architecture reference |
+| `docs/target_runtime_architecture.md` | compatibility wrapper that points to the canonical architecture document |
 | `knowledge/sources/*.yaml` | department-specific source registry: priorities, evidence type, provenance notes |
 | `knowledge/policies/*.yaml` | department-specific required fields, evidence minima, and gate rules |
 | `knowledge/query_strategies/*.yaml` | runtime query templates per task — single query-strategy authority |
@@ -272,15 +273,16 @@ When working on tests:
 
 Use these files as the primary source of truth:
 - `README.md`
-- `docs/target_runtime_architecture.md`
+- `docs/drawio/target_runtime_architecture.md`
 - `src/orchestration/contracts.py`
 
 If this file ever disagrees with those sources or with the executable code,
 prefer:
 1. executable code
-2. `docs/target_runtime_architecture.md`
+2. `docs/drawio/target_runtime_architecture.md`
 3. `README.md`
-4. this file
+4. `docs/target_runtime_architecture.md`
+5. this file
 
 ---
 

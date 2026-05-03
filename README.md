@@ -74,7 +74,7 @@ department-specific and checked at package finalization via Knowledge Base:
 ### Synthesis Plane
 
 - **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment.
-- **Report Writer Runtime** — dedicated runtime node (`report_writer`) that assembles `report_package` from validated pipeline sections and emits `ReportWriter` telemetry events.
+- **Report Writer Runtime** — dedicated runtime node (`report_writer`) that assembles `report_package` after finalization from validated pipeline sections, final run status, meeting actions, and final briefing artifacts.
 - **Report rendering/export** — UI/export layer generates operator-facing PDF output (German + English) from the finalized run artifacts.
 
 ### Meeting-Readiness Layer
@@ -101,8 +101,9 @@ The runtime plans around **meeting questions**, not only departments.
 6. Bounded closure loop for publicly researchable meeting-critical gaps
 7. Synthesis Department builds the cross-domain interpretation
 8. Meeting-Readiness Gate evaluates finalization eligibility
-9. Final Briefing Composer produces meeting actions
-10. Artifacts exported to `artifacts/runs/<run_id>/` with phase-aware checkpoints
+9. Final Briefing Composer produces meeting actions and final briefing artifacts
+10. Report Writer assembles the final `report_package`
+11. Artifacts exported to `artifacts/runs/<run_id>/` with phase-aware checkpoints
 
 ### Dashboard pause/resume
 
@@ -113,7 +114,7 @@ The runtime plans around **meeting questions**, not only departments.
 ### Follow-up
 
 1. User enters `run_id` and a question in the UI
-2. System loads the historical run context (answer matrix + evidence packets as primary grounding)
+2. System loads the historical run context (run-brain task artifacts as primary grounding, then `pipeline_data`, then department packages)
 3. Supervisor routes the question to the correct department
 4. Answer is generated from stored run memory and persisted as a follow-up artifact
 
@@ -160,7 +161,7 @@ Each run writes to `artifacts/runs/<run_id>/`:
 | `pipeline_data.json` | Structured research output |
 | `run_context.json` | Supervisor brief, answer matrix, question registry, resolution state, department packages, department run states |
 | `memory_snapshot.json` | Short-term memory: evidence packets, gap candidates, meeting actions, resolution plans |
-| `checkpoints/*.json` | Phase-aware checkpoints (after_first_pass, after_closure, after_finalization) |
+| `checkpoints/*.json` | Phase-aware checkpoints (after_first_pass, after_closure, after_synthesis, after_finalization) |
 | `follow_up_history.json` | Follow-up Q&A (when applicable) |
 
 ## Success-Path Semantics
