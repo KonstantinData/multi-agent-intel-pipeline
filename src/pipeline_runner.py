@@ -357,7 +357,23 @@ def run_pipeline(
     start_time = perf_counter()
     run_id = _timestamp_run_id()
     run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)
-    intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
+    try:
+        intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
+    except ValueError as exc:
+        elapsed_seconds = round(perf_counter() - start_time, 3)
+        return {
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "messages": [],
+            "pipeline_data": empty_pipeline_data(),
+            "run_context": {
+                "intake": {"company_name": company_name, "web_domain": web_domain},
+            },
+            "usage": {},
+            "budget": {"elapsed_seconds": elapsed_seconds},
+            "status": "failed",
+            "error": str(exc),
+        }
     agents = create_runtime_agents()
 
     memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)

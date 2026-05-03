@@ -75,6 +75,8 @@ class SupervisorAgent:
                     "summary": str(research["summary"]),
                 }
             ],
+            fetch_error_type=str(snapshot.get("error_type", "")),
+            fetch_error_message=str(snapshot.get("error_message", "")),
         )
         message_payload = {
             "section": "supervisor_brief",

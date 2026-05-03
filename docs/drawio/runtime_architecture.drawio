@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="updated-runtime-architecture" name="Updated Runtime Architecture">
-        <mxGraphModel dx="1461" dy="705" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="2500" math="0" shadow="0">
+        <mxGraphModel dx="1169" dy="813" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2600" pageHeight="2500" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -324,8 +324,14 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e_supervisor_kb" value="load KB policies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="supervisor" target="department_kb" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="e_supervisor_kb" value="load KB policies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" parent="1" source="supervisor" target="department_kb" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="445" y="490"/>
+                            <mxPoint x="110" y="490"/>
+                            <mxPoint x="110" y="1100"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
                 <mxCell id="e_kb_company" value="source/policy guidance" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;dashed=1;strokeColor=#ea580c;fontColor=#7c2d12;endArrow=block;" parent="1" source="department_kb" target="company_lead" edge="1">
                     <mxGeometry relative="1" as="geometry">
