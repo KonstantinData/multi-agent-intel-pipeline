@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 from src.agents.runtime_factory import create_runtime_agents
-from src.agents.specs import AGENT_SPECS
 from src.app.use_cases import (
     BLOCKED_RUN_STATUS,
     DISCOVERY_READY_RUN_STATUS,
@@ -24,7 +25,7 @@ from src.config import (
     get_search_model,
     summarize_worker_report_costs,
 )
-from src.domain.intake import IntakeRequest
+from src.domain.intake import IntakeRequest, SupervisorBrief
 from src.exporters.json_export import export_run
 from src.memory.backfill import backfill_long_term_memory_from_runs
 from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_patterns
@@ -62,10 +63,67 @@ from src.research.normalize import normalize_domain
 
 ROOT = Path(__file__).resolve().parent.parent
 LONG_TERM_MEMORY_PATH = ROOT / "artifacts" / "memory" / "long_term_memory.json"
+BACKFILL_LONG_TERM_MEMORY_ENV = "LIQUISTO_BACKFILL_LONG_TERM_MEMORY"
+
+
+@dataclass(slots=True)
+class InitialRunState:
+    start_time: float
+    run_id: str
+    run_dir: Path
+    intake: IntakeRequest
+    agents: dict[str, Any]
+    memory_store: FileLongTermMemoryStore
+    run_context: RunContext
+    messages: list[dict[str, Any]]
+    budget_tracker: PhaseBudgetTracker
+    normalized_domain: str
+
+
+@dataclass(slots=True)
+class SupervisorBriefResult:
+    brief: SupervisorBrief
+    supervisor_message: dict[str, Any]
+
+
+@dataclass(slots=True)
+class FirstPassResult:
+    sections: dict[str, Any]
+    department_packages: dict[str, Any]
+    completed_backlog: list[dict[str, Any]]
+    department_timings: dict[str, Any]
+    first_round_resolution: dict[str, Any]
+    first_pass_tokens: int
+
+
+@dataclass(slots=True)
+class AutoCloseResult:
+    triggered: bool
+    payload: dict[str, Any]
+
+
+@dataclass(slots=True)
+class SynthesisPhaseResult:
+    sections: dict[str, Any]
+    department_packages: dict[str, Any]
+    completed_backlog: list[dict[str, Any]]
+    department_timings: dict[str, Any]
+    first_round_resolution: dict[str, Any]
+
+
+@dataclass(slots=True)
+class FinalizationResult:
+    pipeline_data: dict[str, Any]
+    readiness: dict[str, Any]
+    status: str
+    resume_entrypoint: str
+    department_timings: dict[str, Any]
+    department_packages: dict[str, Any]
 
 
 def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> None:
     """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
+    run_context.resolution_state["last_checkpoint"] = phase
     cp_dir = run_dir / "checkpoints"
     cp_dir.mkdir(parents=True, exist_ok=True)
     payload = {"phase": phase, "status": run_context.status, **run_context.snapshot()}
@@ -73,29 +131,120 @@ def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> Non
         json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8",
     )
 
-AGENT_META = {
-    name: {"icon": spec.icon, "color": spec.color, "summary": spec.summary}
-    for name, spec in AGENT_SPECS.items()
-}
-
-PIPELINE_STEPS = [
-    ("Supervisor", "Intake + Routing"),
-    ("CompanyDepartment", "Company"),
-    ("MarketDepartment", "Market"),
-    ("BuyerDepartment", "Buyer"),
-    ("ContactDepartment", "Contact Intelligence"),
-    ("SynthesisDepartment", "Strategic Synthesis"),
-    ("ReportWriter", "Report"),
-]
-
 MessageHook = Callable[[dict[str, Any]], None] | None
 
 
 def _timestamp_run_id() -> str:
+    """Create a sortable UTC run id used for persisted artifact directories."""
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _record_phase(run_context: RunContext, phase: str) -> None:
+    """Store the current phase in run artifacts for failure diagnostics."""
+    run_context.resolution_state["current_phase"] = phase
+
+
+def _long_term_backfill_enabled() -> bool:
+    """Keep run-path backfill explicit; use maintenance/startup jobs by default."""
+    return os.getenv(BACKFILL_LONG_TERM_MEMORY_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _failed_intake_result(
+    *,
+    run_id: str,
+    run_dir: Path,
+    company_name: str,
+    web_domain: str,
+    start_time: float,
+    error: str,
+) -> dict[str, Any]:
+    elapsed_seconds = round(perf_counter() - start_time, 3)
+    return {
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "messages": [],
+        "pipeline_data": empty_pipeline_data(),
+        "run_context": {
+            "intake": {"company_name": company_name, "web_domain": web_domain},
+            "resolution_state": {"current_phase": "intake_validation"},
+        },
+        "usage": {},
+        "budget": {"elapsed_seconds": elapsed_seconds, "failed_phase": "intake_validation"},
+        "status": "failed",
+        "error": error,
+        "failed_phase": "intake_validation",
+    }
+
+
+def _initialize_run(
+    *,
+    start_time: float,
+    run_id: str,
+    run_dir: Path,
+    company_name: str,
+    web_domain: str,
+) -> InitialRunState:
+    # Validate and normalize intake before creating runtime side effects.
+    intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
+    normalized_domain = normalize_domain(intake.web_domain)
+
+    # Runtime agents include the Supervisor, domain departments, synthesis, and report writer.
+    agents = create_runtime_agents()
+
+    memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
+    backfill_enabled = _long_term_backfill_enabled()
+    backfilled_patterns = (
+        backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=RUNS_DIR)
+        if backfill_enabled
+        else 0
+    )
+    run_context = RunContext(
+        run_id=run_id,
+        intake={
+            "company_name": intake.company_name,
+            "web_domain": intake.web_domain,
+            "normalized_domain": normalized_domain,
+            "language": intake.language,
+        },
+    )
+    _record_phase(run_context, "initialized")
+    run_context.resolution_state["long_term_memory"] = {
+        "backfill_enabled": backfill_enabled,
+        "backfilled_patterns": backfilled_patterns,
+    }
+
+    # Long-term memory retrieval is process-pattern only; run facts stay in short-term memory.
+    run_context.retrieved_strategies = retrieve_strategies(
+        memory_store,
+        domain=normalized_domain,
+        limit=5,
+    )
+    run_context.retrieved_role_strategies = {
+        role: retrieve_strategies(
+            memory_store,
+            domain=normalized_domain,
+            role=role,
+            limit=3,
+        )
+        for role in RETRIEVABLE_ROLE_ORDER
+    }
+
+    return InitialRunState(
+        start_time=start_time,
+        run_id=run_id,
+        run_dir=run_dir,
+        intake=intake,
+        agents=agents,
+        memory_store=memory_store,
+        run_context=run_context,
+        messages=[],
+        budget_tracker=PhaseBudgetTracker(),
+        normalized_domain=normalized_domain,
+    )
+
+
 def _serialize_message_content(message: dict[str, Any]) -> str:
+    """Normalize event content so downstream JSON extraction can be best-effort."""
     content = message.get("content", "")
     if isinstance(content, str):
         return content
@@ -103,6 +252,7 @@ def _serialize_message_content(message: dict[str, Any]) -> str:
 
 
 def _extract_pipeline_data(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Recover section payloads from emitted messages for legacy callers."""
     pipeline_data = empty_pipeline_data()
     for message in messages:
         content = _serialize_message_content(message)
@@ -123,6 +273,7 @@ def _extract_pipeline_data(messages: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _normalize_meeting_actions(raw_actions: list[Any] | None) -> list[MeetingAction]:
+    """Accept already-validated actions and JSON-like dicts from persisted state."""
     actions: list[MeetingAction] = []
     for item in raw_actions or []:
         if isinstance(item, MeetingAction):
@@ -141,6 +292,7 @@ def _sync_finalization_artifacts(
     status: str,
     meeting_actions: list[MeetingAction] | list[dict[str, Any]] | None = None,
 ) -> None:
+    """Keep final status artifacts aligned across run context, memory, and export data."""
     evidence_health = str(
         (pipeline_data.get("quality_review") or {}).get("evidence_health") or "low"
     )
@@ -220,6 +372,7 @@ def _sync_finalization_artifacts(
 
 
 def _admitted_packages_for_synthesis(department_packages: dict[str, Any]) -> dict[str, Any]:
+    """Expose only Supervisor-admitted department packages to synthesis."""
     return {
         dept: pkg
         for dept, pkg in department_packages.items()
@@ -240,6 +393,7 @@ def resume_pipeline(
     Loads the persisted run state, applies user decisions to the resolution
     plan and answer matrix, then re-evaluates the finalization gate.
     """
+    # Resume works from persisted artifacts; no department rerun happens here.
     run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
 
     run_context = RunContext.from_snapshot(
@@ -248,13 +402,14 @@ def resume_pipeline(
     pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
 
     if run_context.status != SELECTION_REQUIRED_RUN_STATUS:
+        # Only selection-paused runs can enter this resume path.
         return {
             "run_id": run_id,
             "status": run_context.status,
             "error": f"Run is not paused for user selection (status={run_context.status}).",
         }
 
-    # Apply user depth selections to answer matrix
+    # Apply user depth selections to the answer matrix used by readiness gates.
     selected_questions = list(user_selections.get("selected_questions", []))
     skipped_questions = list(user_selections.get("skipped_questions", []))
 
@@ -270,7 +425,7 @@ def resume_pipeline(
             entry["status"] = "blocked"
             entry["notes"] = "User skipped optional depth."
 
-    # Persist user selections in resolution state
+    # Persist user selections so dashboard/export state explains the resume decision.
     run_context.resolution_state["user_selections"] = {
         "selected_questions": selected_questions,
         "skipped_questions": skipped_questions,
@@ -318,7 +473,7 @@ def resume_pipeline(
     # RA-07: Checkpoint after dashboard resume
     _write_checkpoint(run_dir, "after_dashboard_resume", run_context)
 
-    # Re-export
+    # Re-export the updated run artifacts for UI and follow-up loading.
     run_context_snapshot = run_context.snapshot()
     export_run(
         run_dir=run_dir,
@@ -352,663 +507,778 @@ def resume_pipeline(
     }
 
 
+def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) -> SupervisorBriefResult:
+    _record_phase(state.run_context, "supervisor_brief")
+    brief, supervisor_message = state.agents["supervisor"].build_intake_brief(state.intake)
+    state.run_context.supervisor_brief = supervisor_message["payload"]
+    state.run_context.question_registry = build_question_registry()
+    state.run_context.answer_matrix = build_initial_answer_matrix()
+    state.messages.append(
+        emit_message(
+            on_message,
+            agent="Supervisor",
+            content=json.dumps(supervisor_message, ensure_ascii=False),
+        )
+    )
+    _write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
+    return SupervisorBriefResult(brief=brief, supervisor_message=supervisor_message)
+
+
+def _run_first_pass(
+    state: InitialRunState,
+    *,
+    brief: SupervisorBrief,
+    on_message: MessageHook,
+) -> FirstPassResult:
+    _record_phase(state.run_context, "first_pass")
+    sections, department_packages, loop_messages, completed_backlog, department_timings, first_round_resolution = run_supervisor_loop(
+        brief=brief,
+        run_context=state.run_context,
+        agents=state.agents,
+        on_message=on_message,
+    )
+    state.messages.extend(loop_messages)
+    state.run_context.short_term_memory.task_statuses.update(
+        {item["task_key"]: item["status"] for item in completed_backlog}
+    )
+
+    first_pass_snapshot = state.run_context.short_term_memory.snapshot()
+    first_pass_tokens = int(first_pass_snapshot.get("usage_totals", {}).get("total_tokens", 0) or 0)
+    state.budget_tracker.record_phase_tokens("first_pass", first_pass_tokens)
+    if not state.budget_tracker.check_budget("first_pass"):
+        state.budget_tracker.record_stop("first_pass", "token_budget_exceeded")
+
+    state.run_context.resolution_state = {
+        **state.run_context.resolution_state,
+        "first_round_resolution": first_round_resolution,
+        "auto_close": {
+            "triggered": False,
+            "max_questions": 4,
+            "attempted_questions": 0,
+            "stop_reason": "not_required",
+            "remaining_public_gaps": [],
+        },
+    }
+    _write_checkpoint(state.run_dir, "after_first_pass", state.run_context)
+    return FirstPassResult(
+        sections=sections,
+        department_packages=department_packages,
+        completed_backlog=completed_backlog,
+        department_timings=department_timings,
+        first_round_resolution=first_round_resolution,
+        first_pass_tokens=first_pass_tokens,
+    )
+
+
+def _run_auto_close_if_required(
+    state: InitialRunState,
+    *,
+    first_pass: FirstPassResult,
+    on_message: MessageHook,
+) -> AutoCloseResult:
+    if first_pass.first_round_resolution.get("bucket") != "AUTO_CLOSE_REQUIRED":
+        return AutoCloseResult(triggered=False, payload={})
+
+    _record_phase(state.run_context, "auto_close")
+    auto_close_result = run_bounded_follow_up(
+        run_id=state.run_id,
+        run_context=state.run_context.snapshot(),
+        pipeline_data={
+            "company_profile": first_pass.sections.get("company_profile", {}),
+            "industry_analysis": first_pass.sections.get("industry_analysis", {}),
+            "market_network": first_pass.sections.get("market_network", {}),
+            "contact_intelligence": first_pass.sections.get("contact_intelligence", {}),
+            "synthesis": first_pass.sections.get("synthesis", {}),
+            "quality_review": {},
+        },
+        public_gap_questions=(
+            first_pass.first_round_resolution.get("meeting_critical_public_gap_candidates")
+            or first_pass.first_round_resolution.get("meeting_critical_public_gaps", [])
+        ),
+        max_questions=4,
+    )
+    state.run_context.resolution_state["auto_close"] = {
+        "triggered": True,
+        **auto_close_result,
+    }
+
+    mapping_missing = False
+    for attempt in auto_close_result.get("attempts", []):
+        if attempt.get("resolved"):
+            resolved_question_ids = [
+                str(qid).strip()
+                for qid in attempt.get("resolved_question_ids", [])
+                if str(qid).strip()
+            ]
+            if not resolved_question_ids:
+                mapping_missing = True
+                continue
+            for qid in resolved_question_ids:
+                entry = state.run_context.answer_matrix.get(qid)
+                if entry and entry.get("status") in {"pending", "blocked", "partially_answered"}:
+                    entry["status"] = "partially_answered"
+                    entry["notes"] = f"Auto-close follow-up resolved: {attempt.get('question', '')[:80]}"
+    if mapping_missing:
+        state.run_context.resolution_state["auto_close"]["mapping_missing"] = True
+
+    state.messages.append(
+        emit_message(
+            on_message,
+            agent="Supervisor",
+            content=json.dumps(
+                {"status": "auto_close_follow_up_completed", **auto_close_result},
+                ensure_ascii=False,
+            ),
+        )
+    )
+
+    closure_tokens = int(
+        state.run_context.short_term_memory.snapshot()
+        .get("usage_totals", {}).get("total_tokens", 0) or 0
+    ) - first_pass.first_pass_tokens
+    state.budget_tracker.record_phase_tokens("closure", max(closure_tokens, 0))
+    _write_checkpoint(state.run_dir, "after_closure", state.run_context)
+    return AutoCloseResult(triggered=True, payload=auto_close_result)
+
+
+def _run_synthesis_phase(
+    state: InitialRunState,
+    *,
+    brief: SupervisorBrief,
+    first_pass: FirstPassResult,
+    on_message: MessageHook,
+) -> SynthesisPhaseResult:
+    _record_phase(state.run_context, "synthesis")
+    synthesis_assignments = build_synthesis_assignments(brief)
+    for assignment in synthesis_assignments:
+        state.run_context.record_task(
+            assignee=assignment.assignee,
+            objective=assignment.objective,
+            section=assignment.target_section,
+            task_key=assignment.task_key,
+            model_name=assignment.model_name,
+            allowed_tools=assignment.allowed_tools,
+            status="pending_synthesis",
+        )
+
+    if "synthesis" not in state.agents:
+        return SynthesisPhaseResult(
+            sections=first_pass.sections,
+            department_packages=first_pass.department_packages,
+            completed_backlog=first_pass.completed_backlog,
+            department_timings=first_pass.department_timings,
+            first_round_resolution=first_pass.first_round_resolution,
+        )
+
+    state.messages.append(
+        emit_message(
+            on_message,
+            agent="Supervisor",
+            content=json.dumps(
+                {"status": "synthesis_assigned", "department": "SynthesisDepartment"},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    pre_synthesis_quality_review = build_quality_review(state.run_context.short_term_memory.snapshot())
+    pre_synthesis_primary_source_stage = build_primary_source_stage(
+        company_profile=first_pass.sections.get("company_profile", {}),
+        industry_analysis=first_pass.sections.get("industry_analysis", {}),
+        market_network=first_pass.sections.get("market_network", {}),
+    )
+    pre_synthesis_contact_enrichment_stage = build_contact_enrichment_stage(
+        company_profile=first_pass.sections.get("company_profile", {}),
+        contact_intelligence=first_pass.sections.get("contact_intelligence", {}),
+    )
+    first_pass.sections["primary_source_stage"] = pre_synthesis_primary_source_stage
+    first_pass.sections["contact_enrichment_stage"] = pre_synthesis_contact_enrichment_stage
+    synthesis_ctx = build_synthesis_context(
+        company_profile=first_pass.sections.get("company_profile", {}),
+        industry_analysis=first_pass.sections.get("industry_analysis", {}),
+        market_network=first_pass.sections.get("market_network", {}),
+        contact_intelligence=first_pass.sections.get("contact_intelligence", {}),
+        quality_review=pre_synthesis_quality_review,
+        memory_snapshot=state.run_context.short_term_memory.snapshot(),
+        primary_source_stage=pre_synthesis_primary_source_stage,
+        contact_enrichment_stage=pre_synthesis_contact_enrichment_stage,
+    )
+    synthesis_result, synthesis_messages = state.agents["synthesis"].run(
+        brief=brief,
+        department_packages=_admitted_packages_for_synthesis(first_pass.department_packages),
+        memory_store=state.run_context.short_term_memory,
+        on_message=on_message,
+        synthesis_context=synthesis_ctx,
+    )
+    state.messages.extend(synthesis_messages)
+    synthesis_back_requests = list(synthesis_result.get("back_requests", []) or [])
+    if synthesis_back_requests:
+        state.run_context.resolution_state["synthesis_back_requests"] = synthesis_back_requests
+        for idx, back_request in enumerate(synthesis_back_requests, start=1):
+            subject = str(back_request.get("subject", "") or "").strip()
+            department = str(back_request.get("department", "") or "SynthesisDepartment")
+            request_type = str(back_request.get("type", "") or "clarify")
+            note = f"Synthesis back-request for {department} ({request_type}): {subject or 'n/v'}"
+            state.run_context.short_term_memory.open_questions.append(note)
+            state.messages.append(
+                emit_message(
+                    on_message,
+                    agent="Supervisor",
+                    content=json.dumps(
+                        {
+                            "status": "synthesis_back_request_recorded",
+                            "index": idx,
+                            "department": department,
+                            "request_type": request_type,
+                            "subject": subject,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            )
+
+    synthesis_acceptance = state.agents["supervisor"].accept_synthesis(
+        synthesis_payload=synthesis_result,
+    )
+    synthesis_decision = synthesis_acceptance.get("decision", "rejected")
+    first_pass.department_packages["SynthesisDepartment"] = {
+        "admission": {
+            "decision": synthesis_decision,
+            "reason": synthesis_acceptance.get("reason", ""),
+            "downstream_visible": synthesis_decision != "rejected",
+        },
+        "raw_package": synthesis_result,
+        "admitted_payload": synthesis_result if synthesis_decision != "rejected" else None,
+    }
+    first_pass.sections["synthesis"] = synthesis_result
+    state.messages.append(
+        emit_message(
+            on_message,
+            agent="Supervisor",
+            content=json.dumps(
+                {"department": "SynthesisDepartment", "status": "synthesis_reviewed", **synthesis_acceptance},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    synthesis_task_status = {
+        "accepted": "accepted",
+        "accepted_with_gaps": "degraded",
+        "rejected": "degraded",
+    }.get(synthesis_decision, "degraded")
+    for assignment in synthesis_assignments:
+        state.run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
+        state.run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
+        matrix_status = matrix_status_for_task_status(synthesis_task_status)
+        for question_id in assignment.question_ids:
+            entry = state.run_context.answer_matrix.setdefault(
+                question_id,
+                {
+                    "status": "pending",
+                    "answer": "",
+                    "notes": "",
+                    "source_tasks": [],
+                    "target_section": assignment.target_section,
+                },
+            )
+            if assignment.task_key not in entry["source_tasks"]:
+                entry["source_tasks"].append(assignment.task_key)
+            entry["status"] = matrix_status
+            entry["notes"] = (
+                f"Last update from task '{assignment.task_key}' "
+                f"({synthesis_task_status}) in department '{assignment.assignee}'."
+            )
+        first_pass.completed_backlog.append({
+            "task_key": assignment.task_key,
+            "label": assignment.label,
+            "target_section": assignment.target_section,
+            "status": synthesis_task_status,
+        })
+    _write_checkpoint(state.run_dir, "after_synthesis", state.run_context)
+    return SynthesisPhaseResult(
+        sections=first_pass.sections,
+        department_packages=first_pass.department_packages,
+        completed_backlog=first_pass.completed_backlog,
+        department_timings=first_pass.department_timings,
+        first_round_resolution=first_pass.first_round_resolution,
+    )
+
+
+def _finalize_readiness(
+    state: InitialRunState,
+    *,
+    synthesis_phase: SynthesisPhaseResult,
+    company_name: str,
+    on_message: MessageHook,
+) -> FinalizationResult:
+    _record_phase(state.run_context, "finalization")
+    sections = synthesis_phase.sections
+    department_packages = synthesis_phase.department_packages
+    first_round_resolution = synthesis_phase.first_round_resolution
+
+    quality_review = build_quality_review(state.run_context.short_term_memory.snapshot())
+    state.messages.append(
+        emit_message(
+            on_message,
+            agent="SynthesisDepartment",
+            content=json.dumps({"section": "quality_review", "payload": quality_review}, ensure_ascii=False),
+        )
+    )
+
+    synthesis_envelope = department_packages.get("SynthesisDepartment", {})
+    synthesis_admission_info = resolve_admission(synthesis_envelope)
+    synthesis_admission = synthesis_admission_info.get("decision", "rejected")
+    ag2_synthesis = sections.get("synthesis", {})
+    evidence_health = quality_review.get("evidence_health", "low")
+
+    if synthesis_admission == "accepted":
+        synthesis = {
+            **ag2_synthesis,
+            "generation_mode": ag2_synthesis.get("generation_mode", "normal"),
+            "confidence": evidence_health,
+        }
+    elif synthesis_admission == "accepted_with_gaps":
+        synthesis = {
+            **ag2_synthesis,
+            "generation_mode": ag2_synthesis.get("generation_mode", "fallback"),
+            "confidence": evidence_health,
+        }
+    else:
+        synthesis = {
+            "section_status": "blocked",
+            "reason": synthesis_admission,
+            "target_company": ag2_synthesis.get("target_company", "n/v"),
+            "executive_summary": "Synthesis was not accepted by the Supervisor gate.",
+            "generation_mode": "blocked",
+            "confidence": "low",
+            "key_risks": ["Synthesis did not pass the quality gate."],
+            "next_steps": ["Re-run with improved department evidence."],
+            "sources": [],
+        }
+
+    contact_intelligence = dict(sections.get("contact_intelligence", {}) or {})
+    contact_intelligence.update(
+        build_contact_briefing_assets(
+            company_profile=sections.get("company_profile", {}),
+            contact_intelligence=contact_intelligence,
+        )
+    )
+    sections["contact_intelligence"] = contact_intelligence
+    primary_source_stage = dict(
+        sections.get("primary_source_stage", {}) or build_primary_source_stage(
+            company_profile=sections.get("company_profile", {}),
+            industry_analysis=sections.get("industry_analysis", {}),
+            market_network=sections.get("market_network", {}),
+        )
+    )
+    contact_enrichment_stage = dict(
+        sections.get("contact_enrichment_stage", {}) or build_contact_enrichment_stage(
+            company_profile=sections.get("company_profile", {}),
+            contact_intelligence=contact_intelligence,
+        )
+    )
+
+    synthesis = harmonize_synthesis_output(
+        synthesis=synthesis,
+        company_profile=sections.get("company_profile", {}),
+        industry_analysis=sections.get("industry_analysis", {}),
+        market_network=sections.get("market_network", {}),
+        contact_intelligence=contact_intelligence,
+        quality_review=quality_review,
+    )
+    synthesis.update(
+        build_playbook_assets(
+            company_profile=sections.get("company_profile", {}),
+            market_network=sections.get("market_network", {}),
+            contact_intelligence=contact_intelligence,
+            synthesis=synthesis,
+        )
+    )
+
+    readiness = assess_research_readiness(
+        company_profile=sections.get("company_profile", {}),
+        industry_analysis=sections.get("industry_analysis", {}),
+        market_network=sections.get("market_network", {}),
+        contact_intelligence=contact_intelligence,
+        quality_review=quality_review,
+        synthesis=synthesis,
+        primary_source_stage=primary_source_stage,
+        contact_enrichment_stage=contact_enrichment_stage,
+        department_packages=department_packages,
+    )
+    pipeline_data = validate_pipeline_data(
+        {
+            "company_profile": assemble_section("company_profile", sections.get("company_profile", {})),
+            "industry_analysis": assemble_section("industry_analysis", sections.get("industry_analysis", {})),
+            "market_network": assemble_section("market_network", sections.get("market_network", {})),
+            "contact_intelligence": assemble_section("contact_intelligence", contact_intelligence),
+            "quality_review": quality_review,
+            "synthesis": synthesis,
+            "research_readiness": readiness,
+            "primary_source_stage": readiness.get("primary_source_stage", primary_source_stage),
+            "contact_enrichment_stage": readiness.get("contact_enrichment_stage", contact_enrichment_stage),
+            "data_request_sheet": readiness.get("data_request_sheet", {}),
+            "outreach_playbook": readiness.get("outreach_playbook", {}),
+            "validation_errors": [],
+        }
+    )
+    state.run_context.resolution_state["readiness_contract"] = {
+        "minimum_package": dict(readiness.get("minimum_package", {}) or {}),
+        "readiness_blockers": list(readiness.get("readiness_blockers", []) or []),
+        "department_gate_overview": dict(readiness.get("department_gate_overview", {}) or {}),
+        "discovery_ready": bool(readiness.get("discovery_ready")),
+    }
+
+    remaining_public_gaps = state.run_context.resolution_state.get("auto_close", {}).get("remaining_public_gaps", [])
+    resolution_plan = build_resolution_plan(
+        run_id=state.run_id,
+        first_round_resolution=first_round_resolution,
+        remaining_public_gaps=list(remaining_public_gaps),
+    )
+    if resolution_plan.get("unresolved") is None or not isinstance(resolution_plan.get("unresolved"), dict):
+        resolution_plan["unresolved"] = {}
+    if bool(readiness.get("discovery_ready")):
+        data_request_fields = [
+            str(item.get("label", "")).strip()
+            for item in (readiness.get("data_request_sheet", {}).get("request_fields", []) or [])
+            if isinstance(item, dict) and str(item.get("label", "")).strip()
+        ]
+        if data_request_fields:
+            resolution_plan["unresolved"]["internal_customer_data_request"] = data_request_fields
+        resolution_plan["decision"] = {
+            "decision": "accept_gap",
+            "rationale": "Public research is complete for discovery scope; execution requires internal customer data.",
+            "selected_gap_ids": [
+                str(item.get("blocker_id", "")).strip()
+                for item in (readiness.get("readiness_blockers", []) or [])
+                if isinstance(item, dict) and str(item.get("blocker_id", "")).strip()
+            ],
+        }
+        resolution_plan["steps"] = [
+            "Provide Data Request Sheet fields under NDA.",
+            "Confirm target-company stakeholder owner and intro path.",
+            "Resume execution readiness validation once customer data is available.",
+        ]
+
+    state.run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
+    state.run_context.resolution_state["resolution_plan"] = resolution_plan
+
+    readiness_gate = MeetingReadinessGate()
+    meeting_assessment = readiness_gate.evaluate(
+        answer_matrix=state.run_context.answer_matrix,
+        resolution_state=state.run_context.resolution_state,
+        evidence_health=quality_review.get("evidence_health", "low"),
+        readiness_usable=bool(readiness.get("usable")),
+        discovery_ready=bool(readiness.get("discovery_ready")),
+        minimum_package=dict(readiness.get("minimum_package", {}) or {}),
+        blockers=list(readiness.get("readiness_blockers", []) or []),
+    )
+    state.run_context.meeting_readiness_assessment = meeting_assessment
+
+    composer = FinalBriefingComposer()
+    meeting_actions = composer.compose(
+        synthesis=synthesis,
+        answer_matrix=state.run_context.answer_matrix,
+        quality_review=quality_review,
+        resolution_state=state.run_context.resolution_state,
+        company_name=company_name,
+    )
+    state.run_context.short_term_memory.meeting_actions = meeting_actions
+    pipeline_data["meeting_actions"] = sort_meeting_actions(
+        [action.model_dump(mode="json") for action in meeting_actions]
+    )
+
+    status = determine_final_status(
+        readiness_usable=bool(readiness.get("usable")),
+        first_round_resolution=first_round_resolution,
+        remaining_public_gaps=list(remaining_public_gaps),
+        discovery_ready=bool(readiness.get("discovery_ready")),
+    )
+    if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
+        status = meeting_assessment.run_status
+    resume_entrypoint = (
+        "supervisor_resume_after_user_selection"
+        if status == SELECTION_REQUIRED_RUN_STATUS
+        else "supervisor_finalization_entrypoint"
+    )
+    state.run_context.resolution_state["dashboard_state"] = build_dashboard_state(
+        status=status,
+        run_id=state.run_id,
+        resolution_plan=resolution_plan,
+        resume_entrypoint=resume_entrypoint,
+    )
+    state.run_context.resolution_state["resume_entrypoint"] = resume_entrypoint
+    if status == BLOCKED_RUN_STATUS:
+        state.run_context.resolution_state["finalization_blocked"] = {
+            "reason": "meeting_critical_public_gaps_open" if remaining_public_gaps else "meeting_not_ready",
+            "open_gaps": list(remaining_public_gaps),
+        }
+    elif status == DISCOVERY_READY_RUN_STATUS:
+        state.run_context.resolution_state["finalization_blocked"] = {
+            "reason": "internal_customer_data_required",
+            "open_gaps": [
+                str(item.get("reason", "")).strip()
+                for item in (readiness.get("readiness_blockers", []) or [])
+                if isinstance(item, dict) and str(item.get("reason", "")).strip()
+            ],
+        }
+    state.run_context.status = status
+    _sync_finalization_artifacts(
+        run_context=state.run_context,
+        pipeline_data=pipeline_data,
+        run_id=state.run_id,
+        company_name=company_name,
+        status=status,
+        meeting_actions=meeting_actions,
+    )
+    return FinalizationResult(
+        pipeline_data=pipeline_data,
+        readiness=readiness,
+        status=status,
+        resume_entrypoint=resume_entrypoint,
+        department_timings=synthesis_phase.department_timings,
+        department_packages=department_packages,
+    )
+
+
+def _assemble_report_and_export(
+    state: InitialRunState,
+    *,
+    finalization: FinalizationResult,
+    company_name: str,
+    web_domain: str,
+    on_message: MessageHook,
+) -> dict[str, Any]:
+    _record_phase(state.run_context, "report_and_export")
+    report_package, report_messages = state.agents["report_writer"].run(
+        pipeline_data=finalization.pipeline_data,
+        department_packages=finalization.department_packages,
+        on_message=on_message,
+    )
+    state.run_context.report_package = report_package
+    finalization.pipeline_data["report_package"] = report_package
+    state.messages.extend(report_messages)
+    state.run_context.resolution_state["budget_tracker"] = state.budget_tracker.snapshot()
+    _write_checkpoint(state.run_dir, "after_finalization", state.run_context)
+
+    elapsed_seconds = round(perf_counter() - state.start_time, 3)
+    memory_snapshot = state.run_context.short_term_memory.snapshot()
+    usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))
+    usage_total = usage.get("total", {})
+    usage_totals = memory_snapshot.get("usage_totals", {})
+    search_calls_used = int(usage_totals.get("search_calls", 0) or 0)
+    web_search_preview_call_cost = estimate_web_search_preview_call_cost_usd(
+        search_calls=search_calls_used,
+        model_name=get_search_model(),
+    )
+    if web_search_preview_call_cost > 0:
+        usage_total["web_search_preview_call_cost"] = web_search_preview_call_cost
+        usage_total["total_cost"] = round(
+            float(usage_total.get("total_cost", 0.0) or 0.0) + web_search_preview_call_cost,
+            10,
+        )
+        usage_actual = usage.get("actual", {})
+        usage_actual["web_search_preview_call_cost"] = web_search_preview_call_cost
+        usage_actual["total_cost"] = usage_total["total_cost"]
+        usage["actual"] = usage_actual
+        usage["total"] = usage_total
+    budget = {
+        "total_pipeline_events": len(state.messages),
+        "tool_calls_used": int(
+            (usage_totals.get("search_calls", 0) or 0)
+            + (usage_totals.get("page_fetches", 0) or 0)
+            + (usage_totals.get("llm_calls", 0) or 0)
+        ),
+        "max_tool_calls": 140,
+        "max_department_attempts": 3,
+        "resume_entrypoint": finalization.resume_entrypoint,
+        "llm_calls_used": int(usage_totals.get("llm_calls", 0) or 0),
+        "search_calls_used": search_calls_used,
+        "page_fetches_used": int(usage_totals.get("page_fetches", 0) or 0),
+        "estimated_cost_usd": float(usage_total.get("total_cost", 0.0) or 0.0),
+        "elapsed_seconds": elapsed_seconds,
+        "department_timings": finalization.department_timings,
+    }
+    run_context_snapshot = state.run_context.snapshot()
+
+    dashboard_bundle = compose_dashboard(
+        run_id=state.run_id,
+        status=finalization.status,
+        pipeline_data=finalization.pipeline_data,
+        run_context=run_context_snapshot,
+        budget=budget,
+    )
+    finalization.pipeline_data["dashboard_bundle"] = dashboard_bundle.model_dump(mode="json")
+
+    role_patterns = consolidate_role_patterns(
+        run_context=run_context_snapshot,
+        pipeline_data=finalization.pipeline_data,
+        status=finalization.status,
+        usable=finalization.readiness["usable"],
+    )
+    if role_patterns and should_store_strategy(
+        status=finalization.status,
+        usable=finalization.readiness["usable"],
+        readiness_score=finalization.readiness.get("score", 0),
+        task_statuses=dict(state.run_context.short_term_memory.task_statuses),
+    ):
+        for pattern in role_patterns:
+            state.memory_store.upsert_strategy(pattern)
+
+    export_run(
+        run_dir=state.run_dir,
+        run_id=state.run_id,
+        company_name=company_name,
+        web_domain=web_domain,
+        status=finalization.status,
+        messages=state.messages,
+        pipeline_data=finalization.pipeline_data,
+        run_context=run_context_snapshot,
+        usage=usage,
+        budget=budget,
+    )
+    return {
+        "run_id": state.run_id,
+        "run_dir": str(state.run_dir),
+        "messages": state.messages,
+        "pipeline_data": finalization.pipeline_data,
+        "run_context": run_context_snapshot,
+        "usage": usage,
+        "budget": budget,
+        "status": finalization.status,
+        "error": None,
+    }
+
+
+def _pipeline_error_result(
+    *,
+    run_id: str,
+    run_dir: Path,
+    company_name: str,
+    web_domain: str,
+    start_time: float,
+    error_message: str,
+    run_context: RunContext,
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    run_context.status = "failed"
+    failed_phase = str(run_context.resolution_state.get("current_phase") or "unknown")
+    last_checkpoint = str(run_context.resolution_state.get("last_checkpoint") or "")
+    run_context.resolution_state["failure"] = {
+        "phase": failed_phase,
+        "last_checkpoint": last_checkpoint,
+        "error": error_message,
+    }
+    elapsed_seconds = round(perf_counter() - start_time, 3)
+    budget = {
+        "elapsed_seconds": elapsed_seconds,
+        "failed_phase": failed_phase,
+        "last_checkpoint": last_checkpoint,
+    }
+    export_run(
+        run_dir=run_dir,
+        run_id=run_id,
+        company_name=company_name,
+        web_domain=web_domain,
+        status="failed",
+        messages=messages,
+        pipeline_data=empty_pipeline_data(),
+        run_context=run_context.snapshot(),
+        budget=budget,
+        error=error_message,
+    )
+    return {
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "messages": messages,
+        "pipeline_data": empty_pipeline_data(),
+        "run_context": run_context.snapshot(),
+        "usage": {},
+        "budget": budget,
+        "status": "failed",
+        "error": error_message,
+        "failed_phase": failed_phase,
+        "last_checkpoint": last_checkpoint,
+    }
+
+
 def run_pipeline(
     *,
     company_name: str,
     web_domain: str,
     on_message: MessageHook = None,
 ) -> dict[str, Any]:
+    """Run the full initial briefing pipeline and persist all runtime artifacts."""
     start_time = perf_counter()
     run_id = _timestamp_run_id()
     run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)
+
     try:
-        intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
+        state = _initialize_run(
+            start_time=start_time,
+            run_id=run_id,
+            run_dir=run_dir,
+            company_name=company_name,
+            web_domain=web_domain,
+        )
     except ValueError as exc:
-        elapsed_seconds = round(perf_counter() - start_time, 3)
-        return {
-            "run_id": run_id,
-            "run_dir": str(run_dir),
-            "messages": [],
-            "pipeline_data": empty_pipeline_data(),
-            "run_context": {
-                "intake": {"company_name": company_name, "web_domain": web_domain},
-            },
-            "usage": {},
-            "budget": {"elapsed_seconds": elapsed_seconds},
-            "status": "failed",
-            "error": str(exc),
-        }
-    agents = create_runtime_agents()
-
-    memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
-    backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=RUNS_DIR)
-    run_context = RunContext(
-        run_id=run_id,
-        intake={"company_name": company_name, "web_domain": web_domain, "language": intake.language},
-    )
-    run_context.retrieved_strategies = retrieve_strategies(
-        memory_store,
-        domain=normalize_domain(web_domain),
-        limit=5,
-    )
-    run_context.retrieved_role_strategies = {
-        role: retrieve_strategies(
-            memory_store,
-            domain=normalize_domain(web_domain),
-            role=role,
-            limit=3,
-        )
-        for role in RETRIEVABLE_ROLE_ORDER
-    }
-
-    messages: list[dict[str, Any]] = []
-    budget_tracker = PhaseBudgetTracker()
-    try:
-        brief, supervisor_message = agents["supervisor"].build_intake_brief(intake)
-        run_context.supervisor_brief = supervisor_message["payload"]
-        run_context.question_registry = build_question_registry()
-        run_context.answer_matrix = build_initial_answer_matrix()
-        messages.append(
-            emit_message(
-                on_message,
-                agent="Supervisor",
-                content=json.dumps(supervisor_message, ensure_ascii=False),
-            )
-        )
-
-        sections, department_packages, loop_messages, completed_backlog, department_timings, first_round_resolution = run_supervisor_loop(
-            brief=brief,
-            run_context=run_context,
-            agents=agents,
-            on_message=on_message,
-        )
-        messages.extend(loop_messages)
-        run_context.short_term_memory.task_statuses.update(
-            {item["task_key"]: item["status"] for item in completed_backlog}
-        )
-        # RA-08: Record first-pass token consumption
-        first_pass_snapshot = run_context.short_term_memory.snapshot()
-        first_pass_tokens = int(first_pass_snapshot.get("usage_totals", {}).get("total_tokens", 0) or 0)
-        budget_tracker.record_phase_tokens("first_pass", first_pass_tokens)
-        if not budget_tracker.check_budget("first_pass"):
-            budget_tracker.record_stop("first_pass", "token_budget_exceeded")
-
-        run_context.resolution_state = {
-            "first_round_resolution": first_round_resolution,
-            "auto_close": {
-                "triggered": False,
-                "max_questions": 4,
-                "attempted_questions": 0,
-                "stop_reason": "not_required",
-                "remaining_public_gaps": [],
-            },
-        }
-
-        # RA-07: Checkpoint after first pass
-        _write_checkpoint(run_dir, "after_first_pass", run_context)
-
-        if first_round_resolution.get("bucket") == "AUTO_CLOSE_REQUIRED":
-            auto_close_result = run_bounded_follow_up(
-                run_id=run_id,
-                run_context=run_context.snapshot(),
-                pipeline_data={
-                    "company_profile": sections.get("company_profile", {}),
-                    "industry_analysis": sections.get("industry_analysis", {}),
-                    "market_network": sections.get("market_network", {}),
-                    "contact_intelligence": sections.get("contact_intelligence", {}),
-                    "synthesis": sections.get("synthesis", {}),
-                    "quality_review": {},
-                },
-                public_gap_questions=(
-                    first_round_resolution.get("meeting_critical_public_gap_candidates")
-                    or first_round_resolution.get("meeting_critical_public_gaps", [])
-                ),
-                max_questions=4,
-            )
-            run_context.resolution_state["auto_close"] = {
-                "triggered": True,
-                **auto_close_result,
-            }
-            # RA-04: Feed closure results back into answer matrix by explicit
-            # question mapping only.  Missing mappings remain unresolved.
-            mapping_missing = False
-            for attempt in auto_close_result.get("attempts", []):
-                if attempt.get("resolved"):
-                    resolved_question_ids = [
-                        str(qid).strip()
-                        for qid in attempt.get("resolved_question_ids", [])
-                        if str(qid).strip()
-                    ]
-                    if not resolved_question_ids:
-                        mapping_missing = True
-                        continue
-                    for qid in resolved_question_ids:
-                        entry = run_context.answer_matrix.get(qid)
-                        if entry and entry.get("status") in {"pending", "blocked", "partially_answered"}:
-                            entry["status"] = "partially_answered"
-                            entry["notes"] = f"Auto-close follow-up resolved: {attempt.get('question', '')[:80]}"
-            if mapping_missing:
-                run_context.resolution_state["auto_close"]["mapping_missing"] = True
-            messages.append(
-                emit_message(
-                    on_message,
-                    agent="Supervisor",
-                    content=json.dumps(
-                        {
-                            "status": "auto_close_follow_up_completed",
-                            **auto_close_result,
-                        },
-                        ensure_ascii=False,
-                    ),
-                )
-            )
-
-        # RA-08: Record closure token consumption
-            closure_tokens = int(
-                run_context.short_term_memory.snapshot()
-                .get("usage_totals", {}).get("total_tokens", 0) or 0
-            ) - first_pass_tokens
-            budget_tracker.record_phase_tokens("closure", max(closure_tokens, 0))
-
-            # RA-07: Checkpoint after closure
-            _write_checkpoint(run_dir, "after_closure", run_context)
-
-        synthesis_assignments = build_synthesis_assignments(brief)
-        for assignment in synthesis_assignments:
-            run_context.record_task(
-                assignee=assignment.assignee,
-                objective=assignment.objective,
-                section=assignment.target_section,
-                task_key=assignment.task_key,
-                model_name=assignment.model_name,
-                allowed_tools=assignment.allowed_tools,
-                status="pending_synthesis",
-            )
-
-        if "synthesis" in agents:
-            messages.append(
-                emit_message(
-                    on_message,
-                    agent="Supervisor",
-                    content=json.dumps(
-                        {"status": "synthesis_assigned", "department": "SynthesisDepartment"},
-                        ensure_ascii=False,
-                    ),
-                )
-            )
-            pre_synthesis_quality_review = build_quality_review(run_context.short_term_memory.snapshot())
-            pre_synthesis_primary_source_stage = build_primary_source_stage(
-                company_profile=sections.get("company_profile", {}),
-                industry_analysis=sections.get("industry_analysis", {}),
-                market_network=sections.get("market_network", {}),
-            )
-            pre_synthesis_contact_enrichment_stage = build_contact_enrichment_stage(
-                company_profile=sections.get("company_profile", {}),
-                contact_intelligence=sections.get("contact_intelligence", {}),
-            )
-            sections["primary_source_stage"] = pre_synthesis_primary_source_stage
-            sections["contact_enrichment_stage"] = pre_synthesis_contact_enrichment_stage
-            synthesis_ctx = build_synthesis_context(
-                company_profile=sections.get("company_profile", {}),
-                industry_analysis=sections.get("industry_analysis", {}),
-                market_network=sections.get("market_network", {}),
-                contact_intelligence=sections.get("contact_intelligence", {}),
-                quality_review=pre_synthesis_quality_review,
-                memory_snapshot=run_context.short_term_memory.snapshot(),
-                primary_source_stage=pre_synthesis_primary_source_stage,
-                contact_enrichment_stage=pre_synthesis_contact_enrichment_stage,
-            )
-            synthesis_result, synthesis_messages = agents["synthesis"].run(
-                brief=brief,
-                department_packages=_admitted_packages_for_synthesis(department_packages),
-                memory_store=run_context.short_term_memory,
-                on_message=on_message,
-                synthesis_context=synthesis_ctx,
-            )
-            messages.extend(synthesis_messages)
-            synthesis_back_requests = list(synthesis_result.get("back_requests", []) or [])
-            if synthesis_back_requests:
-                run_context.resolution_state["synthesis_back_requests"] = synthesis_back_requests
-                for idx, back_request in enumerate(synthesis_back_requests, start=1):
-                    subject = str(back_request.get("subject", "") or "").strip()
-                    department = str(back_request.get("department", "") or "SynthesisDepartment")
-                    request_type = str(back_request.get("type", "") or "clarify")
-                    note = (
-                        f"Synthesis back-request for {department} "
-                        f"({request_type}): {subject or 'n/v'}"
-                    )
-                    run_context.short_term_memory.open_questions.append(note)
-                    messages.append(
-                        emit_message(
-                            on_message,
-                            agent="Supervisor",
-                            content=json.dumps(
-                                {
-                                    "status": "synthesis_back_request_recorded",
-                                    "index": idx,
-                                    "department": department,
-                                    "request_type": request_type,
-                                    "subject": subject,
-                                },
-                                ensure_ascii=False,
-                            ),
-                        )
-                    )
-            synthesis_acceptance = agents["supervisor"].accept_synthesis(
-                synthesis_payload=synthesis_result,
-            )
-            synthesis_decision = synthesis_acceptance.get("decision", "rejected")
-            department_packages["SynthesisDepartment"] = {
-                "admission": {
-                    "decision": synthesis_decision,
-                    "reason": synthesis_acceptance.get("reason", ""),
-                    "downstream_visible": synthesis_decision != "rejected",
-                },
-                "raw_package": synthesis_result,
-                "admitted_payload": synthesis_result if synthesis_decision != "rejected" else None,
-            }
-            sections["synthesis"] = synthesis_result
-            messages.append(
-                emit_message(
-                    on_message,
-                    agent="Supervisor",
-                    content=json.dumps(
-                        {"department": "SynthesisDepartment", "status": "synthesis_reviewed", **synthesis_acceptance},
-                        ensure_ascii=False,
-                    ),
-                )
-            )
-            synthesis_task_status = {
-                "accepted": "accepted",
-                "accepted_with_gaps": "degraded",
-                "rejected": "degraded",
-            }.get(synthesis_decision, "degraded")
-            for assignment in synthesis_assignments:
-                run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
-                run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
-                matrix_status = matrix_status_for_task_status(synthesis_task_status)
-                for question_id in assignment.question_ids:
-                    entry = run_context.answer_matrix.setdefault(
-                        question_id,
-                        {
-                            "status": "pending",
-                            "answer": "",
-                            "notes": "",
-                            "source_tasks": [],
-                            "target_section": assignment.target_section,
-                        },
-                    )
-                    if assignment.task_key not in entry["source_tasks"]:
-                        entry["source_tasks"].append(assignment.task_key)
-                    entry["status"] = matrix_status
-                    entry["notes"] = (
-                        f"Last update from task '{assignment.task_key}' "
-                        f"({synthesis_task_status}) in department '{assignment.assignee}'."
-                    )
-                completed_backlog.append({
-                    "task_key": assignment.task_key,
-                    "label": assignment.label,
-                    "target_section": assignment.target_section,
-                    "status": synthesis_task_status,
-                })
-            _write_checkpoint(run_dir, "after_synthesis", run_context)
-
-        # Quality review still derived from memory snapshot
-        quality_review = build_quality_review(run_context.short_term_memory.snapshot())
-        messages.append(
-            emit_message(
-                on_message,
-                agent="SynthesisDepartment",
-                content=json.dumps({"section": "quality_review", "payload": quality_review}, ensure_ascii=False),
-            )
-        )
-
-        # Synthesis admission — read from canonical envelope (P0-3).
-        synthesis_envelope = department_packages.get("SynthesisDepartment", {})
-        synthesis_admission_info = resolve_admission(synthesis_envelope)
-        synthesis_admission = synthesis_admission_info.get("decision", "rejected")
-        ag2_synthesis = sections.get("synthesis", {})
-        evidence_health = quality_review.get("evidence_health", "low")
-
-        if synthesis_admission == "accepted":
-            synthesis = {
-                **ag2_synthesis,
-                "generation_mode": ag2_synthesis.get("generation_mode", "normal"),
-                "confidence": evidence_health,
-            }
-        elif synthesis_admission == "accepted_with_gaps":
-            # Gate already decided this is downstream-usable but degraded.
-            # Use the AG2 output as-is; generation_mode is an execution fact.
-            synthesis = {
-                **ag2_synthesis,
-                "generation_mode": ag2_synthesis.get("generation_mode", "fallback"),
-                "confidence": evidence_health,
-            }
-        else:
-            # rejected or missing — blocked artifact, not a fallback synthesis.
-            # A presentation fallback for UI/Report is built separately;
-            # the machine-facing record is a typed blocked artifact.
-            synthesis = {
-                "section_status": "blocked",
-                "reason": synthesis_admission,
-                "target_company": ag2_synthesis.get("target_company", "n/v"),
-                "executive_summary": "Synthesis was not accepted by the Supervisor gate.",
-                "generation_mode": "blocked",
-                "confidence": "low",
-                "key_risks": ["Synthesis did not pass the quality gate."],
-                "next_steps": ["Re-run with improved department evidence."],
-                "sources": [],
-            }
-
-        contact_intelligence = dict(sections.get("contact_intelligence", {}) or {})
-        contact_intelligence.update(
-            build_contact_briefing_assets(
-                company_profile=sections.get("company_profile", {}),
-                contact_intelligence=contact_intelligence,
-            )
-        )
-        sections["contact_intelligence"] = contact_intelligence
-        primary_source_stage = dict(
-            sections.get("primary_source_stage", {}) or build_primary_source_stage(
-                company_profile=sections.get("company_profile", {}),
-                industry_analysis=sections.get("industry_analysis", {}),
-                market_network=sections.get("market_network", {}),
-            )
-        )
-        contact_enrichment_stage = dict(
-            sections.get("contact_enrichment_stage", {}) or build_contact_enrichment_stage(
-                company_profile=sections.get("company_profile", {}),
-                contact_intelligence=contact_intelligence,
-            )
-        )
-
-        synthesis = harmonize_synthesis_output(
-            synthesis=synthesis,
-            company_profile=sections.get("company_profile", {}),
-            industry_analysis=sections.get("industry_analysis", {}),
-            market_network=sections.get("market_network", {}),
-            contact_intelligence=contact_intelligence,
-            quality_review=quality_review,
-        )
-
-        synthesis.update(
-            build_playbook_assets(
-                company_profile=sections.get("company_profile", {}),
-                market_network=sections.get("market_network", {}),
-                contact_intelligence=contact_intelligence,
-                synthesis=synthesis,
-            )
-        )
-
-        readiness = assess_research_readiness(
-            company_profile=sections.get("company_profile", {}),
-            industry_analysis=sections.get("industry_analysis", {}),
-            market_network=sections.get("market_network", {}),
-            contact_intelligence=contact_intelligence,
-            quality_review=quality_review,
-            synthesis=synthesis,
-            primary_source_stage=primary_source_stage,
-            contact_enrichment_stage=contact_enrichment_stage,
-            department_packages=department_packages,
-        )
-        pipeline_data = validate_pipeline_data(
-            {
-                "company_profile": assemble_section("company_profile", sections.get("company_profile", {})),
-                "industry_analysis": assemble_section("industry_analysis", sections.get("industry_analysis", {})),
-                "market_network": assemble_section("market_network", sections.get("market_network", {})),
-                "contact_intelligence": assemble_section("contact_intelligence", contact_intelligence),
-                "quality_review": quality_review,
-                "synthesis": synthesis,
-                "research_readiness": readiness,
-                "primary_source_stage": readiness.get("primary_source_stage", primary_source_stage),
-                "contact_enrichment_stage": readiness.get("contact_enrichment_stage", contact_enrichment_stage),
-                "data_request_sheet": readiness.get("data_request_sheet", {}),
-                "outreach_playbook": readiness.get("outreach_playbook", {}),
-                "validation_errors": [],
-            }
-        )
-        run_context.resolution_state["readiness_contract"] = {
-            "minimum_package": dict(readiness.get("minimum_package", {}) or {}),
-            "readiness_blockers": list(readiness.get("readiness_blockers", []) or []),
-            "department_gate_overview": dict(readiness.get("department_gate_overview", {}) or {}),
-            "discovery_ready": bool(readiness.get("discovery_ready")),
-        }
-
-        remaining_public_gaps = run_context.resolution_state.get("auto_close", {}).get("remaining_public_gaps", [])
-        resolution_plan = build_resolution_plan(
+        return _failed_intake_result(
             run_id=run_id,
-            first_round_resolution=first_round_resolution,
-            remaining_public_gaps=list(remaining_public_gaps),
-        )
-
-        if resolution_plan.get("unresolved") is None or not isinstance(resolution_plan.get("unresolved"), dict):
-            resolution_plan["unresolved"] = {}
-        if bool(readiness.get("discovery_ready")):
-            data_request_fields = [
-                str(item.get("label", "")).strip()
-                for item in (readiness.get("data_request_sheet", {}).get("request_fields", []) or [])
-                if isinstance(item, dict) and str(item.get("label", "")).strip()
-            ]
-            if data_request_fields:
-                resolution_plan["unresolved"]["internal_customer_data_request"] = data_request_fields
-            resolution_plan["decision"] = {
-                "decision": "accept_gap",
-                "rationale": "Public research is complete for discovery scope; execution requires internal customer data.",
-                "selected_gap_ids": [
-                    str(item.get("blocker_id", "")).strip()
-                    for item in (readiness.get("readiness_blockers", []) or [])
-                    if isinstance(item, dict) and str(item.get("blocker_id", "")).strip()
-                ],
-            }
-            resolution_plan["steps"] = [
-                "Provide Data Request Sheet fields under NDA.",
-                "Confirm target-company stakeholder owner and intro path.",
-                "Resume execution readiness validation once customer data is available.",
-            ]
-
-        run_context.short_term_memory.resolution_plans.append(ResolutionPlan.model_validate(resolution_plan))
-        run_context.resolution_state["resolution_plan"] = resolution_plan
-
-        # RA-06: Meeting-readiness gate — enforced before finalization
-        readiness_gate = MeetingReadinessGate()
-        meeting_assessment = readiness_gate.evaluate(
-            answer_matrix=run_context.answer_matrix,
-            resolution_state=run_context.resolution_state,
-            evidence_health=quality_review.get("evidence_health", "low"),
-            readiness_usable=bool(readiness.get("usable")),
-            discovery_ready=bool(readiness.get("discovery_ready")),
-            minimum_package=dict(readiness.get("minimum_package", {}) or {}),
-            blockers=list(readiness.get("readiness_blockers", []) or []),
-        )
-        run_context.meeting_readiness_assessment = meeting_assessment
-
-        # RA-06: Final briefing composer — meeting_actions replace next_steps
-        composer = FinalBriefingComposer()
-        meeting_actions = composer.compose(
-            synthesis=synthesis,
-            answer_matrix=run_context.answer_matrix,
-            quality_review=quality_review,
-            resolution_state=run_context.resolution_state,
-            company_name=company_name,
-        )
-        run_context.short_term_memory.meeting_actions = meeting_actions
-
-        # RA-08: Deterministic ordering for meeting actions
-        sorted_action_dicts = sort_meeting_actions(
-            [a.model_dump(mode="json") for a in meeting_actions]
-        )
-
-        # Inject meeting_actions into pipeline_data for PDF/export access
-        pipeline_data["meeting_actions"] = sorted_action_dicts
-
-        status = determine_final_status(
-            readiness_usable=bool(readiness.get("usable")),
-            first_round_resolution=first_round_resolution,
-            remaining_public_gaps=list(remaining_public_gaps),
-            discovery_ready=bool(readiness.get("discovery_ready")),
-        )
-        if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
-            status = meeting_assessment.run_status
-        resume_entrypoint = (
-            "supervisor_resume_after_user_selection"
-            if status == SELECTION_REQUIRED_RUN_STATUS
-            else "supervisor_finalization_entrypoint"
-        )
-        run_context.resolution_state["dashboard_state"] = build_dashboard_state(
-            status=status,
-            run_id=run_id,
-            resolution_plan=resolution_plan,
-            resume_entrypoint=resume_entrypoint,
-        )
-        run_context.resolution_state["resume_entrypoint"] = resume_entrypoint
-        if status == BLOCKED_RUN_STATUS:
-            run_context.resolution_state["finalization_blocked"] = {
-                "reason": "meeting_critical_public_gaps_open" if remaining_public_gaps else "meeting_not_ready",
-                "open_gaps": list(remaining_public_gaps),
-            }
-        elif status == DISCOVERY_READY_RUN_STATUS:
-            run_context.resolution_state["finalization_blocked"] = {
-                "reason": "internal_customer_data_required",
-                "open_gaps": [
-                    str(item.get("reason", "")).strip()
-                    for item in (readiness.get("readiness_blockers", []) or [])
-                    if isinstance(item, dict) and str(item.get("reason", "")).strip()
-                ],
-            }
-        run_context.status = status
-        _sync_finalization_artifacts(
-            run_context=run_context,
-            pipeline_data=pipeline_data,
-            run_id=run_id,
-            company_name=company_name,
-            status=status,
-            meeting_actions=meeting_actions,
-        )
-
-        report_package, report_messages = agents["report_writer"].run(
-            pipeline_data=pipeline_data,
-            department_packages=department_packages,
-            on_message=on_message,
-        )
-        run_context.report_package = report_package
-        pipeline_data["report_package"] = report_package
-        messages.extend(report_messages)
-
-        # RA-08: Persist budget tracker and guardrail telemetry
-        run_context.resolution_state["budget_tracker"] = budget_tracker.snapshot()
-
-        # RA-07: Checkpoint after finalization gate
-        _write_checkpoint(run_dir, "after_finalization", run_context)
-
-        elapsed_seconds = round(perf_counter() - start_time, 3)
-        memory_snapshot = run_context.short_term_memory.snapshot()
-        usage = summarize_worker_report_costs(memory_snapshot.get("worker_reports", []))
-        usage_total = usage.get("total", {})
-        usage_totals = memory_snapshot.get("usage_totals", {})
-        search_calls_used = int(usage_totals.get("search_calls", 0) or 0)
-        web_search_preview_call_cost = estimate_web_search_preview_call_cost_usd(
-            search_calls=search_calls_used,
-            model_name=get_search_model(),
-        )
-        if web_search_preview_call_cost > 0:
-            usage_total["web_search_preview_call_cost"] = web_search_preview_call_cost
-            usage_total["total_cost"] = round(float(usage_total.get("total_cost", 0.0) or 0.0) + web_search_preview_call_cost, 10)
-            usage_actual = usage.get("actual", {})
-            usage_actual["web_search_preview_call_cost"] = web_search_preview_call_cost
-            usage_actual["total_cost"] = usage_total["total_cost"]
-            usage["actual"] = usage_actual
-            usage["total"] = usage_total
-        budget = {
-            "total_pipeline_events": len(messages),
-            "tool_calls_used": int(
-                (usage_totals.get("search_calls", 0) or 0)
-                + (usage_totals.get("page_fetches", 0) or 0)
-                + (usage_totals.get("llm_calls", 0) or 0)
-            ),
-            "max_tool_calls": 140,
-            "max_department_attempts": 3,
-            "resume_entrypoint": resume_entrypoint,
-            "llm_calls_used": int(usage_totals.get("llm_calls", 0) or 0),
-            "search_calls_used": search_calls_used,
-            "page_fetches_used": int(usage_totals.get("page_fetches", 0) or 0),
-            "estimated_cost_usd": float(usage_total.get("total_cost", 0.0) or 0.0),
-            "elapsed_seconds": elapsed_seconds,
-            "department_timings": department_timings,
-        }
-        run_context_snapshot = run_context.snapshot()
-
-        # ── Dashboard bundle (shared visualization layer) ─────────────────
-        dashboard_bundle = compose_dashboard(
-            run_id=run_id,
-            status=status,
-            pipeline_data=pipeline_data,
-            run_context=run_context_snapshot,
-            budget=budget,
-        )
-        pipeline_data["dashboard_bundle"] = dashboard_bundle.model_dump(mode="json")
-
-        role_patterns = consolidate_role_patterns(
-            run_context=run_context_snapshot,
-            pipeline_data=pipeline_data,
-            status=status,
-            usable=readiness["usable"],
-        )
-        if role_patterns and should_store_strategy(
-            status=status,
-            usable=readiness["usable"],
-            readiness_score=readiness.get("score", 0),
-            task_statuses=dict(run_context.short_term_memory.task_statuses),
-        ):
-            for pattern in role_patterns:
-                memory_store.upsert_strategy(pattern)
-
-        export_run(
             run_dir=run_dir,
-            run_id=run_id,
             company_name=company_name,
             web_domain=web_domain,
-            status=status,
-            messages=messages,
-            pipeline_data=pipeline_data,
-            run_context=run_context_snapshot,
-            usage=usage,
-            budget=budget,
+            start_time=start_time,
+            error=str(exc),
         )
-        return {
-            "run_id": run_id,
-            "run_dir": str(run_dir),
-            "messages": messages,
-            "pipeline_data": pipeline_data,
-            "run_context": run_context_snapshot,
-            "usage": usage,
-            "budget": budget,
-            "status": status,
-            "error": None,
-        }
     except Exception as exc:
-        error_message = str(exc)
-        run_context.status = "failed"
-        elapsed_seconds = round(perf_counter() - start_time, 3)
-        export_run(
-            run_dir=run_dir,
+        init_context = RunContext(
             run_id=run_id,
+            intake={"company_name": company_name, "web_domain": web_domain},
+        )
+        _record_phase(init_context, "initialize")
+        return _pipeline_error_result(
+            run_id=run_id,
+            run_dir=run_dir,
             company_name=company_name,
             web_domain=web_domain,
-            status="failed",
-            messages=messages,
-            pipeline_data=empty_pipeline_data(),
-            run_context=run_context.snapshot(),
-            budget={"elapsed_seconds": elapsed_seconds},
-            error=error_message,
+            start_time=start_time,
+            error_message=str(exc),
+            run_context=init_context,
+            messages=[],
         )
-        return {
-            "run_id": run_id,
-            "run_dir": str(run_dir),
-            "messages": messages,
-            "pipeline_data": empty_pipeline_data(),
-            "run_context": run_context.snapshot(),
-            "usage": {},
-            "budget": {"elapsed_seconds": elapsed_seconds},
-            "status": "failed",
-            "error": error_message,
-        }
+
+    try:
+        supervisor = _build_supervisor_brief(state, on_message=on_message)
+        first_pass = _run_first_pass(state, brief=supervisor.brief, on_message=on_message)
+        _run_auto_close_if_required(state, first_pass=first_pass, on_message=on_message)
+        synthesis_phase = _run_synthesis_phase(
+            state,
+            brief=supervisor.brief,
+            first_pass=first_pass,
+            on_message=on_message,
+        )
+        finalization = _finalize_readiness(
+            state,
+            synthesis_phase=synthesis_phase,
+            company_name=company_name,
+            on_message=on_message,
+        )
+        # Report assembly is delegated to _assemble_report_and_export via state.agents["report_writer"].
+        return _assemble_report_and_export(
+            state,
+            finalization=finalization,
+            company_name=company_name,
+            web_domain=web_domain,
+            on_message=on_message,
+        )
+    except Exception as exc:
+        return _pipeline_error_result(
+            run_id=run_id,
+            run_dir=run_dir,
+            company_name=company_name,
+            web_domain=web_domain,
+            start_time=start_time,
+            error_message=str(exc),
+            run_context=state.run_context,
+            messages=state.messages,
+        )
+

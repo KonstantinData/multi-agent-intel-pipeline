@@ -23,7 +23,8 @@ from src.exporters.json_export import export_binary_artifact
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
 from src.orchestration.run_paths import resolve_run_dir
-from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
+from src.app.pipeline_metadata import AGENT_META, PIPELINE_STEPS
+from src.pipeline_runner import run_pipeline, resume_pipeline
 from ui.components.dashboard_renderer import render_dashboard
 from ui.i18n import (
     confidence_badge,
