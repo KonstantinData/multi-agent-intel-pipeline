@@ -293,7 +293,6 @@ class TestSynthesisDepartmentRun:
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
             synthesis, messages = agent.run(
                 brief=brief, department_packages=packages,
-                supervisor=_make_supervisor(), departments={},
                 synthesis_context={
                     "target_company": "TestCo GmbH",
                     "liquisto_service_relevance": [{"service_area": "excess_inventory", "relevance": "medium", "reasoning": "test"}],
@@ -321,12 +320,52 @@ class TestSynthesisDepartmentRun:
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
             synthesis, _ = agent.run(
                 brief=brief, department_packages=_make_department_packages(),
-                supervisor=_make_supervisor(), departments={},
                 synthesis_context={"target_company": "TestCo GmbH", "confidence": "low"},
             )
         assert synthesis["generation_mode"] == "fallback"
         assert synthesis["target_company"] == "TestCo GmbH"
         assert synthesis["confidence"] == "low"
+
+    def test_synthesis_run_has_no_supervisor_param(self):
+        from src.agents.synthesis_department import SynthesisDepartmentAgent
+        from src.orchestration.synthesis_runtime import SynthesisRuntime
+
+        assert "supervisor" not in inspect.signature(SynthesisDepartmentAgent.run).parameters
+        assert "supervisor" not in inspect.signature(SynthesisRuntime.run).parameters
+
+    def test_synthesis_exports_back_requests_without_supervisor_reference(self):
+        from src.agents.synthesis_department import SynthesisDepartmentAgent
+
+        agent = SynthesisDepartmentAgent()
+        brief = _make_brief()
+
+        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
+            tools: dict[str, Any] = {}
+            for ag in manager.groupchat.agents:
+                for tool_name, tool_fn in getattr(ag, "_function_map", {}).items():
+                    tools[tool_name] = tool_fn
+            tools["request_department_followup"](
+                department="CompanyDepartment",
+                request_type="clarify",
+                subject="inventory signal",
+                context="Synthesis needs stronger evidence.",
+            )
+            tools["finalize_synthesis"](
+                opportunity_assessment="Inventory monetization remains plausible.",
+                negotiation_relevance="Validate urgency before pricing.",
+                executive_summary="TestCo has a plausible but still validation-dependent opportunity.",
+            )
+
+        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
+            synthesis, _ = agent.run(
+                brief=brief,
+                department_packages=_make_department_packages(),
+                synthesis_context={"target_company": "TestCo GmbH"},
+            )
+
+        assert synthesis["back_requests_issued"] == 1
+        assert synthesis["back_requests"][0]["department"] == "CompanyDepartment"
+        assert synthesis["back_requests"][0]["subject"] == "inventory signal"
 
 
 # ---------------------------------------------------------------------------

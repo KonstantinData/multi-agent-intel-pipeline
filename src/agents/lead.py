@@ -708,6 +708,7 @@ class DepartmentLeadAgent:
             )
             try:
                 support = self.coding_assistant.suggest_queries(
+                    task_key=task_key,
                     section=assignment.target_section,
                     brief=brief,
                     issues=review_dict.get("issues", []),
@@ -722,7 +723,7 @@ class DepartmentLeadAgent:
 
             try:
                 validated_overrides = validate_query_overrides(support.get("query_overrides", []))
-            except ValueError as exc:
+            except (KeyError, ValueError) as exc:
                 err = {"tool": "suggest_refined_queries", "task_key": task_key, "error": str(exc)}
                 run_state.tool_errors.append(err)
                 return json.dumps(
@@ -1197,7 +1198,7 @@ class DepartmentLeadAgent:
             name="suggest_refined_queries",
             description=(
                 "Suggest refined search queries to unblock a stuck research task. "
-                "Returns a list of query_overrides for the Researcher."
+                "Returns KB-owned query variant tokens for the Researcher."
             ),
         )
         register_function(

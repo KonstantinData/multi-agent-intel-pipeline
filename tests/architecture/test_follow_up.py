@@ -188,6 +188,79 @@ def test_follow_up_prefers_run_brain_artifacts_over_answer_matrix(tmp_path):
         fu_mod.RUNS_DIR = original_runs
 
 
+def test_follow_up_evidence_priority_prefers_task_artifacts_over_answer_matrix(tmp_path):
+    from src.orchestration.follow_up import answer_follow_up
+    import src.orchestration.follow_up as fu_mod
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["answer_matrix"] = {
+        "q_market_situation": {"status": "answered", "answer": "Matrix evidence must not win", "notes": ""}
+    }
+    context["short_term_memory"]["department_run_states"] = {
+        "MarketDepartment": {
+            "task_artifacts": {
+                "market_situation": [{"facts": ["Artifact market fact"], "open_questions": []}]
+            },
+            "review_artifacts": {"market_situation": [{"approved": True, "accepted_points": []}]},
+            "decision_artifacts": {
+                "market_situation": [{"outcome": "accepted", "open_questions": []}]
+            },
+        }
+    }
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="MarketDepartment",
+            question="What is verified?",
+            pipeline_data=_make_pipeline_data(),
+            run_context=context,
+        )
+        assert result["evidence_used"][0] == "Artifact market fact"
+        assert "Matrix evidence must not win" not in result["evidence_used"]
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
+def test_follow_up_evidence_priority_falls_back_to_pipeline_data_then_package(tmp_path):
+    from src.orchestration.follow_up import answer_follow_up
+    import src.orchestration.follow_up as fu_mod
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["short_term_memory"]["department_run_states"] = {"BuyerDepartment": {}}
+    context["short_term_memory"]["department_packages"]["BuyerDepartment"] = {
+        "admission": {"decision": "accepted", "downstream_visible": True},
+        "raw_package": {
+            "summary": "Package fallback summary",
+            "accepted_points": ["Package fallback accepted point"],
+            "open_questions": [],
+        }
+    }
+    pipeline_data = _make_pipeline_data()
+    pipeline_data["market_network"]["peer_competitors"]["assessment"] = "Pipeline peer assessment"
+    pipeline_data["market_network"]["downstream_buyers"]["assessment"] = "Pipeline buyer assessment"
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="BuyerDepartment",
+            question="What is the buyer picture?",
+            pipeline_data=pipeline_data,
+            run_context=context,
+        )
+        assert result["evidence_used"][0] == "Pipeline peer assessment"
+        assert result["evidence_used"][1] == "Pipeline buyer assessment"
+        assert "Package fallback accepted point" in result["evidence_used"]
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
 def test_follow_up_blocks_closed_unresolved_facts_from_evidence(tmp_path):
     from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod

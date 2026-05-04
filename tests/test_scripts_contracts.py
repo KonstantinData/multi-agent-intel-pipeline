@@ -221,6 +221,9 @@ def test_codeowners_high_impact_paths_have_independent_review_paths() -> None:
         "/src/agents/",
         "/src/memory/",
         "/knowledge/",
+        "/docs/drawio/",
+        "/docs/target_runtime_architecture.md",
+        "/tests/",
         "/.github/workflows/",
         "/requirements.txt",
         "/requirements.lock",
@@ -231,6 +234,22 @@ def test_codeowners_high_impact_paths_have_independent_review_paths() -> None:
     assert not missing, f"Missing high-impact CODEOWNERS patterns: {missing}"
     single_owner = [pattern for pattern in required if len(set(by_pattern[pattern])) < 2]
     assert not single_owner, f"High-impact paths need at least two review owners: {single_owner}"
+
+
+def test_codeowners_contains_architecture_docs_and_tests_rules() -> None:
+    codeowners = ROOT / ".github" / "CODEOWNERS"
+    lines = [
+        line.strip()
+        for line in codeowners.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    by_pattern = {line.split()[0]: line.split()[1:] for line in lines}
+
+    assert "@liquisto/runtime-review" in by_pattern.get("/docs/drawio/", [])
+    assert "@liquisto/runtime-review" in by_pattern.get("/docs/target_runtime_architecture.md", [])
+    assert "@KonstantinData" in by_pattern.get("/tests/", [])
+    assert "@liquisto/security-governance" in by_pattern.get("/tests/", [])
+    assert "@liquisto/runtime-review" in by_pattern.get("/tests/", [])
 
 
 def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:

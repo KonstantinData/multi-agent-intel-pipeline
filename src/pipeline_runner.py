@@ -561,13 +561,39 @@ def run_pipeline(
             synthesis_result, synthesis_messages = agents["synthesis"].run(
                 brief=brief,
                 department_packages=_admitted_packages_for_synthesis(department_packages),
-                supervisor=agents["supervisor"],
-                departments=agents["departments"],
                 memory_store=run_context.short_term_memory,
                 on_message=on_message,
                 synthesis_context=synthesis_ctx,
             )
             messages.extend(synthesis_messages)
+            synthesis_back_requests = list(synthesis_result.get("back_requests", []) or [])
+            if synthesis_back_requests:
+                run_context.resolution_state["synthesis_back_requests"] = synthesis_back_requests
+                for idx, back_request in enumerate(synthesis_back_requests, start=1):
+                    subject = str(back_request.get("subject", "") or "").strip()
+                    department = str(back_request.get("department", "") or "SynthesisDepartment")
+                    request_type = str(back_request.get("type", "") or "clarify")
+                    note = (
+                        f"Synthesis back-request for {department} "
+                        f"({request_type}): {subject or 'n/v'}"
+                    )
+                    run_context.short_term_memory.open_questions.append(note)
+                    messages.append(
+                        emit_message(
+                            on_message,
+                            agent="Supervisor",
+                            content=json.dumps(
+                                {
+                                    "status": "synthesis_back_request_recorded",
+                                    "index": idx,
+                                    "department": department,
+                                    "request_type": request_type,
+                                    "subject": subject,
+                                },
+                                ensure_ascii=False,
+                            ),
+                        )
+                    )
             synthesis_acceptance = agents["supervisor"].accept_synthesis(
                 synthesis_payload=synthesis_result,
             )

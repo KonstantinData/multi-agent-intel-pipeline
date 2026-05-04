@@ -148,13 +148,14 @@ def test_parity_contact_discovery_no_buyers() -> None:
 
 
 # ---------------------------------------------------------------------------
-# query_overrides semantics (Option A — preserve or-idiom exactly)
+# query_overrides semantics (KB-owned strategy variant tokens)
 # ---------------------------------------------------------------------------
 
-def test_override_non_empty_skips_resolver() -> None:
-    overrides = ["custom query A", "custom query B"]
+def test_override_non_empty_resolves_strategy_variant() -> None:
+    overrides = ["strategy:company_fundamentals:method_refinement"]
     result = resolve_queries("company_fundamentals", _BRIEF, query_overrides=overrides)
-    assert result == overrides
+    assert result
+    assert all("acme" in query.lower() or "acme-automotive.de" in query.lower() for query in result)
 
 
 def test_override_empty_list_falls_through_to_resolver() -> None:
@@ -171,12 +172,21 @@ def test_override_none_uses_resolver() -> None:
     assert len(result) > 0
 
 
-@pytest.mark.parametrize("overrides", [["<firma> annual report"], ["{unknown} revenue"], [""]])
-def test_override_validation_rejects_invalid_placeholder_or_empty_values(overrides) -> None:
+@pytest.mark.parametrize("overrides", [["<firma> annual report"], ["{unknown} revenue"], [""], ["custom query A"]])
+def test_override_validation_rejects_free_form_or_empty_values(overrides) -> None:
     from src.research.query_resolver import validate_query_overrides
 
     with pytest.raises(ValueError):
         validate_query_overrides(overrides)
+
+
+def test_override_rejects_mismatched_task_key() -> None:
+    with pytest.raises(ValueError):
+        resolve_queries(
+            "company_fundamentals",
+            _BRIEF,
+            query_overrides=["strategy:market_situation:method_refinement"],
+        )
 
 
 # ---------------------------------------------------------------------------

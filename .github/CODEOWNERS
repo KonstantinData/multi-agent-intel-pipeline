@@ -17,6 +17,9 @@
 /src/agents/ @KonstantinData @liquisto/runtime-review
 /src/memory/ @KonstantinData @liquisto/security-governance
 /knowledge/ @KonstantinData @liquisto/runtime-review
+/docs/drawio/ @KonstantinData @liquisto/runtime-review
+/docs/target_runtime_architecture.md @KonstantinData @liquisto/runtime-review
+/tests/ @KonstantinData @liquisto/security-governance @liquisto/runtime-review
 /requirements.txt @KonstantinData @liquisto/security-governance
 /requirements.lock @KonstantinData @liquisto/security-governance
 /pyproject.toml @KonstantinData @liquisto/security-governance

@@ -29,7 +29,29 @@
           "\"{company}\" distributors buyers aftermarket"
         ]
       },
-      "dedup": true
+      "dedup": true,
+      "query_variants": {
+        "method_refinement": {
+          "queries_peer_prefix": [
+            "{industry} manufacturers competitors distributors",
+            "{keywords} component manufacturers competitors",
+            "\"{company}\" competitors customers aftermarket"
+          ],
+          "queries_buyer_base": {
+            "queries_if_keywords": [
+              "{keywords} distributors aftermarket procurement",
+              "{keywords} spare parts resale buyers"
+            ],
+            "queries_if_industry": [
+              "{industry} aftermarket buyers distributors"
+            ],
+            "queries_always": [
+              "\"{company}\" customer references"
+            ]
+          },
+          "dedup": true
+        }
+      }
     },
     "monetization_redeployment": {
       "queries": [
@@ -40,7 +62,16 @@
         "{keywords} distributors brokers marketplace",
         "{keywords} retrofit service providers",
         "{keywords} aftermarket partners distributors"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "{keywords} brokers marketplace surplus resale",
+            "{industry} aftermarket distributors redeployment",
+            "\"{company}\" customers spare parts aftermarket"
+          ]
+        }
+      }
     }
   }
 }

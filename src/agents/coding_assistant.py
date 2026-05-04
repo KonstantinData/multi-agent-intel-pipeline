@@ -16,26 +16,30 @@ class CodingAssistantAgent:
     def suggest_queries(
         self,
         *,
+        task_key: str,
         section: str,
         brief: SupervisorBrief,
         issues: list[str],
         review: dict | None = None,
         coding_brief: dict | None = None,
     ) -> dict:
+        # Keep extraction calls for diagnostic context; runtime query text is
+        # resolved later from knowledge/query_strategies via the variant token.
         product_keywords = extract_product_keywords(brief.raw_homepage_excerpt)
         industry_hint = infer_industry(brief.page_title, brief.meta_description, brief.raw_homepage_excerpt)
-        base = product_keywords[:3] or [brief.company_name]
-        if section == "industry_analysis":
-            queries = [f"{' '.join(base)} industry report demand"] + [f"{brief.company_name} market report", f"{industry_hint} market outlook"]
-        else:
-            queries = [f"{' '.join(base)} buyers distributors"] + [f"{brief.company_name} customers aftermarket"]
+        variant_token = f"strategy:{task_key}:method_refinement"
         return {
+            "task_key": task_key,
             "section": section,
             "issues": issues,
-            "query_overrides": queries,
+            "query_overrides": [variant_token],
             "revision_focus": list((review or {}).get("rejected_points", [])),
             "coding_brief": coding_brief or {},
-            "summary": "Refined search path generated for a second attempt.",
+            "summary": (
+                "Refined search path selected from query strategy KB "
+                f"(variant=method_refinement, industry_hint={industry_hint or 'n/v'}, "
+                f"keyword_count={len(product_keywords)})."
+            ),
             "model_name": self.model_name,
             "allowed_tools": list(self.allowed_tools),
         }

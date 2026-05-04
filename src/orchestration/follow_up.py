@@ -13,8 +13,9 @@ is loaded from the stored ``run_context.json``.  This includes:
 
 The answer is grounded in the rehydrated run brain:
 - Primary evidence: task_artifacts and decision_artifacts from the run
-- Secondary evidence: accepted_points from reviews
-- Unresolved: open_questions from decisions and open task artifacts
+- Secondary evidence: finalized pipeline_data
+- Fallback evidence: department packages
+- Unresolved: open_questions from decisions and package gates
 
 The difference between:
 - Answering from known run context: uses stored artifacts (this module)
@@ -133,10 +134,17 @@ class FollowUpEvidenceResolver:
             .get("department_packages", {})
             .get(department, {})
         )
-        package_open = resolve_raw_package(package).get("open_questions", [])
+        raw_package = resolve_raw_package(package)
+        package_evidence = [
+            *[str(item) for item in raw_package.get("accepted_points", []) if str(item).strip()],
+            str(raw_package.get("summary", "") or "").strip(),
+            str((raw_package.get("report_segment", {}) or {}).get("narrative_summary", "") or "").strip(),
+        ]
+        package_open = raw_package.get("open_questions", [])
         evidence = [
             *artifact_evidence,
             *[str(item) for item in pipeline_candidates if str(item).strip()],
+            *[item for item in package_evidence if item and item != "n/v"],
         ]
         unresolved = [
             *artifact_unresolved,
@@ -164,44 +172,15 @@ def _company_answer(
 ) -> tuple[str, list[str], list[str]]:
     profile = pipeline_data.get("company_profile", {})
 
-    # RA-07: Primary grounding from answer matrix + evidence packets
-    answer_matrix = run_context.get("answer_matrix", {})
-    memory = run_context.get("short_term_memory", {})
-    evidence_packets = memory.get("evidence_packets", [])
-
-    artifact_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
         department="CompanyDepartment",
         pipeline_candidates=[profile.get("description", "")],
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
 
-    # Evidence priority: answer_matrix > evidence_packets > task_artifacts > pipeline_data
-    matrix_evidence = []
-    for qid in ("q_company_fundamentals", "q_economic_commercial_situation", "q_product_asset_scope"):
-        entry = answer_matrix.get(qid, {})
-        if entry.get("answer") and entry["answer"] != "n/v":
-            matrix_evidence.append(entry["answer"][:200])
-
-    packet_evidence = [
-        str(p.get("claim", ""))[:200]
-        for p in evidence_packets[:4]
-        if isinstance(p, dict)
-        and p.get("metadata", {}).get("task_key", "").startswith("company")
-        and p.get("claim")
-    ]
-
-    evidence = [
-        *artifact_evidence[:3],
-        *matrix_evidence[:3],
-        *packet_evidence[:3],
-        profile.get("description", ""),
-    ]
-    unresolved = _dedup_safe(
-        [entry.get("notes", "") for entry in answer_matrix.values()
-         if entry.get("status") in {"pending", "blocked"} and entry.get("notes")]
-        + artifact_unresolved[:2]
-    )
+    evidence = resolved_evidence
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Company follow-up for '{question}': "
         f"{profile.get('company_name', 'The target company')} is described as {profile.get('description', 'n/v')}. "
@@ -214,31 +193,15 @@ def _market_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     analysis = pipeline_data.get("industry_analysis", {})
-    answer_matrix = run_context.get("answer_matrix", {})
-    artifact_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
         department="MarketDepartment",
         pipeline_candidates=[analysis.get("assessment", ""), analysis.get("demand_outlook", "")],
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
 
-    matrix_evidence = []
-    for qid in ("q_market_situation",):
-        entry = answer_matrix.get(qid, {})
-        if entry.get("answer") and entry["answer"] != "n/v":
-            matrix_evidence.append(entry["answer"][:200])
-
-    evidence = [
-        *matrix_evidence[:3],
-        *artifact_evidence[:3],
-        analysis.get("assessment", ""),
-        analysis.get("demand_outlook", ""),
-    ]
-    unresolved = _dedup_safe(
-        [entry.get("notes", "") for qid, entry in answer_matrix.items()
-         if qid.startswith("q_market") and entry.get("status") in {"pending", "blocked"} and entry.get("notes")]
-        + artifact_unresolved[:2]
-    )
+    evidence = resolved_evidence
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Market follow-up for '{question}': "
         f"Industry assessment: {analysis.get('assessment', 'n/v')}. "
@@ -251,8 +214,7 @@ def _buyer_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     network = pipeline_data.get("market_network", {})
-    answer_matrix = run_context.get("answer_matrix", {})
-    artifact_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
         department="BuyerDepartment",
         pipeline_candidates=[
             network.get("peer_competitors", {}).get("assessment", ""),
@@ -262,26 +224,10 @@ def _buyer_answer(
         run_context=run_context,
     )
 
-    matrix_evidence = []
-    for qid in ("q_peer_companies", "q_monetization_redeployment"):
-        entry = answer_matrix.get(qid, {})
-        if entry.get("answer") and entry["answer"] != "n/v":
-            matrix_evidence.append(entry["answer"][:200])
-
     peers = network.get("peer_competitors", {}).get("companies", [])
     buyers = network.get("downstream_buyers", {}).get("companies", [])
-    evidence = [
-        *matrix_evidence[:2],
-        *artifact_evidence[:3],
-        network.get("peer_competitors", {}).get("assessment", ""),
-        network.get("downstream_buyers", {}).get("assessment", ""),
-    ]
-    unresolved = _dedup_safe(
-        [entry.get("notes", "") for qid, entry in answer_matrix.items()
-         if qid in ("q_peer_companies", "q_monetization_redeployment")
-         and entry.get("status") in {"pending", "blocked"} and entry.get("notes")]
-        + artifact_unresolved[:2]
-    )
+    evidence = resolved_evidence
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Buyer follow-up for '{question}': "
         f"Peer assessment: {network.get('peer_competitors', {}).get('assessment', 'n/v')}. "
@@ -295,28 +241,19 @@ def _contact_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     section = pipeline_data.get("contact_intelligence", {})
-    answer_matrix = run_context.get("answer_matrix", {})
-    artifact_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
         department="ContactDepartment",
         pipeline_candidates=[section.get("narrative_summary", "")],
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
 
-    matrix_entry = answer_matrix.get("q_contact_intelligence", {})
-    matrix_evidence = [matrix_entry["answer"][:200]] if matrix_entry.get("answer") and matrix_entry["answer"] != "n/v" else []
-
     contacts = section.get("prioritized_contacts", section.get("contacts", []))
     evidence = [
-        *matrix_evidence,
-        *artifact_evidence[:2],
-        section.get("narrative_summary", ""),
+        *resolved_evidence,
         *[f"{c.get('name', '')} — {c.get('rolle_titel', '')} at {c.get('firma', '')}" for c in contacts[:3]],
     ]
-    unresolved = _dedup_safe(
-        ([matrix_entry.get("notes", "")] if matrix_entry.get("status") in {"pending", "blocked"} and matrix_entry.get("notes") else [])
-        + artifact_unresolved[:2]
-    )
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Contact intelligence follow-up for '{question}': "
         f"{section.get('narrative_summary', 'n/v')} "

@@ -128,6 +128,10 @@ The resolver:
   invalid placeholders
 
 `src/agents/worker.py::_build_queries()` delegates to the resolver.
+Runtime query overrides are not free-form queries. Coding support emits
+`strategy:<task_key>:<variant_key>` tokens, and the resolver expands those
+tokens only from `query_variants` entries in the owning
+`knowledge/query_strategies/<department>.yaml` file.
 `_build_queries_legacy()` remains only for parity verification and migration
 monitoring via `LIQUISTO_QUERY_RESOLVER_VERIFY=1`.
 
@@ -153,6 +157,12 @@ Responsibilities:
 - assess the most plausible Liquisto opportunity
 - derive negotiation relevance and next-step logic
 - produce the final `synthesis` section
+
+The Synthesis Department does not receive a `SupervisorAgent` instance.
+If internal analysis identifies a domain gap, it records a structured
+BackRequest in its synthesis result. The outer runtime persists those
+BackRequests after the GroupChat completes and exposes them to the Supervisor
+as post-synthesis artifacts.
 
 ### Report Writer Runtime
 

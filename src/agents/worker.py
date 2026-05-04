@@ -79,10 +79,11 @@ class ResearchWorker:
     ) -> dict[str, Any]:
         granted_tools = tuple(allowed_tools or ())
         hints = self._derive_research_hints(brief)
-        queries = query_overrides or self._build_queries(
+        queries = self._build_queries(
             brief=brief,
             task_key=task_key,
             current_section=current_sections.get(target_section, {}),
+            query_overrides=query_overrides,
         )
         search_results, search_calls = self._search_queries(queries, granted_tools=granted_tools, task_key=task_key)
         page_evidence, page_fetches = self._fetch_supporting_pages(search_results, granted_tools=granted_tools)
@@ -743,14 +744,26 @@ class ResearchWorker:
             "product_keywords": product_keywords,
         }
 
-    def _build_queries(self, *, brief: SupervisorBrief, task_key: str, current_section: dict[str, Any] | None = None) -> list[str]:
+    def _build_queries(
+        self,
+        *,
+        brief: SupervisorBrief,
+        task_key: str,
+        current_section: dict[str, Any] | None = None,
+        query_overrides: list[str] | None = None,
+    ) -> list[str]:
         """Resolve queries via the central query resolver.
 
         Delegates to ``resolve_queries()`` from ``src.research.query_resolver``.
         When ``LIQUISTO_QUERY_RESOLVER_VERIFY=1`` both the resolver and the
         legacy path are run and any divergence is logged for migration monitoring.
         """
-        resolved = resolve_queries(task_key, brief, current_section=current_section)
+        resolved = resolve_queries(
+            task_key,
+            brief,
+            current_section=current_section,
+            query_overrides=query_overrides,
+        )
         if is_verify_mode():
             import logging as _logging
             _log = _logging.getLogger(__name__)

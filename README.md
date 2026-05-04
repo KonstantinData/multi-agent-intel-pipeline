@@ -132,7 +132,7 @@ The runtime plans around **meeting questions**, not only departments.
 | [src/orchestration/resolution_controller.py](src/orchestration/resolution_controller.py) | 5-bucket resolution classification |
 | [src/orchestration/meeting_readiness.py](src/orchestration/meeting_readiness.py) | MeetingReadinessGate + FinalBriefingComposer |
 | [src/orchestration/runtime_guardrails.py](src/orchestration/runtime_guardrails.py) | Phase budgets, structured-output validation, deterministic ordering |
-| [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, answer-matrix-grounded follow-up |
+| [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, run-brain-grounded follow-up |
 | [src/orchestration/contracts.py](src/orchestration/contracts.py) | Typed runtime contracts: TaskArtifact, TaskReviewArtifact, TaskDecisionArtifact, DepartmentRunState |
 | [src/orchestration/speaker_selector.py](src/orchestration/speaker_selector.py) | Guardrail-only speaker selectors |
 | [src/orchestration/department_knowledge.py](src/orchestration/department_knowledge.py) | Department KB loading + policy-gate evaluation (acceptance-time) |
