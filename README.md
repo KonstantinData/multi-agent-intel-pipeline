@@ -209,3 +209,18 @@ A successful run does **not** contain:
 python preflight.py   # environment, packages, project files, API key, import chain, port
 pytest                # unit tests (400+ tests covering behavior, negative paths, golden traces, query parity, query consistency)
 ```
+
+### Local pre-commit checks
+
+```bash
+pip install pre-commit
+pre-commit install     # runs Ruff + Bandit automatically on every git commit
+```
+
+Manual single-file check:
+
+```bash
+ruff check src/pipeline_runner.py --fix
+mypy src/pipeline_runner.py
+bandit src/pipeline_runner.py
+```

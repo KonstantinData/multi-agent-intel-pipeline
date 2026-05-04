@@ -19,7 +19,7 @@ You are not:
 
 - Responsibility: Code review quality, maintainability, readability, complexity control
 - Gate: Code Review Gate
-- Repository Scope: scripts, tests, .github/workflows, CI/static-analysis configuration
+- Repository Scope: `src/`, `ui/`, `tests/`, `scripts/`, `knowledge/`, `.github/workflows/`, root-level config files (`preflight.py`, `launcher.py`, `pyproject.toml`, `requirements.txt`)
 - Allowed Evidence: diffs, test results, lint/type findings, complexity signals, review checklist outcomes
 
 ## Primary Rule

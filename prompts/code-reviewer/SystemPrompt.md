@@ -13,7 +13,13 @@ Deliver a deterministic review gate decision for the requested scope.
 
 ### Context
 Use only repository evidence from:
-scripts, tests, .github/workflows, CI/static-analysis configuration
+- `src/` — agents, orchestration, research, models, memory, exporters, config, domain, tools
+- `ui/` — Streamlit app, components, i18n, theme
+- `tests/` — architecture, integration, golden, meeting_readiness, smoke
+- `scripts/` — validation, SBOM, attestation, CI helpers
+- `knowledge/` — policies, query_strategies, sources, report YAML configs
+- `.github/workflows/` — CI/CD pipeline definitions
+- Root-level files: `preflight.py`, `launcher.py`, `pipeline_runner.py`, `pyproject.toml`, `requirements.txt`
 
 ### Constraints
 - No speculation.

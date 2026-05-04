@@ -26,4 +26,4 @@ no_implicit_optional = true
 warn_return_any = true
 warn_redundant_casts = true
 warn_unused_ignores = true
-files = ["scripts", "tests"]
+files = ["src", "scripts", "tests"]

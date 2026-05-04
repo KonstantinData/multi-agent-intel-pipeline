@@ -26,6 +26,8 @@ The layer covers:
   Streamlit-port readiness checks before local UI startup;
 - CI and review gates: CODEOWNERS, secret scan, workflow hardening,
   architecture/runtime contract tests, and release attestation;
+- pre-commit hooks: Ruff (with --fix) and Bandit run locally on every
+  git commit -- same scope as CI (src/, scripts/, tests/);
 - runtime guardrails: safe `run_id` path resolution, artifact locking/atomic
   JSON writes, audit minimization, and strict profile loading when enabled.
 

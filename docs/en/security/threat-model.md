@@ -51,8 +51,8 @@ run artifacts, memory, CI/CD governance, and generated reports.
 
 The `compliance-security-ai` workflow includes:
 
-- Ruff linting for scripts and tests;
-- MyPy type check;
+- Ruff linting for `src`, `scripts`, and `tests`;
+- MyPy type check for `src`, `scripts`, and `tests`;
 - Bandit SAST for `src` and `scripts`;
 - `pip-audit` dependency gate;
 - `detect-secrets` scan for `src` and `scripts`;
@@ -63,6 +63,9 @@ The `compliance-security-ai` workflow includes:
 - runtime contract tests;
 - AI-BOM generation and validation;
 - SBOM generation and validation.
+
+A `.pre-commit-config.yaml` runs Ruff and Bandit locally on every `git commit`
+(same scope as CI). Activate with `pip install pre-commit && pre-commit install`.
 
 Additional workflows cover dependency review, CodeQL, and release attestation.
 

@@ -37,7 +37,7 @@ jobs:
       - name: Install lint dependencies
         run: python -m pip install --upgrade pip ruff
       - name: Run Ruff
-        run: ruff check scripts tests
+        run: ruff check src scripts tests
 
   type-check:
     runs-on: ubuntu-latest
@@ -54,7 +54,7 @@ jobs:
       - name: Install type-check dependencies
         run: python -m pip install --upgrade pip mypy pytest
       - name: Run MyPy
-        run: mypy
+        run: mypy src
 
   bandit-sast:
     runs-on: ubuntu-latest

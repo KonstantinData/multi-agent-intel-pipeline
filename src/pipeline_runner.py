@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any
 
-from src.agents.specs import AGENT_SPECS
 from src.agents.runtime_factory import create_runtime_agents
+from src.agents.specs import AGENT_SPECS
 from src.app.use_cases import (
     BLOCKED_RUN_STATUS,
     DISCOVERY_READY_RUN_STATUS,
@@ -33,34 +34,37 @@ from src.memory.retrieval import retrieve_strategies
 from src.models.meeting_ready import FinalBriefing, MeetingAction, ResolutionPlan
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
+from src.orchestration.dashboard_composer import compose_dashboard
 from src.orchestration.envelope import resolve_admission
 from src.orchestration.follow_up import run_bounded_follow_up
-from src.orchestration.dashboard_composer import compose_dashboard
+from src.orchestration.meeting_questions import (
+    build_initial_answer_matrix,
+    build_question_registry,
+    matrix_status_for_task_status,
+)
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
-from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
-from src.orchestration.meeting_questions import build_initial_answer_matrix, build_question_registry, matrix_status_for_task_status
-from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
 from src.orchestration.run_context import RunContext
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
+from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
-from src.orchestration.task_router import build_synthesis_assignments
 from src.orchestration.synthesis import (
     assess_research_readiness,
-    build_contact_enrichment_stage,
     build_contact_briefing_assets,
+    build_contact_enrichment_stage,
     build_playbook_assets,
     build_primary_source_stage,
     build_quality_review,
     build_synthesis_context,
     harmonize_synthesis_output,
 )
+from src.orchestration.task_router import build_synthesis_assignments
 from src.research.normalize import normalize_domain
-
 
 ROOT = Path(__file__).resolve().parent.parent
 LONG_TERM_MEMORY_PATH = ROOT / "artifacts" / "memory" / "long_term_memory.json"
 
 
-def _write_checkpoint(run_dir: Path, phase: str, run_context: "RunContext") -> None:
+def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> None:
     """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
     cp_dir = run_dir / "checkpoints"
     cp_dir.mkdir(parents=True, exist_ok=True)
@@ -88,7 +92,7 @@ MessageHook = Callable[[dict[str, Any]], None] | None
 
 
 def _timestamp_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _serialize_message_content(message: dict[str, Any]) -> str:
@@ -138,7 +142,7 @@ def _sync_finalization_artifacts(
     meeting_actions: list[MeetingAction] | list[dict[str, Any]] | None = None,
 ) -> None:
     evidence_health = str(
-        ((pipeline_data.get("quality_review") or {}).get("evidence_health") or "low")
+        (pipeline_data.get("quality_review") or {}).get("evidence_health") or "low"
     )
     blocked_reasons = list(run_context.meeting_readiness_assessment.blocked_reasons or [])
     if status in {BLOCKED_RUN_STATUS, DISCOVERY_READY_RUN_STATUS} and not blocked_reasons:
@@ -204,7 +208,7 @@ def _sync_finalization_artifacts(
         metadata={
             "run_status": status,
             "research_readiness_score": int(
-                ((pipeline_data.get("research_readiness") or {}).get("score", 0) or 0)
+                (pipeline_data.get("research_readiness") or {}).get("score", 0) or 0
             ),
             "evidence_health": evidence_health,
         },
@@ -270,7 +274,7 @@ def resume_pipeline(
     run_context.resolution_state["user_selections"] = {
         "selected_questions": selected_questions,
         "skipped_questions": skipped_questions,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     dashboard = run_context.resolution_state.get("dashboard_state", {})
     dashboard["pending_user_selection"] = False
