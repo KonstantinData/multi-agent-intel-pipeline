@@ -401,7 +401,7 @@ def run_bounded_follow_up(
             route = "CompanyDepartment"
             answer, evidence, unresolved = _company_answer(question, pipeline_data, run_context)
 
-        resolved = not bool(unresolved)
+        resolved = bool(evidence) and not bool(unresolved)
         attempts.append({
             "route": route,
             "question": question,

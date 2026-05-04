@@ -54,6 +54,18 @@ from src.research.search import build_buyer_queries, build_company_queries, buil
 from src.utils import strict_json_dumps
 
 
+_MAX_LLM_SYSTEM_CONTENT_CHARS = 12_000
+_MAX_LLM_USER_CONTENT_CHARS = 24_000
+
+
+def _bounded_llm_content(value: str, *, limit: int) -> str:
+    """Cap LLM request content to avoid unbounded prompt resource growth."""
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n[TRUNCATED]"
+
+
 class ResearchWorker:
     """Runs one supervisor assignment against a compact evidence pack."""
 
@@ -1094,14 +1106,29 @@ class ResearchWorker:
             return False
         return os.getenv("LIQUISTO_DISABLE_LLM", "").strip().lower() not in {"1", "true", "yes"}
 
+    def close(self) -> None:
+        """Release the underlying httpx connection pool held by the OpenAI client."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self) -> "ResearchWorker":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def _client_instance(self) -> OpenAI:
         if self._client is None:
-            self._client = OpenAI(
-                api_key=get_openai_api_key(),
-                timeout=get_openai_timeout_seconds(),
-                max_retries=get_openai_max_retries(),
-            )
+            self._client = self._new_client()
         return self._client
+
+    def _new_client(self) -> OpenAI:
+        return OpenAI(
+            api_key=get_openai_api_key(),
+            timeout=get_openai_timeout_seconds(),
+            max_retries=get_openai_max_retries(),
+        )
 
     def _llm_synthesis(self, evidence_pack: dict[str, Any], *, model_name: str | None = None) -> dict[str, Any]:
         config = get_llm_config(role=self.name, model=model_name)
@@ -1307,24 +1334,38 @@ class ResearchWorker:
                 system_parts.append(" ".join(ctx_lines))
 
         effective_model = model_name or str(config["structured_model"])
+        system_content = _bounded_llm_content(
+            " ".join(system_parts),
+            limit=_MAX_LLM_SYSTEM_CONTENT_CHARS,
+        )
+        user_content = _bounded_llm_content(
+            strict_json_dumps(evidence_pack, ensure_ascii=False),
+            limit=_MAX_LLM_USER_CONTENT_CHARS,
+        )
         request_payload: dict[str, Any] = {
             "model": effective_model,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
                     "role": "system",
-                    "content": " ".join(system_parts),
+                    "content": system_content,
                 },
                 {
                     "role": "user",
-                    "content": strict_json_dumps(evidence_pack, ensure_ascii=False),
+                    "content": user_content,
                 },
             ],
         }
         request_payload.update(temperature_param(effective_model, config.get("temperature")))
-        response = self._client_instance().chat.completions.create(
-            **request_payload,
-        )
+        client = self._client if self._client is not None else self._new_client()
+        try:
+            response = client.chat.completions.create(
+                **request_payload,
+            )
+        finally:
+            client.close()
+            if self._client is client:
+                self._client = None
         raw_content = response.choices[0].message.content or "{}"
         try:
             payload = json.loads(raw_content)

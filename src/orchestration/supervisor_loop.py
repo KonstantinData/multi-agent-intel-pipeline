@@ -16,17 +16,9 @@ from src.orchestration.meeting_questions import (
     matrix_status_for_task_status,
 )
 from src.orchestration.task_router import (
-    DEPARTMENT_RESEARCHERS,
     build_department_assignments,
     build_initial_assignments,
-    build_synthesis_assignments,
     evaluate_run_conditions,
-)
-from src.orchestration.synthesis import (
-    build_contact_enrichment_stage,
-    build_primary_source_stage,
-    build_synthesis_context,
-    build_quality_review,
 )
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import BlockedArtifact
@@ -538,136 +530,6 @@ def run_supervisor_loop(
     # Strategic Synthesis Department is intentionally not run here.  The public
     # pipeline orchestrator runs it after first-round resolution and optional
     # auto-close so synthesis sees the final answer matrix for the domain round.
-    synthesis_assignments = build_synthesis_assignments(brief)
-
-    if "synthesis" in agents and getattr(run_context, "run_synthesis_inside_supervisor_loop", False):
-        messages.append(
-            emit_message(
-                on_message,
-                agent="Supervisor",
-                content=json.dumps(
-                    {"status": "synthesis_assigned", "department": "SynthesisDepartment"},
-                    ensure_ascii=False,
-                ),
-            )
-        )
-        # Build synthesis context as structured input for the AG2 GroupChat
-        quality_review = build_quality_review(run_context.short_term_memory.snapshot())
-        primary_source_stage = build_primary_source_stage(
-            company_profile=sections.get("company_profile", {}),
-            industry_analysis=sections.get("industry_analysis", {}),
-            market_network=sections.get("market_network", {}),
-        )
-        contact_enrichment_stage = build_contact_enrichment_stage(
-            company_profile=sections.get("company_profile", {}),
-            contact_intelligence=sections.get("contact_intelligence", {}),
-        )
-        sections["primary_source_stage"] = primary_source_stage
-        sections["contact_enrichment_stage"] = contact_enrichment_stage
-        messages.append(
-            emit_message(
-                on_message,
-                agent="Supervisor",
-                content=json.dumps(
-                    {
-                        "status": "primary_source_stage_completed",
-                        "coverage_quality": primary_source_stage.get("coverage_quality", "weak"),
-                        "hard_signal_count": primary_source_stage.get("hard_financial_inventory_signal_count", 0),
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-        )
-        messages.append(
-            emit_message(
-                on_message,
-                agent="Supervisor",
-                content=json.dumps(
-                    {
-                        "status": "contact_enrichment_stage_completed",
-                        "verified_decision_makers": contact_enrichment_stage.get("verified_decision_makers_count", 0),
-                        "public_search_exhausted": bool(contact_enrichment_stage.get("public_search_exhausted")),
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-        )
-        synthesis_ctx = build_synthesis_context(
-            company_profile=sections.get("company_profile", {}),
-            industry_analysis=sections.get("industry_analysis", {}),
-            market_network=sections.get("market_network", {}),
-            contact_intelligence=sections.get("contact_intelligence", {}),
-            quality_review=quality_review,
-            memory_snapshot=run_context.short_term_memory.snapshot(),
-            primary_source_stage=primary_source_stage,
-            contact_enrichment_stage=contact_enrichment_stage,
-        )
-        synthesis_result, synthesis_messages = agents["synthesis"].run(
-            brief=brief,
-            department_packages=_admitted_packages_for_synthesis(department_packages),
-            supervisor=agents["supervisor"],
-            departments=agents["departments"],
-            memory_store=run_context.short_term_memory,
-            on_message=on_message,
-            synthesis_context=synthesis_ctx,
-        )
-        messages.extend(synthesis_messages)
-
-        # F3: Synthesis acceptance gate — no more auto-accept.
-        # Gate reads generation_mode as an execution fact, does not set it.
-        synthesis_acceptance = agents["supervisor"].accept_synthesis(
-            synthesis_payload=synthesis_result,
-        )
-        synthesis_decision = synthesis_acceptance.get("decision", "rejected")
-
-        # RF2-1: Synthesis envelope uses canonical keys (raw_package / admitted_payload)
-        # identical to department envelopes — one shape for all.
-        synthesis_envelope: dict[str, Any] = {
-            "admission": {
-                "decision": synthesis_decision,
-                "reason": synthesis_acceptance.get("reason", ""),
-                "downstream_visible": synthesis_decision != "rejected",
-            },
-            "raw_package": synthesis_result,
-        }
-        if synthesis_decision != "rejected":
-            synthesis_envelope["admitted_payload"] = synthesis_result
-        else:
-            synthesis_envelope["admitted_payload"] = None
-
-        department_packages["SynthesisDepartment"] = synthesis_envelope
-        sections["synthesis"] = synthesis_result
-
-        messages.append(
-            emit_message(
-                on_message,
-                agent="Supervisor",
-                content=json.dumps(
-                    {"department": "SynthesisDepartment", "status": "synthesis_reviewed", **synthesis_acceptance},
-                    ensure_ascii=False,
-                ),
-            )
-        )
-
-        _SYNTHESIS_DECISION_TO_STATUS = {
-            "accepted": "accepted",
-            "accepted_with_gaps": "degraded",
-            "rejected": "degraded",
-        }
-        synthesis_task_status = _SYNTHESIS_DECISION_TO_STATUS.get(synthesis_decision, "degraded")
-
-        for assignment in synthesis_assignments:
-            run_context.update_task_status(task_key=assignment.task_key, status=synthesis_task_status)
-            run_context.short_term_memory.task_statuses[assignment.task_key] = synthesis_task_status
-            _update_answer_matrix_from_task(assignment, synthesis_task_status)
-            completed_backlog.append(
-                {
-                    "task_key": assignment.task_key,
-                    "label": assignment.label,
-                    "target_section": assignment.target_section,
-                    "status": synthesis_task_status,
-                }
-            )
 
     # Observability: department timing summary
     timing_summary = ", ".join(

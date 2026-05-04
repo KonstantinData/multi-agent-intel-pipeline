@@ -138,6 +138,76 @@ def _simulate_department_chat(lead_agent, brief, assignments, supervisor):
 # ---------------------------------------------------------------------------
 
 class TestDepartmentGroupChatRun:
+    def test_lead_system_prompt_escapes_untrusted_runtime_text(self):
+        from src.agents.lead import DepartmentLeadAgent
+
+        lead = DepartmentLeadAgent.__new__(DepartmentLeadAgent)
+        lead.name = 'Lead<script>alert("x")</script>\x00'
+        lead.department = 'CompanyDepartment<img src=x onerror=alert("x")>'
+        lead.researcher_name = 'Researcher"><svg onload=alert(1)>'
+        lead.critic_name = "Critic<script>alert(2)</script>"
+        lead.judge_name = "Judge<img src=x onerror=alert(3)>"
+        lead.coding_name = "Coder<script>alert(4)</script>"
+
+        assignment = Assignment(
+            task_key='company_fundamentals<script>alert("task")</script>',
+            assignee="CompanyDepartment",
+            target_section="company_profile",
+            label='Company <img src=x onerror=alert("label")>',
+            objective="Build verified fundamentals.",
+            model_name="gpt-4.1-mini",
+            allowed_tools=("search",),
+        )
+        investigation_plan = {
+            "task_sequence": [
+                {"lead_guidance": 'Use <script>alert("guidance")</script> primary sources.'}
+            ],
+            "domain_hypothesis": 'Hypothesis <img src=x onerror=alert("hyp")>',
+            "classification_frame": 'Frame <script>alert("frame")</script>',
+            "source_priority": ['owned<script>alert("source")</script>'],
+            "recommended_sources": [
+                {"name": 'Registry <img src=x onerror=alert("source")>', "priority": "primary"}
+            ],
+            "policy_required_fields": ['company_name<script>alert("field")</script>'],
+        }
+
+        prompt = lead._lead_system_prompt(investigation_plan, [assignment])
+
+        assert "<script" not in prompt.lower()
+        assert "<img" not in prompt.lower()
+        assert "<svg" not in prompt.lower()
+        assert "\x00" not in prompt
+        assert "&lt;script&gt;" in prompt
+        assert "&lt;img" in prompt
+
+    def test_all_role_system_prompts_escape_untrusted_agent_names(self):
+        from src.agents.lead import DepartmentLeadAgent
+
+        lead = DepartmentLeadAgent.__new__(DepartmentLeadAgent)
+        lead.name = 'Lead<script>alert("x")</script>'
+        lead.department = 'CompanyDepartment<img src=x onerror=alert("x")>'
+        lead.researcher_name = 'Researcher"><svg onload=alert(1)>'
+        lead.critic_name = "Critic<script>alert(2)</script>"
+        lead.judge_name = "Judge<img src=x onerror=alert(3)>"
+        lead.coding_name = "Coder<script>alert(4)</script>"
+
+        prompts = [
+            lead._researcher_system_prompt(),
+            lead._critic_system_prompt(),
+            lead._judge_system_prompt(),
+            lead._followup_lead_system_prompt(
+                'Question <script>alert("q")</script>',
+                'Context <img src=x onerror=alert("c")>',
+            ),
+            lead._coding_system_prompt(),
+        ]
+
+        combined = "\n".join(prompts).lower()
+        assert "<script" not in combined
+        assert "<img" not in combined
+        assert "<svg" not in combined
+        assert "&lt;script&gt;" in combined
+
     def test_company_department_produces_valid_package(self):
         from src.agents.lead import DepartmentLeadAgent
         brief = _make_brief()

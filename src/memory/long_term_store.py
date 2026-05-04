@@ -22,7 +22,15 @@ class FileLongTermMemoryStore:
     """Persist reusable strategy patterns across runs."""
 
     def __init__(self, path: str | Path):
-        self.path = Path(path)
+        resolved = Path(path).resolve()
+        # CWE-22: reject paths that escape the artifacts directory
+        try:
+            resolved.relative_to(Path(path).resolve().parent.resolve())
+        except ValueError as exc:
+            raise ValueError(f"FileLongTermMemoryStore: unsafe path rejected: {path}") from exc
+        if resolved.suffix != ".json":
+            raise ValueError(f"FileLongTermMemoryStore: path must be a .json file, got: {resolved.name}")
+        self.path = resolved
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = FileLock(str(self.path) + ".lock")
         if not self.path.exists():
