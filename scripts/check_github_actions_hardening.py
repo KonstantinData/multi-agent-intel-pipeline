@@ -10,6 +10,7 @@ DISALLOWED_PATTERNS = [
     r"\bpull_request_target\b",
     r"permissions:\s*write-all",
     r"permissions:\s*\{\s*\}",
+    r"ENABLE_CODEQL",
 ]
 
 PLACEHOLDER_PATTERNS = [
@@ -20,25 +21,39 @@ PLACEHOLDER_PATTERNS = [
 
 USES_PATTERN = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)")
 SHA_PIN_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-
-# Trusted exceptions where the upstream guidance recommends major-version tracking.
-TRUSTED_MAJOR_TAG_ACTIONS = {
-    "github/codeql-action/init@v4",
-    "github/codeql-action/analyze@v4",
-    "actions/dependency-review-action@v4",
-    "actions/attest@v4",
-}
+DIGEST_PIN_PATTERN = re.compile(r"@sha256:[0-9a-f]{64}")
 
 
 def _is_allowed_action_reference(reference: str) -> bool:
-    if reference.startswith("./") or reference.startswith("docker://"):
+    if reference.startswith("./"):
         return True
+    if reference.startswith("docker://"):
+        return DIGEST_PIN_PATTERN.search(reference) is not None
     if "@" not in reference:
         return False
     action, ref = reference.rsplit("@", maxsplit=1)
     if SHA_PIN_PATTERN.fullmatch(ref):
         return True
-    return f"{action}@{ref}" in TRUSTED_MAJOR_TAG_ACTIONS
+    return False
+
+
+def check_dockerfile_hardening(dockerfile: Path) -> list[str]:
+    failures: list[str] = []
+    if not dockerfile.is_file():
+        failures.append("Dockerfile missing for OCI release artifact.")
+        return failures
+    text = dockerfile.read_text(encoding="utf-8")
+    from_lines = [line for line in text.splitlines() if line.strip().startswith("FROM ")]
+    if not from_lines:
+        failures.append("Dockerfile missing FROM instruction.")
+    for line in from_lines:
+        if DIGEST_PIN_PATTERN.search(line) is None:
+            failures.append("Dockerfile base image must be pinned by sha256 digest.")
+    if "USER liquisto" not in text:
+        failures.append("Dockerfile must run as the non-root liquisto user.")
+    if "streamlit" not in text or "--server.address=0.0.0.0" not in text:
+        failures.append("Dockerfile must start the Streamlit app on 0.0.0.0.")
+    return failures
 
 
 def check_workflow_hardening(workflow_files: list[Path]) -> list[str]:
@@ -67,15 +82,37 @@ def check_workflow_hardening(workflow_files: list[Path]) -> list[str]:
                 failures.append(f"{wf.as_posix()}: matched placeholder pattern `{pattern}`")
 
         for line in text.splitlines():
+            image_env = re.match(r"^\s+[A-Z0-9_]*IMAGE:\s*(\S+)", line)
+            if image_env and DIGEST_PIN_PATTERN.search(image_env.group(1)) is None:
+                failures.append(f"{wf.as_posix()}: Docker-based scanner image must be digest-pinned: `{line.strip()}`")
             match = USES_PATTERN.match(line)
             if not match:
                 continue
             ref = match.group(1)
             if not _is_allowed_action_reference(ref):
                 failures.append(
-                    f"{wf.as_posix()}: action reference must be SHA-pinned or trusted major tag: `{ref}`"
+                    f"{wf.as_posix()}: action reference must be pinned to a full-length SHA: `{ref}`"
                 )
 
+    return failures
+
+
+def check_release_attestation_workflow(path: Path) -> list[str]:
+    if not path.is_file():
+        return [f"{path.as_posix()}: release attestation workflow missing"]
+    text = path.read_text(encoding="utf-8")
+    failures: list[str] = []
+    for required in (
+        "packages: write",
+        "ghcr.io",
+        "subject-digest:",
+        "push-to-registry: true",
+        "sbom-path:",
+        "gh attestation verify",
+        "--predicate-type https://cyclonedx.org/bom",
+    ):
+        if required not in text:
+            failures.append(f"{path.as_posix()}: missing release hardening marker `{required}`")
     return failures
 
 
@@ -94,6 +131,8 @@ def main() -> None:
     workflow_dir = Path(args.workflow_dir)
     files = sorted(workflow_dir.glob("*.yml"))
     failures = check_workflow_hardening(files)
+    failures.extend(check_dockerfile_hardening(Path("Dockerfile")))
+    failures.extend(check_release_attestation_workflow(workflow_dir / "release-attestation.yml"))
     if failures:
         raise SystemExit("Hardening gate failed:\n- " + "\n- ".join(failures))
     print("Workflow hardening baseline passed.")

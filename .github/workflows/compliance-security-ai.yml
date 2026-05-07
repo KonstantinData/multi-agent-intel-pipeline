@@ -20,6 +20,9 @@ defaults:
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  SYFT_IMAGE: anchore/syft@sha256:d2e42aacd6a3f602e2e94f6ef77b102852f76778a8060272c88d567fb6fedecf
+  GITLEAKS_IMAGE: zricethezav/gitleaks@sha256:105ac66a57b2bb8afb61a3b8a5dcc4817773d03724a7e8a515214cfe58225556
+  TRIVY_IMAGE: aquasec/trivy@sha256:fc10faf341a1d8fa8256c5ff1a6662ef74dd38b65034c8ce42346cf958a02d5d
 
 jobs:
   lint:
@@ -40,6 +43,7 @@ jobs:
         run: ruff check src scripts tests
 
   type-check:
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -52,11 +56,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install type-check dependencies
-        run: python -m pip install --upgrade pip mypy pytest
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.lock mypy pytest
       - name: Run MyPy
-        run: mypy src
+        run: mypy
 
   bandit-sast:
+    needs: type-check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -73,7 +78,28 @@ jobs:
       - name: Run Bandit
         run: bandit -q -r src scripts -x tests
 
+  dependency-lock-gate:
+    needs: bandit-sast
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install lock tooling
+        run: python -m pip install --upgrade pip uv
+      - name: Verify dependency lock is current
+        run: |
+          uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock
+          git diff --exit-code requirements.lock
+
   dependency-vuln-gate:
+    needs: dependency-lock-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -87,10 +113,11 @@ jobs:
           python-version: "3.12"
       - name: Install audit dependencies
         run: python -m pip install --upgrade pip pip-audit
-      - name: Run pip-audit
-        run: pip-audit --strict -r requirements.txt
+      - name: Run pip-audit with CVE exception policy
+        run: python scripts/run_pip_audit_with_policy.py
 
   secret-scan:
+    needs: dependency-vuln-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -105,11 +132,31 @@ jobs:
       - name: Install secret scanning dependencies
         run: python -m pip install --upgrade pip detect-secrets
       - name: Scan for potential secrets
-        run: detect-secrets scan src scripts --all-files > .secrets.scan.json
+        run: detect-secrets scan . --all-files --exclude-files '(^|[\\/])(\\.git|\\.mypy_cache|\\.ruff_cache|\\.pytest_cache|venv|\\.venv|runs|reports|bom[\\/]sbom|bom[\\/]ai-bom)([\\/]|$)' > .secrets.scan.json
       - name: Fail on potential secrets
-        run: python -c "import json,sys; d=json.load(open('.secrets.scan.json', encoding='utf-8')); r=d.get('results', {}); c=sum(len(v) for v in r.values()); print(f'Potential secrets: {c}'); sys.exit(1 if c else 0)"
+        run: python scripts/validate_secret_scan.py detect-secrets .secrets.scan.json
+      - name: Run historical Gitleaks scan
+        run: |
+          set +e
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/repo" -w /repo \
+            "$GITLEAKS_IMAGE" detect \
+            --source . \
+            --config .gitleaks.toml \
+            --report-format json \
+            --report-path .gitleaks.report.json \
+            --redact
+          GITLEAKS_EXIT=$?
+          set -e
+          if [ "$GITLEAKS_EXIT" -gt 1 ]; then
+            echo "Gitleaks encountered a tool error (exit code: $GITLEAKS_EXIT)" >&2
+            exit "$GITLEAKS_EXIT"
+          fi
+      - name: Fail on historical secrets
+        run: python scripts/validate_secret_scan.py gitleaks .gitleaks.report.json
 
   governance-gates:
+    needs: secret-scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -123,8 +170,63 @@ jobs:
           python-version: "3.12"
       - name: Validate required governance structure
         run: python scripts/validate_audit_schema.py repository-structure
+      - name: Validate main branch ruleset desired state
+        run: python scripts/validate_ruleset_config.py
+
+  policy-as-code-gate:
+    needs: governance-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Generate Actions-BOM
+        run: python scripts/generate_actions_bom.py --output bom/actions/actions-bom.json
+      - name: Validate Actions-BOM
+        run: python scripts/validate_actions_bom.py bom/actions/actions-bom.json
+      - name: Upload Actions-BOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: actions-bom
+          path: bom/actions/actions-bom.json
+          if-no-files-found: error
+      - name: Run Conftest Rego unit tests
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/project" -w /project \
+            openpolicyagent/conftest@sha256:97b5f4e3f964ed4a7e8e0840a16b0ac88c082fd2ca3dc5d2f999f5cd35860c38 \
+            verify -p policies/rego
+      - name: Run Conftest policy-as-code gate
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/project" -w /project \
+            openpolicyagent/conftest@sha256:97b5f4e3f964ed4a7e8e0840a16b0ac88c082fd2ca3dc5d2f999f5cd35860c38 \
+            test .github/workflows .github/rulesets -p policies/rego
+
+  scorecard-policy-gate:
+    needs: policy-as-code-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Validate local scorecard-adjacent controls
+        run: python scripts/check_scorecard_policy.py
 
   actions-hardening-gate:
+    needs: scorecard-policy-gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -135,7 +237,88 @@ jobs:
       - name: Validate workflow hardening baseline
         run: python scripts/check_github_actions_hardening.py
 
+  dependency-policy-gate:
+    needs: actions-hardening-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.lock
+      - name: Validate dependency license and registry policy
+        run: python scripts/validate_dependency_policy.py
+
+  dependency-diff-gate:
+    needs: dependency-policy-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Fetch base lockfile
+        run: git fetch origin ${{ github.base_ref }} --depth=1
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Produce dependency diff
+        run: |
+          git show origin/${{ github.base_ref }}:requirements.lock > /tmp/base.lock
+          python scripts/dependency_diff.py /tmp/base.lock requirements.lock --output bom/actions/dependency-diff.json
+      - name: Upload dependency diff artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-diff
+          path: bom/actions/dependency-diff.json
+          if-no-files-found: warn
+
+  vuln-scan-gate:
+    needs: dependency-policy-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Trivy filesystem vulnerability scan
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/project" \
+            "$TRIVY_IMAGE" fs /project \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --ignorefile /project/.trivyignore \
+            --scanners vuln \
+            --skip-dirs '.git' \
+            --skip-dirs '.mypy_cache' \
+            --skip-dirs '.ruff_cache' \
+            --skip-dirs '.pytest_cache' \
+            --skip-dirs 'bom'
+      - name: Trivy Dockerfile misconfiguration scan
+        run: |
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/project" \
+            "$TRIVY_IMAGE" config /project \
+            --exit-code 1 \
+            --severity HIGH,CRITICAL \
+            --misconfig-scanners dockerfile \
+            --skip-dirs '.git' \
+            --skip-dirs 'bom'
+
   script-contract-tests:
+    needs: dependency-policy-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -153,6 +336,7 @@ jobs:
         run: pytest -q tests/test_scripts_contracts.py
 
   architecture-tests:
+    needs: script-contract-tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -181,6 +365,7 @@ jobs:
           if-no-files-found: warn
 
   runtime-contract-tests:
+    needs: architecture-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -195,7 +380,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install runtime test dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.lock pytest
       - name: Run readiness, golden, query, and smoke tests
         run: pytest -q tests/meeting_readiness tests/golden tests/test_query_*.py tests/smoke --junitxml=reports/runtime-contracts.xml
       - name: Upload runtime test reports
@@ -207,6 +392,7 @@ jobs:
           if-no-files-found: warn
 
   integration-tests:
+    needs: runtime-contract-tests
     runs-on: ubuntu-latest
     timeout-minutes: 40
     if: github.event_name == 'workflow_dispatch'
@@ -220,7 +406,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install runtime dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.lock pytest
       - name: Run integration tests
         run: pytest -q -m integration --junitxml=reports/integration.xml
       - name: Upload integration test reports
@@ -232,6 +418,7 @@ jobs:
           if-no-files-found: warn
 
   ai-bom-gate:
+    needs: runtime-contract-tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -255,6 +442,7 @@ jobs:
           if-no-files-found: error
 
   sbom-gate:
+    needs: ai-bom-gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -266,8 +454,18 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
-      - name: Generate SBOM
-        run: python scripts/generate_sbom.py --repo-root . --output bom/sbom/sbom.json
+      - name: Generate filesystem SBOM with Syft
+        run: |
+          mkdir -p bom/sbom
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/project" \
+            -v "$PWD/bom/sbom:/bom" \
+            "$SYFT_IMAGE" dir:/project \
+            --exclude '/project/.git/**' \
+            --exclude '/project/.mypy_cache/**' \
+            --exclude '/project/.ruff_cache/**' \
+            --exclude '/project/bom/**' \
+            -o cyclonedx-json=/bom/sbom.json
       - name: Validate SBOM
         run: python scripts/validate_sbom.py bom/sbom/sbom.json
       - name: Upload SBOM artifact
@@ -276,3 +474,65 @@ jobs:
           name: sbom
           path: bom/sbom/sbom.json
           if-no-files-found: error
+
+  provenance-gate:
+    needs: sbom-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Generate compliance manifest
+        run: |
+          mkdir -p bom/attestations
+          sha256sum .github/workflows/compliance-security-ai.yml requirements.txt requirements.lock > bom/attestations/compliance-manifest.sha256
+      - name: Attest compliance manifest
+        uses: actions/attest@281a49d4cbb0a72c9575a50d18f6deb515a11deb # v4
+        with:
+          subject-path: bom/attestations/compliance-manifest.sha256
+      - name: Upload compliance manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compliance-manifest
+          path: bom/attestations/compliance-manifest.sha256
+          if-no-files-found: error
+
+  pipeline-status:
+    needs:
+      - lint
+      - type-check
+      - bandit-sast
+      - dependency-lock-gate
+      - dependency-vuln-gate
+      - secret-scan
+      - governance-gates
+      - actions-hardening-gate
+      - script-contract-tests
+      - architecture-tests
+      - runtime-contract-tests
+      - integration-tests
+      - ai-bom-gate
+      - sbom-gate
+      - provenance-gate
+      - policy-as-code-gate
+      - scorecard-policy-gate
+      - dependency-policy-gate
+      - vuln-scan-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Fail if required gates failed
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: python scripts/check_workflow_needs_result.py

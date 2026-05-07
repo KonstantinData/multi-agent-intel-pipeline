@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 REQUIRED_KEYS = {"bomFormat", "specVersion", "version", "metadata", "components"}
+SUPPORTED_SPEC_VERSIONS = {"1.5", "1.6"}
 
 
 def _require(cond: bool, message: str) -> None:
@@ -22,10 +23,35 @@ def validate_sbom(path: Path) -> None:
     missing = REQUIRED_KEYS - set(data.keys())
     _require(not missing, f"SBOM missing keys: {sorted(missing)}")
     _require(data["bomFormat"] == "CycloneDX", "SBOM bomFormat must be CycloneDX.")
+    _require(str(data["specVersion"]) in SUPPORTED_SPEC_VERSIONS, "SBOM specVersion must be supported.")
 
     components = data["components"]
     _require(isinstance(components, list), "SBOM components must be a list.")
     _require(len(components) > 0, "SBOM must contain at least one component.")
+    seen_components: set[tuple[str, str, str, str]] = set()
+    for index, component in enumerate(components):
+        _require(isinstance(component, dict), f"SBOM component {index} must be an object.")
+        _require(component.get("type"), f"SBOM component {index} missing type.")
+        _require(component.get("name"), f"SBOM component {index} missing name.")
+        identity = (
+            str(component.get("type", "")),
+            str(component.get("name", "")),
+            str(component.get("version", "")),
+            str(component.get("purl", component.get("bom-ref", ""))),
+        )
+        _require(identity not in seen_components, f"SBOM duplicate component identity: {identity}")
+        seen_components.add(identity)
+        if component.get("type") == "library":
+            _require(component.get("version"), f"SBOM library {component.get('name')} missing version.")
+            _require(component.get("purl"), f"SBOM library {component.get('name')} missing purl.")
+            _require(str(component["purl"]).startswith("pkg:"), f"SBOM library {component.get('name')} purl must start with pkg:")
+
+    metadata = data["metadata"]
+    _require(isinstance(metadata, dict), "SBOM metadata must be an object.")
+    metadata_component = metadata.get("component")
+    _require(isinstance(metadata_component, dict), "SBOM metadata.component missing.")
+    _require(metadata_component.get("name"), "SBOM metadata.component missing name.")
+    _require(metadata_component.get("type"), "SBOM metadata.component missing type.")
 
 
 def parse_args() -> argparse.Namespace:

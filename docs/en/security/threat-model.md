@@ -38,13 +38,14 @@ run artifacts, memory, CI/CD governance, and generated reports.
 | Threat | Impact | Controls |
 | --- | --- | --- |
 | Prompt injection from public sources | Agents follow source instructions instead of task contract | Role prompts, tool grants, critic review, artifact-based finalization |
-| Secret leakage into logs or prompts | Credential exposure | `.env` isolation, secret scanning, audit minimization policy |
+| Secret leakage into logs or prompts | Credential exposure | `.env` isolation, detect-secrets, Gitleaks history scan, GitHub Secret Scanning and Push Protection, audit minimization policy |
 | Case facts written to long-term memory | Privacy and confidentiality breach | `consolidate_role_patterns()` scrubbing, process-memory-only policy |
 | Unsupported or fabricated findings | Bad meeting preparation | Evidence packets, source URLs, critic/judge review, meeting-readiness gate |
 | Contact over-collection | Privacy risk | Contact department scope, business-contact relevance, data classification policy |
 | Concurrent department mutation | Corrupt run state | working-set snapshots and deterministic merge in `ShortTermMemoryStore` |
-| Dependency vulnerability | Runtime compromise | `pip-audit`, Dependabot, dependency review, CodeQL, Bandit |
-| Malicious workflow/action change | CI compromise | pinned actions, hardening checks, limited permissions |
+| Dependency vulnerability | Runtime compromise | `pip-audit` over `requirements.lock`, Dependabot, dependency review, CodeQL, Bandit |
+| Malicious workflow/action change | CI compromise | pinned actions, digest-pinned container tooling, mandatory CodeQL, ruleset desired state, hardening checks, limited permissions |
+| Release artifact tampering | Compromised deployment artifact | GHCR OCI image, image-digest release attestation, SLSA Build L2 provenance, CycloneDX SBOM attestation, `gh attestation verify` |
 | Report export over-disclosure | Sensitive data in PDFs | finalization sync, success-path unresolved sanitization, report package boundary |
 
 ## Existing Security Gates
@@ -54,20 +55,29 @@ The `compliance-security-ai` workflow includes:
 - Ruff linting for `src`, `scripts`, and `tests`;
 - MyPy type check for `src`, `scripts`, and `tests`;
 - Bandit SAST for `src` and `scripts`;
-- `pip-audit` dependency gate;
-- `detect-secrets` scan for `src` and `scripts`;
+- dependency-lock freshness gate for `requirements.txt` to `requirements.lock`
+  drift;
+- `pip-audit` dependency gate over `requirements.lock`;
+- `detect-secrets` scan across the repository with explicit generated-artifact
+  exclusions and line-level allowlists for documented false positives;
+- Gitleaks historical secret scan;
 - governance structure validation;
+- default-branch ruleset desired-state validation;
 - GitHub Actions hardening check;
 - script contract tests;
 - architecture tests;
 - runtime contract tests;
 - AI-BOM generation and validation;
-- SBOM generation and validation.
+- OCI image SBOM generation with Syft and CycloneDX validation;
+- compliance manifest attestation on non-PR runs.
 
 A `.pre-commit-config.yaml` runs Ruff and Bandit locally on every `git commit`
 (same scope as CI). Activate with `pip install pre-commit && pre-commit install`.
 
-Additional workflows cover dependency review, CodeQL, and release attestation.
+Additional workflows cover dependency review, mandatory CodeQL, and release
+attestation. Release attestations bind SLSA provenance and the CycloneDX SBOM
+to the GHCR image digest and verify both attestations before publishing the
+release-attestation artifact.
 
 ## Runtime Hardening
 

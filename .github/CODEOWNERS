@@ -12,6 +12,10 @@
 # -------------------------------------------------------------------
 /.github/ @KonstantinData
 /.github/workflows/ @KonstantinData @liquisto/security-governance
+/.github/rulesets/ @KonstantinData @liquisto/security-governance
+/Dockerfile @KonstantinData @liquisto/security-governance
+/.dockerignore @KonstantinData @liquisto/security-governance
+/.gitleaks.toml @KonstantinData @liquisto/security-governance
 
 /src/orchestration/ @KonstantinData @liquisto/runtime-review
 /src/agents/ @KonstantinData @liquisto/runtime-review

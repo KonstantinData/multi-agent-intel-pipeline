@@ -20,10 +20,10 @@ outer operational layer around entry, configuration, CI, and artifact handling.
 
 The layer covers:
 
-- secret resolution: process/deployment secret first, OS keyring second,
-  plaintext `.env` only when `LIQUISTO_ALLOW_DOTENV_SECRETS=1`;
-- `preflight.py`: dependency, import-chain, query-strategy, API-key-source, and
-  Streamlit-port readiness checks before local UI startup;
+- secret resolution: process/deployment secret first, OS keyring second;
+  plaintext `.env` is not used for API keys;
+- `preflight.py`: dependency, import-chain, query-strategy, credential
+  availability, and Streamlit-port readiness checks before local UI startup;
 - CI and review gates: CODEOWNERS, secret scan, workflow hardening,
   architecture/runtime contract tests, and release attestation;
 - pre-commit hooks: Ruff (with --fix) and Bandit run locally on every

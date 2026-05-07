@@ -19,8 +19,6 @@ concurrency:
 
 jobs:
   analyze:
-    # Keep this switch explicit so repos without Code Security licensing can opt in safely.
-    if: ${{ vars.ENABLE_CODEQL == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -30,8 +28,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@5e316336eb4f107009e477d4bfbfff13d7250fae # v4
         with:
           languages: python
       - name: Analyze
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@5e316336eb4f107009e477d4bfbfff13d7250fae # v4

@@ -25,7 +25,12 @@ def _load_openai_api_key() -> tuple[str, str]:
     key, source = resolve_openai_api_key()
     if key:
         return key, source
-    raise ValueError("OPENAI_API_KEY not found in environment, OS keyring, or explicit .env fallback")
+    raise ValueError("model API credential not found in configured secret stores")
+
+
+def _model_api_credential_status() -> str:
+    _key, _source = _load_openai_api_key()
+    return "configured"
 
 
 def _port_status(port: int) -> str:
@@ -99,7 +104,7 @@ def main() -> int:
         )
 
     print("\n4. Environment")
-    check("OPENAI_API_KEY available", lambda: f"set via {_load_openai_api_key()[1]}", counters)
+    check("Model API credential", _model_api_credential_status, counters)
 
     print("\n5. Import chain — Core (no AG2 required)")
     sys.path.insert(0, str(ROOT))

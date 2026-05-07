@@ -110,10 +110,6 @@ def _get_env_value(key: str) -> str:
     return _dotenv_lookup().get(key, "").strip()
 
 
-def _truthy_env(key: str) -> bool:
-    return os.getenv(key, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _keyring_lookup(service: str, account: str) -> str:
     try:
         import keyring
@@ -131,7 +127,8 @@ def resolve_openai_api_key() -> tuple[str, str]:
     Source precedence is:
     1. process environment / deployment secret
     2. OS keyring
-    3. local .env only when LIQUISTO_ALLOW_DOTENV_SECRETS=1
+
+    Plaintext .env is never used for API keys.
     """
     process_value = os.getenv("OPENAI_API_KEY", "").strip()
     if process_value:
@@ -146,16 +143,11 @@ def resolve_openai_api_key() -> tuple[str, str]:
     if keyring_value:
         return keyring_value, f"keyring:{service}/{account}"
 
-    if _truthy_env("LIQUISTO_ALLOW_DOTENV_SECRETS"):
-        dotenv_value = _dotenv_lookup().get("OPENAI_API_KEY", "").strip()
-        if dotenv_value:
-            return dotenv_value, ".env explicit fallback"
-
     return "", ""
 
 
 def get_openai_api_key() -> str:
-    """Resolve the OpenAI API key without using plaintext .env by default."""
+    """Resolve the OpenAI API key without using plaintext .env."""
     value, _source = resolve_openai_api_key()
     return value
 

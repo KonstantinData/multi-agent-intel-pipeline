@@ -18,9 +18,10 @@ python -m venv .venv
 # source .venv/bin/activate   # Unix
 
 # 2. Install dependencies
-pip install -r requirements.txt
+pip install -r requirements.lock
 
 # 3. Store OpenAI API key in the OS keyring
+#    Details: docs/Secrets-Management.md
 python -m keyring set liquisto-department-runtime OPENAI_API_KEY
 
 # 4. Validate environment
@@ -177,11 +178,7 @@ A successful run does **not** contain:
 
 ## Configuration
 
-- **API key**: prefer platform secrets or the OS keyring. Local lookup order is process environment, OS keyring, then `.env` only when `LIQUISTO_ALLOW_DOTENV_SECRETS=1`.
-- **Local OS keyring setup**:
-  `python -m keyring set liquisto-department-runtime OPENAI_API_KEY`
-- **Deployment/CI secret**: set `OPENAI_API_KEY` as a platform secret or environment variable injected by the deployment system.
-- **Plaintext `.env`**: disabled for API-key lookup by default. Use only as an explicit local fallback with `LIQUISTO_ALLOW_DOTENV_SECRETS=1`; do not use for production, CI, or shared environments.
+- **Secrets management**: API-key lookup, OS-keyring setup, no-`.env` API-key rule, and logging requirements are documented in [docs/Secrets-Management.md](docs/Secrets-Management.md).
 - **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env first, then local `.env` fallback)
 - **Role env key format**: preferred snake-case (for example `OPENAI_MODEL_COMPANY_RESEARCHER`), legacy compact keys (for example `OPENAI_MODEL_COMPANYRESEARCHER`) are still supported
 - **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env first, then local `.env` fallback)
@@ -210,6 +207,17 @@ python preflight.py   # environment, packages, project files, API key, import ch
 pytest                # unit tests (400+ tests covering behavior, negative paths, golden traces, query parity, query consistency)
 ```
 
+Dependency policy:
+
+- `requirements.txt` defines the direct dependency constraints.
+- `requirements.lock` is the reproducible, transitive install/audit/SBOM input
+  used by CI.
+- Regenerate the lockfile after dependency changes with:
+
+```bash
+uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock
+```
+
 ### Local pre-commit checks
 
 ```bash
@@ -224,3 +232,16 @@ ruff check src/pipeline_runner.py --fix
 mypy src/pipeline_runner.py
 bandit src/pipeline_runner.py
 ```
+
+## Release Artifact
+
+The release artifact is an OCI image published to GitHub Container Registry:
+
+```bash
+docker build --platform linux/amd64 -t liquisto-department-runtime:local .
+```
+
+Release/tag workflows publish `ghcr.io/<owner>/<repo>` and bind both SLSA Build
+L2 provenance and the CycloneDX SBOM to the image digest with GitHub artifact
+attestations. Consumers should pull by digest and verify attestations with
+`gh attestation verify` before deployment.

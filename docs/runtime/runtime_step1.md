@@ -1,131 +1,321 @@
 # Runtime Step 1: Runner Init + Supervisor Brief
 
-This file explains the step shown in `docs/drawio/runtime_step1.drawio` in a precise, code-level way.
+Diese Datei erlaeutert den Prozess aus
+`docs/drawio/runtime_step1.drawio`.
 
-The source of truth for this step is `src/pipeline_runner.py::run_pipeline(...)`.
+Step 1 beschreibt den Start eines initialen Pipeline-Runs in
+`src/pipeline_runner.py`, bevor die eigentliche Department-Routing-Phase mit
+`run_supervisor_loop(...)` beginnt.
 
-## Goal of Step 1
+## Zweck
 
-Starting from minimal input (`company_name`, `web_domain`), Step 1 prepares the live runtime state required for department routing:
+Aus den minimalen Eingaben `company_name` und `web_domain` wird ein
+ausfuehrbarer Runtime-Zustand aufgebaut. Am Ende dieses Schritts kennt der
+Runtime-Context die Intake-Daten, die initiale Supervisor-Briefing-Struktur,
+die geladenen Prozessmuster, die Meeting-Fragen und die initiale Answer
+Matrix. Erst danach startet die Supervisor-gesteuerte Department-Ausfuehrung.
 
-1. create a run id and run directory path
-2. validate the intake contract
-3. instantiate runtime agents
-4. initialize long-term memory access and run-scoped context
-5. retrieve process-pattern strategies for the normalized domain
-6. build the `SupervisorBrief`
-7. initialize the question registry and answer matrix
-8. emit the first Supervisor runtime message
-
-Step 1 ends immediately before this call:
+Step 1 endet unmittelbar vor diesem Aufruf:
 
 ```python
 run_supervisor_loop(
     brief=brief,
-    run_context=run_context,
-    agents=agents,
+    run_context=state.run_context,
+    agents=state.agents,
     on_message=on_message,
 )
 ```
 
-## Involved Scripts
+## Beteiligte Lanes im Diagramm
 
-- `src/pipeline_runner.py` -> `run_pipeline(...)`
-- `src/agents/runtime_factory.py` -> `create_runtime_agents(...)`
-- `src/agents/supervisor.py` -> `SupervisorAgent.build_intake_brief(...)`
-- `src/domain/intake.py` -> `IntakeRequest`, `SupervisorBrief`
-- `src/memory/long_term_store.py` -> `FileLongTermMemoryStore`
-- `src/memory/backfill.py` -> optional `backfill_long_term_memory_from_runs(...)`
-- `src/memory/retrieval.py` -> `retrieve_strategies(...)`
-- `src/memory/consolidation.py` -> `RETRIEVABLE_ROLE_ORDER`
-- `src/research/normalize.py` -> `normalize_domain(...)`, `homepage_url(...)`
-- `src/research/tools.py` -> `build_company_research(...)`
-- `src/research/fetch.py` -> `fetch_website_snapshot(...)`
-- `src/research/extract.py` -> `infer_company_identity(...)`, `infer_industry(...)`, `summarize_visible_text(...)`
-- `src/orchestration/meeting_questions.py` -> `build_question_registry(...)`, `build_initial_answer_matrix(...)`
-- `src/orchestration/supervisor_loop.py` -> `emit_message(...)`, next-step `run_supervisor_loop(...)`
+Das Draw.io-Diagramm ist in vier Lanes gegliedert:
 
-## Exact Flow
+| Lane | Bedeutung |
+| --- | --- |
+| Input | UI- oder Caller-Eingaben fuer den neuen Run |
+| `pipeline_runner.py` | oeffentlicher Runtime-Einstieg und Initialisierung |
+| Supervisor Intake Research | Recherche-Helfer, die der Supervisor beim Briefing-Aufbau nutzt |
+| Seeded Runtime State + Handoff | befuellter `RunContext`, erstes Runtime-Event und Uebergabe an Step 2 |
 
-1. **Input enters the runner**
-   - `run_pipeline(company_name, web_domain, on_message=...)` is called.
-   - `start_time = perf_counter()` is recorded.
-   - `run_id = _timestamp_run_id()` is created.
-   - `run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)` resolves the artifact directory path.
+## Beteiligte Codepfade
 
-2. **Intake contract is validated**
-   - `IntakeRequest(company_name=company_name, web_domain=web_domain)` is instantiated.
-   - `language` defaults through the intake model.
-   - If intake validation fails, Step 1 returns immediately with:
-     - `status = "failed"`
-     - empty `messages`
-     - empty `pipeline_data`
-     - a minimal `run_context.intake`
-     - the validation error string
+| Datei | Rolle in Step 1 |
+| --- | --- |
+| `src/pipeline_runner.py` | startet `run_pipeline(...)`, initialisiert State und baut das Supervisor Brief |
+| `src/domain/intake.py` | definiert `IntakeRequest` und `SupervisorBrief` |
+| `src/agents/runtime_factory.py` | erzeugt Supervisor, Departments, Synthesis und Report Writer |
+| `src/agents/supervisor.py` | baut `SupervisorBrief` und serialisierbare Supervisor-Message |
+| `src/research/tools.py` | `build_company_research(...)` fuer Homepage- und Identitaetsdaten |
+| `src/research/normalize.py` | normalisiert Domain und erzeugt Homepage-URL |
+| `src/research/fetch.py` | laedt den Website-Snapshot |
+| `src/research/extract.py` | extrahiert Identitaet, Summary und Industry Hint |
+| `src/memory/long_term_store.py` | oeffnet den Long-Term Process Brain Store |
+| `src/memory/retrieval.py` | laedt wiederverwendbare Prozessstrategien |
+| `src/orchestration/run_context.py` | haelt den run-spezifischen Runtime-Zustand |
+| `src/orchestration/meeting_questions.py` | erzeugt Question Registry und Answer Matrix |
+| `src/orchestration/supervisor_loop.py` | liefert `emit_message(...)` und startet in Step 2 das Department Routing |
 
-3. **Runtime agents are created**
-   - `agents = create_runtime_agents()` is called.
-   - The returned runtime map contains:
-     - `supervisor`
-     - `departments`
-     - `synthesis`
-     - `report_writer`
-   - This happens before the Supervisor brief is built.
+## Vollstaendiger Ablauf
 
-4. **Memory store and RunContext are initialized**
-   - `memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)` opens the process-pattern store.
-   - Backfill from previous run artifacts is opt-in through `LIQUISTO_BACKFILL_LONG_TERM_MEMORY`.
-   - If enabled, `backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=RUNS_DIR)` updates the store.
-   - `run_context = RunContext(...)` is created with:
-     - `run_id`
-     - `company_name`
-     - `web_domain`
-     - intake `language`
+### 1. User- oder UI-Input kommt an
 
-5. **Process strategies are retrieved**
-   - The domain is normalized for retrieval:
-     - `normalize_domain(web_domain)`
-   - General strategies are loaded:
-     - `retrieve_strategies(memory_store, domain=..., limit=5)`
-   - Role-specific strategies are loaded for every role in `RETRIEVABLE_ROLE_ORDER`:
-     - `retrieve_strategies(memory_store, domain=..., role=role, limit=3)`
-   - These are process patterns only. Company-specific run facts stay in run-scoped memory.
+Der Caller ruft `run_pipeline(...)` mit diesen Mindestdaten auf:
 
-6. **Step-1 runtime containers are prepared**
-   - `messages: list[dict[str, Any]] = []`
-   - `budget_tracker = PhaseBudgetTracker()`
-   - The first budget measurement happens later, after the first department pass.
+- `company_name`
+- `web_domain`
+- optional `on_message`
 
-7. **Supervisor builds the intake brief**
-   - `brief, supervisor_message = agents["supervisor"].build_intake_brief(intake)` is called.
-   - Inside `SupervisorAgent.build_intake_brief(...)`, the Supervisor calls:
-     - `build_company_research(intake.web_domain, intake.company_name)`
-   - `build_company_research(...)` performs:
-     - `normalize_domain(...)`
-     - `homepage_url(...)`
-     - `fetch_website_snapshot(...)`
-     - `infer_company_identity(...)`
-     - `summarize_visible_text(...)`
-   - The Supervisor then derives:
-     - `industry_hint = infer_industry(title, description, summary)`
+`on_message` ist ein Hook fuer UI- oder Streaming-Events. Step 1 funktioniert
+auch ohne diesen Hook; dann werden Events nur in der lokalen `messages`-Liste
+gesammelt.
 
-8. **SupervisorBrief is assembled**
-   - `SupervisorBrief` includes, among others:
-     - submitted company name and web domain
-     - verified company name and legal name
-     - name confidence
-     - website reachability
-     - homepage URL
-     - page title and meta description
-     - raw homepage excerpt
-     - normalized domain
-     - industry hint
-     - observations
-     - initial owned source
-     - fetch error fields
+### 2. `run_pipeline(...)` startet den Run
 
-9. **Serializable Supervisor message is produced**
-   - `supervisor_message` has this shape:
+Direkt am Anfang von `run_pipeline(...)` werden technische Run-Metadaten
+erzeugt:
+
+- `start_time = perf_counter()`
+- `run_id = _timestamp_run_id()`
+- `run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)`
+
+`run_id` ist die spaetere Persistenz- und Follow-up-Klammer. `run_dir` ist der
+Zielpfad fuer Run-Artefakte, Checkpoints und Exporte.
+
+### 3. Intake wird validiert
+
+Die Initialisierung laeuft ueber `_initialize_run(...)`.
+
+Dort wird zuerst das Intake-Modell erzeugt:
+
+```python
+intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
+```
+
+`IntakeRequest` trimmt die Eingaben und setzt `language` standardmaessig auf
+`"de"`. Wenn `company_name` oder `web_domain` leer sind, wird ein
+`ValueError` ausgeloest.
+
+Bei ungueltigem Intake endet Step 1 sofort mit einem Fehlerresultat:
+
+- `status = "failed"`
+- leere `messages`
+- leere `pipeline_data`
+- minimaler `run_context.intake`
+- `failed_phase = "intake_validation"`
+
+Es findet dann keine Agent-Erzeugung, keine Recherche und kein Department
+Routing statt.
+
+### 4. Domain wird normalisiert
+
+Nach erfolgreicher Intake-Validierung normalisiert der Runner die Domain:
+
+```python
+normalized_domain = normalize_domain(intake.web_domain)
+```
+
+Diese normalisierte Domain wird im `RunContext.intake` abgelegt und spaeter
+fuer Long-Term-Memory-Retrieval, Supervisor Brief und Department-Aufgaben
+weiterverwendet.
+
+### 5. Runtime Agents werden erzeugt
+
+Danach erzeugt der Runner die Runtime-Agenten:
+
+```python
+agents = create_runtime_agents()
+```
+
+Die Agent-Map enthaelt die Runtime-Rollen fuer:
+
+- Supervisor
+- Company Department
+- Market Department
+- Buyer Department
+- Contact Department
+- Synthesis
+- Report Writer
+
+In Step 1 werden diese Agenten nur bereitgestellt. Die Domain Departments
+arbeiten noch nicht.
+
+### 6. Long-Term Process Brain wird geoeffnet
+
+Der Runner initialisiert den prozessbezogenen Langzeitspeicher:
+
+```python
+memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
+```
+
+Dieser Store ist nicht fuer run-spezifische Unternehmensfakten gedacht. Er
+enthaelt nur scrubbed process patterns, zum Beispiel Recherche- oder
+Kritikmuster.
+
+Optional kann vor dem Retrieval ein Backfill aus vorhandenen Run-Artefakten
+laufen. Das ist durch `LIQUISTO_BACKFILL_LONG_TERM_MEMORY` gesteuert. Das
+Diagramm zeigt diesen Schritt als optionalen Backfill ueber Environment Flag.
+
+### 7. `RunContext` wird angelegt
+
+Anschliessend erzeugt `_initialize_run(...)` den run-spezifischen Context:
+
+```python
+run_context = RunContext(
+    run_id=run_id,
+    intake={
+        "company_name": intake.company_name,
+        "web_domain": intake.web_domain,
+        "normalized_domain": normalized_domain,
+        "language": intake.language,
+    },
+)
+```
+
+Der Runner markiert die Phase als `initialized` und schreibt
+Long-Term-Memory-Metadaten in `run_context.resolution_state`.
+
+Zu diesem Zeitpunkt existiert der Run Brain als leere, aber strukturierte
+Arbeitsflaeche. Department-Artefakte, Packages, Meeting Readiness und Report
+Package sind noch leer.
+
+### 8. Prozessstrategien werden geladen
+
+Danach ruft der Runner Prozessmuster aus dem Long-Term Process Brain ab:
+
+```python
+run_context.retrieved_strategies = retrieve_strategies(
+    memory_store,
+    domain=normalized_domain,
+    limit=5,
+)
+```
+
+Zusaetzlich werden rollenspezifische Strategien geladen:
+
+```python
+run_context.retrieved_role_strategies = {
+    role: retrieve_strategies(
+        memory_store,
+        domain=normalized_domain,
+        role=role,
+        limit=3,
+    )
+    for role in RETRIEVABLE_ROLE_ORDER
+}
+```
+
+Wichtig: Diese Strategien sind Prozesswissen, keine Zielkunden-Fakten. Die
+case-spezifischen Fakten des aktuellen Runs gehoeren spaeter in den Run Brain
+und die Department-Artefakte.
+
+### 9. Initialer Runtime State wird zurueckgegeben
+
+`_initialize_run(...)` gibt ein `InitialRunState`-Objekt zurueck. Es enthaelt:
+
+- `start_time`
+- `run_id`
+- `run_dir`
+- validiertes `intake`
+- `agents`
+- `memory_store`
+- `run_context`
+- leere `messages`
+- `budget_tracker = PhaseBudgetTracker()`
+- `normalized_domain`
+
+Damit ist der Runner technisch startklar, hat aber noch kein fachliches
+Supervisor Brief erzeugt.
+
+### 10. Supervisor Brief Phase beginnt
+
+Zurueck in `run_pipeline(...)` wird Step 1 fachlich fortgesetzt:
+
+```python
+supervisor = _build_supervisor_brief(state, on_message=on_message)
+```
+
+`_build_supervisor_brief(...)` setzt zuerst die Runtime-Phase:
+
+```python
+_record_phase(state.run_context, "supervisor_brief")
+```
+
+Danach ruft der Runner den Supervisor auf:
+
+```python
+brief, supervisor_message = state.agents["supervisor"].build_intake_brief(state.intake)
+```
+
+### 11. Supervisor fuehrt Intake Research aus
+
+Der Supervisor interpretiert in Step 1 keine Department-Fakten. Er baut nur ein
+initiales Intake Brief. Dafuer nutzt er:
+
+```python
+research = build_company_research(intake.web_domain, intake.company_name)
+```
+
+`build_company_research(...)` laeuft in dieser Reihenfolge:
+
+1. `normalize_domain(domain)`
+2. `homepage_url(normalized_domain)`
+3. `fetch_website_snapshot(url)`
+4. `infer_company_identity(...)`
+5. `summarize_visible_text(...)`
+
+Das Ergebnis enthaelt:
+
+- normalisierte Domain
+- Homepage-URL
+- Website-Snapshot
+- sichtbaren Text als Kurzsummary
+- verifizierten Unternehmensnamen
+- verifizierten Legal Name, falls ableitbar
+- Name Confidence
+
+### 12. Supervisor leitet einen Industry Hint ab
+
+Aus dem Website-Snapshot und der Summary erzeugt der Supervisor einen
+branchenbezogenen Hinweis:
+
+```python
+industry_hint = infer_industry(
+    title=str(snapshot.get("title", "")),
+    description=str(snapshot.get("meta_description", "")),
+    text=str(research.get("summary", "")),
+)
+```
+
+Dieser `industry_hint` ist nur ein Startsignal fuer die nachfolgende
+Department-Arbeit. Die spaetere domain-level Interpretation gehoert nicht in
+Step 1, sondern in die Departments und Synthesis.
+
+### 13. `SupervisorBrief` wird gebaut
+
+Der Supervisor erstellt ein typisiertes `SupervisorBrief` mit:
+
+- submitted company name
+- submitted web domain
+- verified company name
+- verified legal name
+- name confidence
+- website reachability
+- homepage URL
+- page title
+- meta description
+- raw homepage excerpt
+- normalized domain
+- industry hint
+- observations
+- owned source entry fuer die Homepage
+- fetch error type und fetch error message
+
+Das Brief ist das fachliche Startartefakt fuer die Supervisor-kontrollierte
+Department-Zuweisung.
+
+### 14. Supervisor Message wird erzeugt
+
+Zusammen mit dem Brief erzeugt der Supervisor eine serialisierbare Message:
 
 ```python
 {
@@ -135,48 +325,128 @@ run_supervisor_loop(
 }
 ```
 
-10. **RunContext is seeded for routing**
-    - `run_context.supervisor_brief = supervisor_message["payload"]`
-    - `run_context.question_registry = build_question_registry()`
-    - `run_context.answer_matrix = build_initial_answer_matrix()`
+Das Diagramm zeigt diesen Status als erstes Runtime-Signal vor dem Handoff.
 
-11. **First runtime message is emitted**
-    - `emit_message(...)` emits the Supervisor message into `messages`.
-    - The emitted event is also sent through `on_message` when a UI hook is provided.
+### 15. `RunContext` wird mit Step-1-Daten befuellt
 
-12. **Step 1 hands off to Step 2**
-    - The next statement is the department routing call:
-      - `run_supervisor_loop(brief, run_context, agents, on_message)`
-    - This is the Step-1 boundary.
+Nach dem Supervisor-Aufruf schreibt der Runner die Briefing-Daten in den
+Runtime Context:
 
-## Output of Step 1
+```python
+state.run_context.supervisor_brief = supervisor_message["payload"]
+state.run_context.question_registry = build_question_registry()
+state.run_context.answer_matrix = build_initial_answer_matrix()
+```
 
-At the boundary before `run_supervisor_loop(...)`, these live objects exist:
+Damit sind die Meeting-Fragen und die initiale Antwortmatrix vor dem Department
+Routing verfuegbar. Das ist wichtig, weil Department-Ergebnisse spaeter nicht
+nur Sections befuellen, sondern Frageabdeckung und Meeting Readiness
+fortschreiben.
 
-- `brief: SupervisorBrief`
-- `supervisor_message: dict`
-- `agents: dict[str, object]`
-- `run_context: RunContext`
-- `messages` with the initial Supervisor event
-- `budget_tracker`
+### 16. Erstes Runtime Event wird emittiert
 
-The `run_context` already contains:
+Der Runner serialisiert die Supervisor Message und emittiert sie:
 
-- normalized strategy retrieval results
-- role-specific strategy retrieval results
-- `supervisor_brief`
-- `question_registry`
-- `answer_matrix`
+```python
+state.messages.append(
+    emit_message(
+        on_message,
+        agent="Supervisor",
+        content=json.dumps(supervisor_message, ensure_ascii=False),
+    )
+)
+```
 
-## What Step 1 Explicitly Does Not Do
+`emit_message(...)` erzeugt ein Event mit:
 
-- no department execution
-- no department package admission
-- no first-pass checkpoint
-- no auto-close follow-up
-- no synthesis
-- no meeting-readiness finalization
-- no report assembly
-- no final export
+- `agent = "Supervisor"`
+- `content = <JSON supervisor_message>`
+- `type = "agent_message"`
 
-These begin after Step 1, starting with `run_supervisor_loop(...)`.
+Wenn `on_message` gesetzt ist, wird das Event auch sofort an den Hook
+weitergegeben. Unabhaengig davon landet es in `state.messages`.
+
+### 17. Checkpoint nach dem Supervisor Brief
+
+Der aktuelle Code schreibt nach dem Briefing einen Checkpoint:
+
+```python
+_write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
+```
+
+Dieser Checkpoint ist eine konkrete Code-Ergaenzung zum im Diagramm gezeigten
+Handoff-Zustand. Er persistiert den `RunContext` nach Step 1, bevor die erste
+Department-Runde startet.
+
+### 18. Uebergabe an Step 2
+
+Step 1 endet mit dem Rueckgabewert von `_build_supervisor_brief(...)`:
+
+```python
+return SupervisorBriefResult(
+    brief=brief,
+    supervisor_message=supervisor_message,
+)
+```
+
+Der naechste Pipeline-Schritt ist:
+
+```python
+first_pass = _run_first_pass(state, brief=supervisor.brief, on_message=on_message)
+```
+
+Innerhalb von `_run_first_pass(...)` startet dann:
+
+```python
+run_supervisor_loop(...)
+```
+
+Ab diesem Punkt beginnt die Supervisor-kontrollierte Department-Routing-Phase.
+
+## Live Objects am Ende von Step 1
+
+Direkt vor `run_supervisor_loop(...)` existieren diese Objekte:
+
+| Objekt | Inhalt |
+| --- | --- |
+| `brief` | typisiertes `SupervisorBrief` |
+| `supervisor_message` | serialisierbares Briefing-Event mit Status `ready_for_department_routing` |
+| `state.agents` | alle Runtime-Agenten |
+| `state.run_context` | Run Brain mit Intake, Supervisor Brief, Strategien, Question Registry und Answer Matrix |
+| `state.messages[0]` | erstes Supervisor Runtime Event |
+| `state.budget_tracker` | Budget Tracker, noch ohne First-Pass-Verbrauch |
+| `state.run_dir` | Zielordner fuer Checkpoints und Run-Artefakte |
+
+## Was Step 1 noch nicht tut
+
+Step 1 fuehrt ausdruecklich keine Department-Arbeit aus.
+
+Nicht Bestandteil von Step 1:
+
+- keine Department Assignments
+- keine AG2 GroupChats
+- keine Research-, Review- oder Judge-Artefakte
+- keine Department Packages
+- keine Package Acceptance Gates
+- keine First-Pass-Resolution
+- kein Auto-Close
+- keine Synthesis
+- keine Meeting-Readiness-Finalisierung
+- kein Report Writer Runtime Node
+- kein finaler JSON- oder PDF-Export
+
+Diese Schritte beginnen erst nach dem Handoff an `run_supervisor_loop(...)`.
+
+## Prozessgrenze
+
+Die wichtigste Grenze des Diagramms ist die Trennung zwischen Vorbereitung und
+Ausfuehrung:
+
+- Step 1 bereitet den Run vor und erzeugt das Supervisor Brief.
+- Step 2 routet Department-Aufgaben und laesst die bounded AG2 Department
+  Groups arbeiten.
+
+Der Supervisor ist in Step 1 Intake- und Control-Plane-Akteur. Er normalisiert,
+strukturiert und uebergibt. Die fachliche Domain-Recherche, Evidenzpruefung und
+Retry-Logik bleiben ausserhalb dieses Schritts und gehoeren in die Department
+Runtime.

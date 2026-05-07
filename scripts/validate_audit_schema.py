@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 REQUIRED_GOVERNANCE_FILES = [
@@ -25,6 +26,12 @@ REQUIRED_GOVERNANCE_FILES = [
     ".github/workflows/dependency-review.yml",
     ".github/workflows/codeql.yml",
     ".github/workflows/release-attestation.yml",
+    ".github/workflows/scorecard.yml",
+    ".github/rulesets/main-protection.json",
+    "policies/rego/ci_supply_chain.rego",
+    "policies/license/dependency-license-policy.json",
+    "policies/license/dependency-risk-exceptions.json",
+    "policies/license/direct-dependency-owners.json",
 ]
 
 REQUIRED_GOVERNANCE_DIRS = [
@@ -47,9 +54,16 @@ REQUIRED_ATTESTATION_TOP_LEVEL = {
     "repository",
     "workflow_run_id",
     "workflow_run_url",
+    "container_image",
+    "image_digest",
+    "slsa_target",
+    "provenance_attested",
+    "sbom_attested",
     "artifacts",
     "gate_results",
 }
+
+IMAGE_DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _require(cond: bool, message: str) -> None:
@@ -93,6 +107,20 @@ def validate_release_attestation(path: Path) -> None:
         _require(isinstance(entry, dict), f"Release attestation artifacts.{key} must be an object.")
         _require("path" in entry, f"Release attestation artifacts.{key} missing path")
         _require("sha256" in entry, f"Release attestation artifacts.{key} missing sha256")
+    _require("container_image" in artifacts, "Release attestation missing artifacts.container_image")
+    image_entry = artifacts["container_image"]
+    _require(isinstance(image_entry, dict), "Release attestation artifacts.container_image must be an object.")
+    _require("image" in image_entry, "Release attestation artifacts.container_image missing image")
+    _require("digest" in image_entry, "Release attestation artifacts.container_image missing digest")
+    _require(str(data["container_image"]) == str(image_entry["image"]), "Container image mismatch.")
+    _require(str(data["image_digest"]) == str(image_entry["digest"]), "Container image digest mismatch.")
+    _require(
+        IMAGE_DIGEST_PATTERN.fullmatch(str(data["image_digest"])) is not None,
+        "Release attestation image_digest must be sha256:<64 hex>.",
+    )
+    _require(data["slsa_target"] == "build-l2", "Release attestation slsa_target must be build-l2.")
+    _require(data["provenance_attested"] is True, "Release attestation provenance_attested must be true.")
+    _require(data["sbom_attested"] is True, "Release attestation sbom_attested must be true.")
 
     gate_results = data.get("gate_results")
     _require(isinstance(gate_results, dict), "Release attestation gate_results must be an object.")

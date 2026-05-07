@@ -25,22 +25,20 @@ class _OkHandler(BaseHTTPRequestHandler):
 def test_load_openai_api_key_rejects_empty_or_commented_value(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
     monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
     monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": ""})
     with pytest.raises(ValueError):
         preflight._load_openai_api_key()
 
 
-def test_load_openai_api_key_accepts_env_file_only_when_explicitly_allowed(tmp_path, monkeypatch):
+def test_load_openai_api_key_ignores_env_file_even_when_legacy_flag_is_set(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
     monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
-    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "test-key"})
-    key, source = preflight._load_openai_api_key()
-    assert key == "test-key"
-    assert source == ".env explicit fallback"
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "test-key"})  # pragma: allowlist secret
+    with pytest.raises(ValueError):
+        preflight._load_openai_api_key()
 
 
 def test_load_openai_api_key_ignores_env_file_by_default(tmp_path, monkeypatch):
@@ -48,7 +46,7 @@ def test_load_openai_api_key_ignores_env_file_by_default(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("LIQUISTO_ALLOW_DOTENV_SECRETS", raising=False)
     monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
-    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})  # pragma: allowlist secret
     with pytest.raises(ValueError):
         preflight._load_openai_api_key()
 
@@ -56,7 +54,7 @@ def test_load_openai_api_key_ignores_env_file_by_default(tmp_path, monkeypatch):
 def test_load_openai_api_key_prefers_process_environment(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "process-key")
-    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})  # pragma: allowlist secret
     key, source = preflight._load_openai_api_key()
     assert key == "process-key"
     assert source == "environment"
@@ -65,12 +63,17 @@ def test_load_openai_api_key_prefers_process_environment(tmp_path, monkeypatch):
 def test_load_openai_api_key_reads_os_keyring_before_env_file(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
-    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "keyring-key")
-    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "keyring-key")  # pragma: allowlist secret
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})  # pragma: allowlist secret
     key, source = preflight._load_openai_api_key()
     assert key == "keyring-key"
     assert source == "keyring:liquisto-department-runtime/OPENAI_API_KEY"
+
+
+def test_preflight_credential_status_does_not_expose_source(monkeypatch):
+    monkeypatch.setattr(preflight, "_load_openai_api_key", lambda: ("test-key", "keyring:service/OPENAI_API_KEY"))
+
+    assert preflight._model_api_credential_status() == "configured"
 
 
 def test_port_status_accepts_reachable_local_http_service():

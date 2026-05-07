@@ -214,6 +214,8 @@ tmp/docs/
 streamlit_log.txt
 start_debug.bat
 test_real.py
+.secrets.scan.json
+.gitleaks.report.json
 
 # draw.io temp/lock files
 *.dtmp

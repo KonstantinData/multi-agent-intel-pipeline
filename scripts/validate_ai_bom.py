@@ -15,6 +15,8 @@ REQUIRED_TOP_LEVEL = {
     "agents",
     "tools",
     "datasets",
+    "role_bindings",
+    "sources",
 }
 
 REQUIRED_LEGAL_SCOPE = {
@@ -24,7 +26,10 @@ REQUIRED_LEGAL_SCOPE = {
     "cra_scope",
     "foss_scope",
     "reviewed_at",
+    "policy_source",
 }
+
+PLACEHOLDER_VALUES = {"", "unknown", "REVIEW_REQUIRED", "sha256:REVIEW_REQUIRED"}
 
 
 def _require(cond: bool, message: str) -> None:
@@ -49,20 +54,52 @@ def validate_ai_bom_data(data: dict) -> None:
 
     _require(isinstance(data.get("datasets"), list), "AI-BOM datasets must be a list.")
 
-    model = data["models"][0]
-    _require(isinstance(model, dict), "AI-BOM first model entry must be an object.")
-    for field in ("id", "name", "version", "runtime", "route", "license", "hash", "hosting_location"):
-        _require(field in model, f"AI-BOM first model missing field: {field}")
+    model_ids: set[str] = set()
+    for index, model in enumerate(data["models"]):
+        _require(isinstance(model, dict), f"AI-BOM model entry {index} must be an object.")
+        for field in (
+            "id",
+            "name",
+            "version",
+            "provider",
+            "runtime",
+            "route",
+            "license",
+            "integrity",
+            "hosting_location",
+            "purposes",
+            "source",
+        ):
+            _require(field in model, f"AI-BOM model entry {index} missing field: {field}")
+            _require(str(model[field]) not in PLACEHOLDER_VALUES, f"AI-BOM model {model.get('id')} has placeholder {field}")
+        _require(model["id"] not in model_ids, f"AI-BOM duplicate model id: {model['id']}")
+        model_ids.add(model["id"])
+        _require(isinstance(model["purposes"], list) and model["purposes"], f"AI-BOM model {model['id']} needs purposes")
 
-    agent = data["agents"][0]
-    _require(isinstance(agent, dict), "AI-BOM first agent entry must be an object.")
-    for field in ("id", "version", "role", "permissions"):
-        _require(field in agent, f"AI-BOM first agent missing field: {field}")
+    for index, agent in enumerate(data["agents"]):
+        _require(isinstance(agent, dict), f"AI-BOM agent entry {index} must be an object.")
+        for field in ("id", "version", "role", "permissions", "chat_model", "structured_model"):
+            _require(field in agent, f"AI-BOM agent entry {index} missing field: {field}")
+        _require(agent["chat_model"] in model_ids, f"AI-BOM agent {agent['id']} references unknown chat_model")
+        _require(agent["structured_model"] in model_ids, f"AI-BOM agent {agent['id']} references unknown structured_model")
 
-    tool = data["tools"][0]
-    _require(isinstance(tool, dict), "AI-BOM first tool entry must be an object.")
-    for field in ("id", "version", "scope"):
-        _require(field in tool, f"AI-BOM first tool missing field: {field}")
+    for index, tool in enumerate(data["tools"]):
+        _require(isinstance(tool, dict), f"AI-BOM tool entry {index} must be an object.")
+        for field in ("id", "version", "scope"):
+            _require(field in tool, f"AI-BOM tool entry {index} missing field: {field}")
+
+    role_bindings = data["role_bindings"]
+    _require(isinstance(role_bindings, list) and role_bindings, "AI-BOM role_bindings must be a non-empty list.")
+    for binding in role_bindings:
+        _require(isinstance(binding, dict), "AI-BOM role binding must be an object.")
+        _require(binding.get("chat_model") in model_ids, f"AI-BOM role {binding.get('role')} references unknown chat model")
+        _require(
+            binding.get("structured_model") in model_ids,
+            f"AI-BOM role {binding.get('role')} references unknown structured model",
+        )
+
+    sources = data["sources"]
+    _require(isinstance(sources, list) and sources, "AI-BOM sources must be a non-empty list.")
 
 
 def validate_ai_bom_file(path: Path) -> None:

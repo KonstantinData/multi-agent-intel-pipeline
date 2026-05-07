@@ -714,10 +714,10 @@
                 <mxCell id="security_layer_label" value="Operational Security + Governance Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#881337;" parent="1" vertex="1">
                     <mxGeometry x="60" y="2360" width="360" height="22" as="geometry"/>
                 </mxCell>
-                <mxCell id="security_secrets" value="&lt;b&gt;Secret Resolution&lt;/b&gt;&lt;br&gt;process/deployment secret → OS keyring → .env only with LIQUISTO_ALLOW_DOTENV_SECRETS=1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
+                <mxCell id="security_secrets" value="&lt;b&gt;Secret Resolution&lt;/b&gt;&lt;br&gt;process/deployment secret → OS keyring; no .env API-key fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
                     <mxGeometry x="70" y="2395" width="470" height="58" as="geometry"/>
                 </mxCell>
-                <mxCell id="security_preflight" value="&lt;b&gt;Preflight Gate&lt;/b&gt;&lt;br&gt;packages · runtime imports · query strategy validation · key source · Streamlit port" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
+                <mxCell id="security_preflight" value="&lt;b&gt;Preflight Gate&lt;/b&gt;&lt;br&gt;packages · runtime imports · query strategy validation · credential availability · Streamlit port" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
                     <mxGeometry x="590" y="2395" width="430" height="58" as="geometry"/>
                 </mxCell>
                 <mxCell id="security_ci" value="&lt;b&gt;CI / Review Gates&lt;/b&gt;&lt;br&gt;CODEOWNERS · secret scan · workflow hardening · architecture/runtime contract tests · release attestation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;spacing=8;fontColor=#881337;" parent="1" vertex="1">
