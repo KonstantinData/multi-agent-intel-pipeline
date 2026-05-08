@@ -30,6 +30,24 @@ def test_normalize_domain_handles_www_scheme_and_path() -> None:
     assert normalize_domain("www.example.com/path/to/page") == "example.com"
 
 
+def test_normalize_domain_blocks_private_and_reserved_hosts() -> None:
+    # loopback
+    assert normalize_domain("localhost") == ""
+    assert normalize_domain("127.0.0.1") == ""
+    # RFC1918 private ranges
+    assert normalize_domain("10.0.0.1") == ""
+    assert normalize_domain("192.168.1.100") == ""
+    assert normalize_domain("172.16.0.1") == ""
+    # link-local / cloud metadata
+    assert normalize_domain("169.254.169.254") == ""
+    # IPv6 loopback and private
+    assert normalize_domain("::1") == ""
+    assert normalize_domain("fd00::1") == ""
+    # legitimate public domain must pass through
+    assert normalize_domain("siemens.com") == "siemens.com"
+    assert normalize_domain("8.8.8.8") == "8.8.8.8"
+
+
 def test_legal_suffix_detection_uses_token_boundary() -> None:
     false_positive = infer_company_identity("Frag", title="", description="", text="")
     actual_legal_name = infer_company_identity("Acme AG", title="", description="", text="")
