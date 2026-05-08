@@ -35,6 +35,16 @@ def validate_run_id(run_id: str) -> str:
     raise InvalidRunIdError("Invalid run_id.")
 
 
+def _find_existing_run_dir(root: Path, safe_run_id: str) -> Path | None:
+    """Return the resolved run directory matching ``safe_run_id`` under ``root``."""
+    if not root.exists():
+        return None
+    for child in root.iterdir():
+        if child.is_dir() and child.name == safe_run_id:
+            return child.resolve()
+    return None
+
+
 def resolve_run_dir(
     run_id: str,
     *,
@@ -49,17 +59,16 @@ def resolve_run_dir(
     safe_run_id = validate_run_id(run_id)
     root = Path(runs_root).resolve()
 
-    candidate: Path | None = None
-    if root.exists():
-        for child in root.iterdir():
-            if child.is_dir() and child.name == safe_run_id:
-                candidate = child.resolve()
-                break
+    candidate = _find_existing_run_dir(root, safe_run_id)
 
     if candidate is None:
         if must_exist:
             raise FileNotFoundError("Run was not found.")
-        candidate = (root / safe_run_id).resolve()
+        # Defense in depth: enforce basename semantics before constructing path.
+        basename = Path(safe_run_id).name
+        if basename != safe_run_id:
+            raise InvalidRunIdError("Invalid run_id.")
+        candidate = root.joinpath(basename).resolve()
 
     try:
         candidate.relative_to(root)
