@@ -6,7 +6,7 @@ writes a persisted run should resolve the identifier through this module.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "artifacts" / "runs"
@@ -45,6 +45,28 @@ def _find_existing_run_dir(root: Path, safe_run_id: str) -> Path | None:
     return None
 
 
+def _validate_relative_artifact_path_text(path_text: str) -> str:
+    """Normalize and validate a relative artifact path text value."""
+    normalized = str(path_text or "").strip()
+    if not normalized:
+        raise InvalidRunIdError("Invalid run_id.")
+
+    # Reject lexical absolute path forms for both POSIX and Windows semantics.
+    if normalized.startswith(("/", "\\")):
+        raise InvalidRunIdError("Invalid run_id.")
+    if re.match(r"^[A-Za-z]:", normalized):
+        raise InvalidRunIdError("Invalid run_id.")
+    if PurePosixPath(normalized).is_absolute():
+        raise InvalidRunIdError("Invalid run_id.")
+    if PureWindowsPath(normalized).is_absolute():
+        raise InvalidRunIdError("Invalid run_id.")
+
+    parts = [part for part in re.split(r"[\\/]+", normalized) if part]
+    if any(part in (".", "..") for part in parts):
+        raise InvalidRunIdError("Invalid run_id.")
+    return normalized
+
+
 def resolve_path_within_runs_root(
     candidate_path: str | Path,
     *,
@@ -57,20 +79,20 @@ def resolve_path_within_runs_root(
     traversal-like segments.
     """
     root = Path(runs_root).resolve(strict=False)
-    candidate_input = Path(candidate_path)
-    candidate_resolved = candidate_input.resolve(strict=False)
+    candidate_text = str(candidate_path)
+    candidate_input = Path(candidate_text)
 
     if candidate_input.is_absolute():
+        candidate_resolved = candidate_input.resolve(strict=False)
         try:
             rel = candidate_resolved.relative_to(root)
         except ValueError as exc:
             raise InvalidRunIdError("Invalid run_id.") from exc
-        return (root / rel).resolve(strict=False)
+        candidate = (root / rel).resolve(strict=False)
+    else:
+        safe_relative_text = _validate_relative_artifact_path_text(candidate_text)
+        candidate = (root / safe_relative_text).resolve(strict=False)
 
-    if any(part in ("", ".", "..") for part in candidate_input.parts):
-        raise InvalidRunIdError("Invalid run_id.")
-
-    candidate = (root / candidate_input).resolve(strict=False)
     try:
         rel = candidate.relative_to(root)
     except ValueError as exc:
@@ -108,4 +130,3 @@ def resolve_run_dir(
     except ValueError as exc:
         raise InvalidRunIdError("Invalid run_id.") from exc
     return candidate
-
