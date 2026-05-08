@@ -106,7 +106,7 @@ def _normalize_license(raw: str) -> str:
     if "\n" not in stripped:
         return _LICENSE_ALIASES.get(stripped.lower(), stripped)
     # Multi-line: try first non-empty line as a short identifier
-    first_line = next((l.strip() for l in stripped.splitlines() if l.strip()), stripped)
+    first_line = next((ln.strip() for ln in stripped.splitlines() if ln.strip()), stripped)
     result = _LICENSE_ALIASES.get(first_line.lower())
     if result:
         return result
@@ -131,8 +131,8 @@ def _locked_packages(lock_path: Path) -> set[str]:
 
 
 def validate_licenses(policy: dict, lock_file: Path | None = None) -> list[str]:
-    allowed = {_normalize_license(l) for l in policy["allowed"]}
-    denied = {_normalize_license(l) for l in policy["denied"]}
+    allowed = {_normalize_license(raw) for raw in policy["allowed"]}
+    denied = {_normalize_license(raw) for raw in policy["denied"]}
     unknown_action = policy.get("unknown_action", "block")
     exceptions_data = _load("dependency-risk-exceptions.json")
     exception_packages = {e["package"] for e in exceptions_data.get("exceptions", [])}

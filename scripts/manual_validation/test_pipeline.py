@@ -15,14 +15,14 @@ from pypdf import PdfReader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.exporters.pdf_report import generate_pdf
 from src.agents.worker import ResearchWorker
 from src.config import get_model_pricing, get_role_model_selection, summarize_worker_report_costs
-from src.orchestration.task_router import build_initial_assignments
+from src.domain.intake import SupervisorBrief
+from src.exporters.pdf_report import generate_pdf
 from src.memory.policies import should_store_strategy
 from src.orchestration.synthesis import assess_research_readiness, build_synthesis_context
+from src.orchestration.task_router import build_initial_assignments
 from src.pipeline_runner import _extract_pipeline_data, run_pipeline
-from src.domain.intake import SupervisorBrief
 
 
 def test_negative_placeholder_signals_are_not_treated_as_positive():

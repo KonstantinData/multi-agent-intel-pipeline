@@ -15,20 +15,19 @@ import logging
 import pytest
 
 from src.memory.backfill import backfill_long_term_memory_from_runs
-from src.memory.short_term_store import ShortTermMemoryStore
-from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.consolidation import (
-    consolidate_role_patterns,
     MEMORY_ROLE_STATUS,
-    RETRIEVABLE_ROLES,
     RETRIEVABLE_ROLE_ORDER,
+    RETRIEVABLE_ROLES,
     ROLE_MEMORY_CATEGORIES,
-    _scrub_company_from_query,
     _is_process_safe_query,
+    _scrub_company_from_query,
     _to_structural_patterns,
+    consolidate_role_patterns,
 )
+from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
-
+from src.memory.short_term_store import ShortTermMemoryStore
 
 # ===========================================================================
 # ShortTermMemoryStore run brain
@@ -445,7 +444,7 @@ class TestShortTermMemoryMerge:
 
         with pytest.raises(Exception) if False else _noop_context():
             # Should not raise, but should log a warning
-            with _capture_log(logging.getLogger()) as log_output:
+            with _capture_log(logging.getLogger()):
                 main.merge_from(ws)
 
         # Last-writer-wins
@@ -503,7 +502,8 @@ class TestShortTermMemoryMerge:
         assert {"action": "new"} in delta.next_actions
 
 
-import contextlib
+import contextlib  # noqa: E402
+
 
 @contextlib.contextmanager
 def _noop_context():

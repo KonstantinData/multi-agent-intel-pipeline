@@ -8,13 +8,14 @@ Migration rule: the resolver must NOT proceed until these tests are green.
 from __future__ import annotations
 
 import os
+
 import pytest
 
 # Suppress LLM calls in tests
 os.environ.setdefault("PYTEST_CURRENT_TEST", "1")
 
 from src.domain.intake import SupervisorBrief
-from src.research.query_resolver import resolve_queries, clear_strategy_cache
+from src.research.query_resolver import clear_strategy_cache, resolve_queries
 
 # ---------------------------------------------------------------------------
 # Fixed brief fixture — identical for every task to ensure deterministic output

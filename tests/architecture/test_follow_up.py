@@ -40,8 +40,8 @@ def _make_run_context():
 
 
 def test_follow_up_company_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -59,8 +59,8 @@ def test_follow_up_company_route(tmp_path):
 
 
 def test_follow_up_market_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -78,8 +78,8 @@ def test_follow_up_market_route(tmp_path):
 
 
 def test_follow_up_buyer_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -97,8 +97,8 @@ def test_follow_up_buyer_route(tmp_path):
 
 
 def test_follow_up_contact_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -116,8 +116,8 @@ def test_follow_up_contact_route(tmp_path):
 
 
 def test_follow_up_synthesis_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -135,8 +135,8 @@ def test_follow_up_synthesis_route(tmp_path):
 
 
 def test_follow_up_unknown_route_defaults_to_company(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -153,8 +153,8 @@ def test_follow_up_unknown_route_defaults_to_company(tmp_path):
 
 
 def test_follow_up_prefers_run_brain_artifacts_over_answer_matrix(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
 
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
@@ -189,8 +189,8 @@ def test_follow_up_prefers_run_brain_artifacts_over_answer_matrix(tmp_path):
 
 
 def test_follow_up_evidence_priority_prefers_task_artifacts_over_answer_matrix(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
 
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
@@ -226,8 +226,8 @@ def test_follow_up_evidence_priority_prefers_task_artifacts_over_answer_matrix(t
 
 
 def test_follow_up_evidence_priority_falls_back_to_pipeline_data_then_package(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
 
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
@@ -262,8 +262,8 @@ def test_follow_up_evidence_priority_falls_back_to_pipeline_data_then_package(tm
 
 
 def test_follow_up_blocks_closed_unresolved_facts_from_evidence(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
 
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()

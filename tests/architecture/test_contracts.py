@@ -16,18 +16,17 @@ from pydantic import ValidationError
 
 from src.models.schemas import DepartmentPackage
 from src.orchestration.contracts import (
-    ContractViolation,
-    DepartmentRunState,
     DEPENDENCY_SATISFYING_OUTCOMES,
-    TaskArtifact,
-    TaskDecisionArtifact,
-    TaskReviewArtifact,
-    TERMINAL_OUTCOMES,
     NON_TERMINAL_OUTCOMES,
     OUTCOME_TO_TASK_STATUS,
     TASK_LIFECYCLE_STATUSES,
+    TERMINAL_OUTCOMES,
+    ContractViolation,
+    DepartmentRunState,
+    TaskArtifact,
+    TaskDecisionArtifact,
+    TaskReviewArtifact,
 )
-
 
 # ===========================================================================
 # TaskArtifact
@@ -488,7 +487,9 @@ class TestContractViolation:
 
 class TestSchemaValidationHelper:
     def test_valid_payload_produces_no_violations(self):
-        from src.orchestration.contract_validation import validate_payload_against_task_schema as _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema(
             "CompanyFundamentals",
             {"company_name": "ACME", "website": "acme.de", "industry": "Mfg"},
@@ -496,18 +497,24 @@ class TestSchemaValidationHelper:
         assert violations == []
 
     def test_empty_schema_key_produces_no_violations(self):
-        from src.orchestration.contract_validation import validate_payload_against_task_schema as _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema("", {"anything": "ok"})
         assert violations == []
 
     def test_unknown_schema_key_produces_no_violations(self):
-        from src.orchestration.contract_validation import validate_payload_against_task_schema as _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema("NonExistent", {"x": 1})
         assert violations == []
 
     def test_empty_payload_against_schema_with_defaults_passes(self):
         """Pydantic models with all-default fields accept empty dicts."""
-        from src.orchestration.contract_validation import validate_payload_against_task_schema as _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema("CompanyFundamentals", {})
         # CompanyFundamentals has all defaults, so empty dict validates fine
         assert violations == []

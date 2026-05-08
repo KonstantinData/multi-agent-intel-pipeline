@@ -88,8 +88,9 @@ class TestSelectorGuardrails:
 
     def test_selector_has_no_workflow_step(self):
         """Selector must not reference workflow_step in department selector code."""
-        import src.orchestration.speaker_selector as sel_mod
         import inspect
+
+        import src.orchestration.speaker_selector as sel_mod
         source = inspect.getsource(sel_mod)
         lines = source.split("\n")
         in_dept_selector = False
@@ -148,6 +149,7 @@ class TestSynthesisSelectorGuardrails:
 
     def test_synthesis_selector_has_no_synthesis_step_state_machine(self):
         import inspect
+
         import src.orchestration.speaker_selector as sel_mod
 
         source = inspect.getsource(sel_mod.build_synthesis_selector)

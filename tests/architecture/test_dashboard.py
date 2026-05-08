@@ -13,9 +13,7 @@ from src.models.visualization import (
     ChartSpec,
     DashboardBundle,
     DashboardSection,
-    InsightCallout,
     KpiCard,
-    TableBlock,
 )
 from src.orchestration.dashboard_composer import compose_dashboard
 

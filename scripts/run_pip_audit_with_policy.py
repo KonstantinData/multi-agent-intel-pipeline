@@ -49,8 +49,8 @@ def main() -> None:
 
     try:
         report = json.loads(raw) if raw else {"dependencies": []}
-    except json.JSONDecodeError:
-        raise SystemExit(f"pip-audit produced non-JSON output:\n{raw}\n{result.stderr}")
+    except json.JSONDecodeError as err:
+        raise SystemExit(f"pip-audit produced non-JSON output:\n{raw}\n{result.stderr}") from err
 
     unexcepted: list[str] = []
     for dep in report.get("dependencies", []):

@@ -14,10 +14,14 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import check_github_actions_hardening as hardening  # noqa: E402
+import check_scorecard_policy as scorecard_policy  # noqa: E402
+import check_workflow_needs_result as needs_checker  # noqa: E402
+import dependency_diff as dep_diff  # noqa: E402
 import generate_actions_bom as gen_actions_bom  # noqa: E402
 import generate_ai_bom as gen_ai_bom  # noqa: E402
 import generate_release_attestation as gen_attestation  # noqa: E402
 import generate_sbom as gen_sbom  # noqa: E402
+import generate_trivyignore as gen_trivyignore  # noqa: E402
 import validate_actions_bom as val_actions_bom  # noqa: E402
 import validate_ai_bom as val_ai_bom  # noqa: E402
 import validate_audit_schema as val_audit  # noqa: E402
@@ -25,10 +29,6 @@ import validate_dependency_policy as val_dep_policy  # noqa: E402
 import validate_ruleset_config as val_ruleset  # noqa: E402
 import validate_sbom as val_sbom  # noqa: E402
 import validate_secret_scan as val_secret_scan  # noqa: E402
-import check_scorecard_policy as scorecard_policy  # noqa: E402
-import check_workflow_needs_result as needs_checker  # noqa: E402
-import dependency_diff as dep_diff  # noqa: E402
-import generate_trivyignore as gen_trivyignore  # noqa: E402
 
 
 def test_ai_bom_roundtrip(tmp_path: Path) -> None:

@@ -70,7 +70,7 @@ def test_fetch_website_snapshot_extracts_meta_description_with_flexible_attrs(mo
     class _Response:
         headers = _Headers()
 
-        def __enter__(self) -> "_Response":
+        def __enter__(self) -> _Response:
             return self
 
         def __exit__(self, exc_type: object, exc: object, tb: object) -> None:

@@ -190,7 +190,7 @@ def test_no_extra_strategy_tasks_without_mapping() -> None:
 # ---------------------------------------------------------------------------
 
 def test_validate_all_strategies_passes() -> None:
-    from src.research.query_resolver import validate_all_strategies, clear_strategy_cache
+    from src.research.query_resolver import clear_strategy_cache, validate_all_strategies
     clear_strategy_cache()
     errors = validate_all_strategies()
     assert not errors, (

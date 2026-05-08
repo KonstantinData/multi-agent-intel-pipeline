@@ -16,13 +16,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.orchestration.follow_up import _extract_task_evidence, _get_department_run_state
+from src.agents.critic import CriticAgent, _evaluate_rule
+from src.agents.judge import JudgeAgent
 from src.app.use_cases import (
     STANDARD_TASK_BACKLOG,
-    get_task_validation_rules,
     get_task_contract,
+    get_task_validation_rules,
 )
-from src.models.registry import SCHEMA_REGISTRY, resolve_output_schema, assemble_section, SECTION_MODEL_MAP
+from src.config.settings import HARD_TOKEN_CAP, MAX_TASK_RETRIES, SOFT_TOKEN_BUDGET
+from src.models.registry import (
+    SCHEMA_REGISTRY,
+    SECTION_MODEL_MAP,
+    assemble_section,
+    resolve_output_schema,
+)
+from src.orchestration.follow_up import _extract_task_evidence, _get_department_run_state
 from src.orchestration.synthesis import (
     assess_research_readiness,
     build_contact_briefing_assets,
@@ -31,10 +39,6 @@ from src.orchestration.synthesis import (
     harmonize_synthesis_output,
 )
 from src.orchestration.task_router import Assignment, evaluate_run_conditions
-from src.config.settings import MAX_TASK_RETRIES, SOFT_TOKEN_BUDGET, HARD_TOKEN_CAP
-from src.agents.critic import CriticAgent, _evaluate_rule
-from src.agents.judge import JudgeAgent
-
 
 # ===========================================================================
 # Follow-up evidence extraction (CHG-08)
@@ -179,8 +183,9 @@ class TestTaskBacklogContracts:
         assert contract is None
 
     def test_no_conservative_status_in_use_cases(self):
-        from src.app import use_cases
         import inspect
+
+        from src.app import use_cases
         source = inspect.getsource(use_cases)
         assert '"conservative"' not in source
 
@@ -1280,7 +1285,6 @@ class TestSynthesisAcceptanceGate:
 
     def test_pipeline_runner_reads_synthesis_admission_from_envelope(self):
         """pipeline_runner must read synthesis admission from canonical envelope."""
-        import inspect
         source = Path("src/pipeline_runner.py").read_text(encoding="utf-8")
         assert 'resolve_admission' in source
 
@@ -1306,7 +1310,7 @@ class TestVocabularyConsistency:
     def test_judge_uses_contract_vocabulary(self):
         """Judge decisions must be valid TaskDecisionOutcomes."""
         from src.agents.judge import JudgeAgent
-        from src.orchestration.contracts import TERMINAL_OUTCOMES, NON_TERMINAL_OUTCOMES
+        from src.orchestration.contracts import NON_TERMINAL_OUTCOMES, TERMINAL_OUTCOMES
         all_outcomes = TERMINAL_OUTCOMES | NON_TERMINAL_OUTCOMES
         judge = JudgeAgent("TestJudge")
         # All three paths
@@ -1322,11 +1326,12 @@ class TestVocabularyConsistency:
     def test_no_phantom_status_in_short_term_store(self):
         """submitted and needs_revision must not appear in ShortTermMemoryStore."""
         import inspect
+
         from src.memory import short_term_store
         source = inspect.getsource(short_term_store)
         # Allow in comments (# F7: was "submitted") but not as active string literals
-        active_lines = [l for l in source.splitlines()
-                        if not l.strip().startswith("#") and "# F7:" not in l]
+        active_lines = [ln for ln in source.splitlines()
+                        if not ln.strip().startswith("#") and "# F7:" not in ln]
         active_source = "\n".join(active_lines)
         assert '"submitted"' not in active_source, "Phantom status 'submitted' still active"
         assert '"needs_revision"' not in active_source, "Phantom status 'needs_revision' still active"
@@ -1363,11 +1368,12 @@ class TestVocabularyConsistency:
     def test_no_legacy_judge_labels_in_judge_module(self):
         """Legacy labels accept/accept_degraded/reject must not appear as decision values in judge.py."""
         import inspect
+
         from src.agents import judge
         source = inspect.getsource(judge)
         # Check for old-style decision assignments (not in comments or docstrings)
-        code_lines = [l for l in source.splitlines()
-                      if not l.strip().startswith("#") and not l.strip().startswith('\"\"\"')]
+        code_lines = [ln for ln in source.splitlines()
+                      if not ln.strip().startswith("#") and not ln.strip().startswith('\"\"\"')]
         code = "\n".join(code_lines)
         assert '"accept"' not in code.replace('"accepted"', '').replace('"accepted_with_gaps"', ''), \
             "Legacy 'accept' label still in judge.py"

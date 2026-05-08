@@ -13,7 +13,6 @@ mirroring the same expiry discipline enforced by run_pip_audit_with_policy.py.
 from __future__ import annotations
 
 import json
-import sys
 from datetime import date
 from pathlib import Path
 

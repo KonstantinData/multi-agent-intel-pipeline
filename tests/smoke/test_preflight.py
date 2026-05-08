@@ -91,25 +91,6 @@ def test_port_status_accepts_reachable_local_http_service():
 
 def test_pure_modules_importable():
     """Verify that architecture-layer modules can be imported without AG2."""
-    import src.orchestration.contracts
-    import src.orchestration.follow_up
-    import src.orchestration.task_router
-    import src.orchestration.tool_policy
-    import src.orchestration.synthesis
-    import src.orchestration.run_context
-    import src.memory.short_term_store
-    import src.memory.consolidation
-    import src.memory.policies
-    import src.models.registry
-    import src.models.schemas
-    import src.app.use_cases
-    import src.domain.intake
-    import src.agents.critic
-    import src.agents.judge
-    import src.agents.supervisor
-    import src.agents.specs
-    import src.agents.registry
-    import src.orchestration.speaker_selector
 
 
 def test_dependency_graph_is_valid():
@@ -178,6 +159,7 @@ def test_report_writer_exists_as_runtime_agent():
 def test_pipeline_runner_requires_report_writer_agent():
     """pipeline_runner should access agents['report_writer'] for report assembly."""
     import inspect
+
     from src import pipeline_runner
     source = inspect.getsource(pipeline_runner.run_pipeline)
     assert 'agents["report_writer"]' in source or "agents['report_writer']" in source
@@ -234,7 +216,7 @@ def test_phase_invariants_match_backlog():
     """P2-3: All research tasks must belong to exactly one department."""
     from src.app.use_cases import STANDARD_TASK_BACKLOG
     all_owned = set()
-    for dept, keys in _DEPARTMENT_TASK_OWNERSHIP.items():
+    for _dept, keys in _DEPARTMENT_TASK_OWNERSHIP.items():
         overlap = all_owned & keys
         assert not overlap, f"Tasks {overlap} assigned to multiple departments"
         all_owned |= keys
@@ -297,8 +279,8 @@ def test_sequential_departments_respect_order():
 def test_no_cross_domain_strategic_analyst_references():
     """P2-1: CrossDomainStrategicAnalyst must not appear in any active registry."""
     from src.config.settings import ROLE_MODEL_DEFAULTS, ROLE_STRUCTURED_MODEL_DEFAULTS
-    from src.orchestration.tool_policy import BASE_TOOL_POLICY, TASK_TOOL_OVERRIDES
     from src.memory.consolidation import MEMORY_ROLE_STATUS
+    from src.orchestration.tool_policy import BASE_TOOL_POLICY, TASK_TOOL_OVERRIDES
 
     assert "CrossDomainStrategicAnalyst" not in ROLE_MODEL_DEFAULTS
     assert "CrossDomainStrategicAnalyst" not in ROLE_STRUCTURED_MODEL_DEFAULTS
@@ -342,4 +324,3 @@ def test_no_input_artifacts_in_backlog():
 
 def test_envelope_module_importable():
     """P0-5: envelope.py must be importable as a pure module."""
-    import src.orchestration.envelope

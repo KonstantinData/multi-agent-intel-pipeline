@@ -13,13 +13,9 @@ Requires AG2/autogen — auto-skipped if not installed.
 """
 from __future__ import annotations
 
-import json
-import os
-import sys
-from pathlib import Path
+import inspect
 from typing import Any
 from unittest.mock import MagicMock, patch
-import inspect
 
 import pytest
 
@@ -31,9 +27,8 @@ def _set_dummy_api_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", _DUMMY_KEY)
 
 
-from src.domain.intake import SupervisorBrief
-from src.orchestration.task_router import Assignment
-
+from src.domain.intake import SupervisorBrief  # noqa: E402
+from src.orchestration.task_router import Assignment  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -507,8 +502,9 @@ class TestNoSupervisorInDepartmentLoop:
         assert "supervisor" not in sig.parameters
 
     def test_lead_has_no_request_supervisor_revision_tool(self):
-        import src.agents.lead as lead_mod
         import re
+
+        import src.agents.lead as lead_mod
         source = inspect.getsource(lead_mod)
         code_lines = [
             ln for ln in source.split("\n")

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 def test_dependency_light_architecture_modules_do_not_import_runtime_heavy_modules():
