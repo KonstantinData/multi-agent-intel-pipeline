@@ -19,7 +19,6 @@ import json
 import os
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from src.config.settings import ROOT
@@ -174,6 +173,46 @@ def _expand_templates(
     return result
 
 
+_QUERY_VARIANT_PREFIX = "strategy:"
+
+
+def validate_query_overrides(query_overrides: list[str] | None) -> list[str]:
+    """Validate adaptive runtime query override tokens.
+
+    Runtime overrides must reference query-strategy variants using
+    ``strategy:<task_key>:<variant_key>``.  Free-form query strings are
+    rejected so runtime query templates remain owned by
+    ``knowledge/query_strategies/*.yaml``.
+    """
+    cleaned: list[str] = []
+    for raw in query_overrides or []:
+        token = str(raw).strip()
+        if not token:
+            raise ValueError("Query override must not be empty.")
+        if not token.startswith(_QUERY_VARIANT_PREFIX):
+            raise ValueError(
+                "Query override must reference a query-strategy variant "
+                "using 'strategy:<task_key>:<variant_key>'."
+            )
+        parts = token.split(":")
+        if len(parts) != 3 or not parts[1] or not parts[2]:
+            raise ValueError(
+                "Query override must use 'strategy:<task_key>:<variant_key>'."
+            )
+        task_key, variant_key = parts[1], parts[2]
+        if task_key not in _TASK_TO_DEPARTMENT:
+            raise KeyError(
+                f"Unknown task key in query override: '{task_key}'. "
+                f"Known tasks: {sorted(_TASK_TO_DEPARTMENT)}"
+            )
+        if not re.fullmatch(r"[a-z0-9_]+", variant_key):
+            raise ValueError(f"Invalid query variant key: '{variant_key}'.")
+        cleaned.append(token)
+    if query_overrides is not None and not cleaned:
+        raise ValueError("Query overrides must contain at least one strategy variant token.")
+    return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Task-specific expansion helpers
 # ---------------------------------------------------------------------------
@@ -255,6 +294,100 @@ def _resolve_contact_queries(
     return queries[:result_limit]
 
 
+def _expand_task_entry(
+    task_key: str,
+    entry: dict[str, Any],
+    *,
+    company: str,
+    domain: str,
+    industry: str,
+    keywords: str,
+    current_section: dict[str, Any] | None = None,
+) -> list[str]:
+    """Expand a task or variant strategy entry into executable queries."""
+    if task_key in {
+        "economic_commercial_situation",
+        "financial_deep_dive",
+        "company_fundamentals",
+        "transaction_event_intelligence",
+        "market_situation",
+        "monetization_redeployment",
+        "target_company_contacts",
+    }:
+        return _expand_templates(
+            entry["queries"],
+            company=company,
+            domain=domain,
+            industry=industry,
+            keywords=keywords,
+        )
+
+    if task_key == "product_asset_scope":
+        queries = _expand_templates(
+            entry["queries"],
+            company=company,
+            domain=domain,
+            industry=industry,
+            keywords=keywords,
+        )
+        queries.extend(_expand_templates(
+            entry.get("queries_extra", []),
+            company=company,
+            domain=domain,
+            industry=industry,
+            keywords=keywords,
+        ))
+        return queries
+
+    if task_key == "peer_companies":
+        peer_queries = _expand_templates(
+            entry.get("queries_peer_prefix", entry.get("queries", [])),
+            company=company,
+            domain=domain,
+            industry=industry,
+            keywords=keywords,
+        )
+        buyer_base = _resolve_buyer_base_queries(
+            entry.get("queries_buyer_base", {}),
+            company=company,
+            domain=domain,
+            industry=industry,
+            keywords=keywords,
+        )
+        queries = [*peer_queries, *buyer_base]
+        return _dedup(queries) if entry.get("dedup", False) else queries
+
+    if task_key in {"contact_discovery", "contact_qualification"}:
+        raw_candidates = (current_section or {}).get("buyer_candidates") or []
+        buyer_candidates: list[str] = []
+        for candidate in raw_candidates:
+            firm = ""
+            if isinstance(candidate, str):
+                firm = candidate.strip()
+            elif isinstance(candidate, dict):
+                firm = (candidate.get("company_name") or candidate.get("name") or "").strip()
+            if firm and firm not in {"n/v", "n/a", "target_company"} and "." not in firm:
+                buyer_candidates.append(firm)
+        if "queries_per_buyer" in entry or "queries_fallback" in entry:
+            return _resolve_contact_queries(
+                entry,
+                company=company,
+                domain=domain,
+                industry=industry,
+                keywords=keywords,
+                buyer_candidates=buyer_candidates,
+            )
+        return _expand_templates(
+            entry["queries"],
+            company=company,
+            domain=domain,
+            industry=industry,
+            keywords=keywords,
+        )
+
+    raise KeyError(f"Unhandled task key in resolver: '{task_key}'")
+
+
 # ---------------------------------------------------------------------------
 # Dedup helper (preserves order)
 # ---------------------------------------------------------------------------
@@ -282,10 +415,10 @@ def resolve_queries(
 ) -> list[str]:
     """Resolve the query list for a research task.
 
-    Preserves existing ``query_overrides`` semantics exactly:
+    Query override semantics:
     - ``None``           → standard path (resolve from strategy)
     - ``[]``             → standard path (falsy, treated like None)
-    - non-empty list     → override path (returned directly)
+    - non-empty list     → strategy variant token path
 
     Parameters
     ----------
@@ -294,7 +427,9 @@ def resolve_queries(
     brief:
         Supervisor brief providing company_name and normalized_domain.
     query_overrides:
-        When non-empty, returned as-is without strategy lookup.
+        When non-empty, must contain ``strategy:<task_key>:<variant_key>``
+        tokens. The referenced variants are loaded from the owning strategy
+        file and expanded here.
     current_section:
         Section payload from current pipeline state; used for contact tasks
         that expand per buyer candidate.
@@ -313,9 +448,22 @@ def resolve_queries(
     ValueError
         When the strategy file is unparsable or contains invalid placeholders.
     """
-    # Preserve current query_overrides or-idiom exactly (Option A)
     if query_overrides:
-        return list(query_overrides)
+        queries: list[str] = []
+        for token in validate_query_overrides(query_overrides):
+            _, override_task_key, variant_key = token.split(":")
+            if override_task_key != task_key:
+                raise ValueError(
+                    f"Query override task '{override_task_key}' does not match "
+                    f"research task '{task_key}'."
+                )
+            queries.extend(resolve_query_variant(
+                task_key=task_key,
+                variant_key=variant_key,
+                brief=brief,
+                current_section=current_section,
+            ))
+        return _dedup(queries)
 
     if task_key not in _TASK_TO_DEPARTMENT:
         raise KeyError(
@@ -327,7 +475,10 @@ def resolve_queries(
     entry = _get_task_entry(department_slug, task_key)
 
     # Derive expansion values from brief + research helpers
-    from src.research.extract import extract_product_keywords, infer_industry  # local import avoids circular
+    from src.research.extract import (  # local import avoids circular
+        extract_product_keywords,
+        infer_industry,
+    )
 
     company = brief.company_name
     domain = brief.normalized_domain
@@ -337,60 +488,65 @@ def resolve_queries(
     product_keywords = extract_product_keywords(brief.raw_homepage_excerpt, company_name=company)
     keywords = " ".join(product_keywords[:3]).strip()
 
-    # --- company tasks ---------------------------------------------------------
-    if task_key in {"economic_commercial_situation", "financial_deep_dive",
-                     "company_fundamentals", "transaction_event_intelligence"}:
-        return _expand_templates(entry["queries"], company=company, domain=domain, industry=industry, keywords=keywords)
+    return _expand_task_entry(
+        task_key,
+        entry,
+        company=company,
+        domain=domain,
+        industry=industry,
+        keywords=keywords,
+        current_section=current_section,
+    )
 
-    if task_key == "product_asset_scope":
-        queries = _expand_templates(entry["queries"], company=company, domain=domain, industry=industry, keywords=keywords)
-        queries.extend(_expand_templates(entry.get("queries_extra", []), company=company, domain=domain, industry=industry, keywords=keywords))
-        return queries
 
-    # --- market tasks ----------------------------------------------------------
-    if task_key == "market_situation":
-        return _expand_templates(entry["queries"], company=company, domain=domain, industry=industry, keywords=keywords)
-
-    # --- buyer tasks -----------------------------------------------------------
-    if task_key == "peer_companies":
-        peer_queries = _expand_templates(
-            entry.get("queries_peer_prefix", []),
-            company=company, domain=domain, industry=industry, keywords=keywords,
+def resolve_query_variant(
+    *,
+    task_key: str,
+    variant_key: str,
+    brief: SupervisorBrief,
+    current_section: dict[str, Any] | None = None,
+) -> list[str]:
+    """Resolve a KB-owned adaptive query variant for a task."""
+    if task_key not in _TASK_TO_DEPARTMENT:
+        raise KeyError(
+            f"Unknown task key: '{task_key}'. "
+            f"Known tasks: {sorted(_TASK_TO_DEPARTMENT)}"
         )
-        buyer_base = _resolve_buyer_base_queries(
-            entry.get("queries_buyer_base", {}),
-            company=company, domain=domain, industry=industry, keywords=keywords,
+    department_slug = _TASK_TO_DEPARTMENT[task_key]
+    task_entry = _get_task_entry(department_slug, task_key)
+    variants = task_entry.get("query_variants", {})
+    if not isinstance(variants, dict) or variant_key not in variants:
+        raise KeyError(
+            f"No query variant '{variant_key}' for task '{task_key}' in "
+            f"knowledge/query_strategies/{department_slug}.yaml."
         )
-        if entry.get("dedup", False):
-            return _dedup([*peer_queries, *buyer_base])
-        return [*peer_queries, *buyer_base]
-
-    if task_key == "monetization_redeployment":
-        return _expand_templates(entry["queries"], company=company, domain=domain, industry=industry, keywords=keywords)
-
-    # --- contact tasks ---------------------------------------------------------
-    if task_key in {"contact_discovery", "contact_qualification"}:
-        raw_candidates = (current_section or {}).get("buyer_candidates") or []
-        buyer_candidates: list[str] = []
-        for candidate in raw_candidates:
-            firm = ""
-            if isinstance(candidate, str):
-                firm = candidate.strip()
-            elif isinstance(candidate, dict):
-                firm = (candidate.get("company_name") or candidate.get("name") or "").strip()
-            if firm and firm not in {"n/v", "n/a", "target_company"} and "." not in firm:
-                buyer_candidates.append(firm)
-        return _resolve_contact_queries(
-            entry,
-            company=company, domain=domain, industry=industry, keywords=keywords,
-            buyer_candidates=buyer_candidates,
+    variant_entry = variants[variant_key]
+    if not isinstance(variant_entry, dict):
+        raise ValueError(
+            f"Query variant '{variant_key}' for task '{task_key}' must be a dict."
         )
 
-    if task_key == "target_company_contacts":
-        return _expand_templates(entry["queries"], company=company, domain=domain, industry=industry, keywords=keywords)
+    from src.research.extract import (  # local import avoids circular
+        extract_product_keywords,
+        infer_industry,
+    )
 
-    # Unreachable given the _TASK_TO_DEPARTMENT guard above, but be explicit
-    raise KeyError(f"Unhandled task key in resolver: '{task_key}'")
+    company = brief.company_name
+    domain = brief.normalized_domain
+    industry = infer_industry(
+        brief.page_title, brief.meta_description, brief.raw_homepage_excerpt
+    ) or "n/v"
+    product_keywords = extract_product_keywords(brief.raw_homepage_excerpt, company_name=company)
+    keywords = " ".join(product_keywords[:3]).strip()
+    return _expand_task_entry(
+        task_key,
+        variant_entry,
+        company=company,
+        domain=domain,
+        industry=industry,
+        keywords=keywords,
+        current_section=current_section,
+    )
 
 
 def clear_strategy_cache() -> None:

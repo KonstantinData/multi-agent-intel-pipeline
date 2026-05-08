@@ -12,6 +12,55 @@ The system supports two runtime modes:
 
 Both modes are coordinated by the `Supervisor`.
 
+## Operational Security And Governance Layer
+
+Security and governance are cross-cutting runtime boundaries, not department
+chat participants. The runtime diagram therefore represents them as an
+outer operational layer around entry, configuration, CI, and artifact handling.
+
+The layer covers:
+
+- secret resolution: process/deployment secret first, OS keyring second;
+  plaintext `.env` is not used for API keys;
+- `preflight.py`: dependency, import-chain, query-strategy, credential
+  availability, and Streamlit-port readiness checks before local UI startup;
+- CI and review gates: CODEOWNERS, secret scan, workflow hardening,
+  architecture/runtime contract tests, and release attestation;
+- pre-commit hooks: Ruff (with --fix) and Bandit run locally on every
+  git commit -- same scope as CI (src/, scripts/, tests/);
+- runtime guardrails: safe `run_id` path resolution, artifact locking/atomic
+  JSON writes, audit minimization, and strict profile loading when enabled.
+
+This layer constrains how the runtime is started, reviewed, and persisted. It
+does not route department work and does not participate in AG2 GroupChat turns.
+
+## Current Runtime Phase Order
+
+`src/pipeline_runner.py::run_pipeline()` is the public phase orchestrator.
+The current initial-run order is:
+
+1. create `run_id`, run directory, runtime agents, and run context
+2. load process memory and role strategies
+3. build the Supervisor intake brief
+4. initialize `question_registry` and `answer_matrix`
+5. run the domain department round via `run_supervisor_loop()`
+   - Company + Market first pass can run in parallel
+   - Buyer runs after the first pass
+   - Contact runs after Buyer
+6. classify first-round resolution state
+7. write `after_first_pass` checkpoint
+8. run bounded auto-close only when `AUTO_CLOSE_REQUIRED`
+9. write `after_closure` checkpoint when closure ran
+10. run the Synthesis Department on admitted department packages
+11. write `after_synthesis` checkpoint
+12. build quality, readiness, playbook, and report-facing pipeline sections
+13. evaluate `MeetingReadinessGate`
+14. compose `meeting_actions` via `FinalBriefingComposer`
+15. sync finalization artifacts
+16. run `ReportWriterRuntime`
+17. persist budget telemetry and write `after_finalization` checkpoint
+18. export JSON/PDF artifacts and consolidate scrubbed process patterns
+
 ## Top-Level Roles
 
 ### Supervisor
@@ -55,11 +104,39 @@ Each department contains:
 - optional `Coding Specialist`
 
 Department-specific knowledge base inputs:
-- `knowledge/sources/<department>.yaml` (free-source priorities, search patterns)
+
+- `knowledge/sources/<department>.yaml` (source registry metadata: priorities, evidence type, provenance notes)
 - `knowledge/policies/<department>.yaml` (required fields, evidence minima, gate rules)
+- `knowledge/query_strategies/<department>.yaml` (runtime query templates; single authority for task query construction)
 
 These KB files guide investigation quality and final package acceptance.
 They do not enforce turn order or scripted dialogue.
+
+### Query Resolution
+
+Runtime query construction is centralized in
+`src/research/query_resolver.py`.
+
+The resolver:
+- maps each standard research task key to its department strategy file
+- loads `knowledge/query_strategies/<department>.yaml`
+- expands canonical placeholders (`{company}`, `{domain}`, `{industry}`,
+  `{keywords}`, `{buyer}`)
+- validates strategy files and query overrides
+- expands per-buyer contact queries
+- fails loudly on missing files, malformed content, missing task entries, and
+  invalid placeholders
+
+`src/agents/worker.py::_build_queries()` delegates to the resolver.
+Runtime query overrides are not free-form queries. Coding support emits
+`strategy:<task_key>:<variant_key>` tokens, and the resolver expands those
+tokens only from `query_variants` entries in the owning
+`knowledge/query_strategies/<department>.yaml` file.
+`_build_queries_legacy()` remains only for parity verification and migration
+monitoring via `LIQUISTO_QUERY_RESOLVER_VERIFY=1`.
+
+Source files under `knowledge/sources/*.yaml` are not runtime query-template
+files. They contain source metadata only.
 
 Department groups are responsible for:
 - domain research
@@ -81,14 +158,21 @@ Responsibilities:
 - derive negotiation relevance and next-step logic
 - produce the final `synthesis` section
 
+The Synthesis Department does not receive a `SupervisorAgent` instance.
+If internal analysis identifies a domain gap, it records a structured
+BackRequest in its synthesis result. The outer runtime persists those
+BackRequests after the GroupChat completes and exposes them to the Supervisor
+as post-synthesis artifacts.
+
 ### Report Writer Runtime
 
-After synthesis and section validation, the runtime executes a dedicated
+After synthesis, meeting-readiness evaluation, meeting-action composition, and
+finalization-artifact sync, the runtime executes a dedicated
 `report_writer` node (`src/orchestration/report_runtime.py`), backed by
 `ReportWriterAgent` (`src/agents/report_writer.py`).
 
 Responsibilities:
-- build `run_context.report_package` from validated `pipeline_data`
+- build `run_context.report_package` from finalized `pipeline_data`
 - expose a stable report-oriented structure for UI/export
 - emit explicit `ReportWriter` runtime telemetry messages
 
@@ -274,10 +358,11 @@ Flow:
 1. User enters `run_id` and a question in the UI
 2. `load_run_artifact(run_id)` loads `pipeline_data.json` + `run_context.json`
 3. The question is routed to the correct department answer function
-4. Each answer function extracts evidence from the run brain:
-   - primary: `task_artifacts` (facts from latest attempt per task)
-   - secondary: `review_artifacts` (accepted points)
-   - unresolved: `decision_artifacts` (open questions)
+4. Each answer function extracts evidence by priority:
+   - primary: run-brain `task_artifacts` accepted by a current review/decision
+   - unresolved: `decision_artifacts.open_questions` for blocked or closed-unresolved tasks
+   - secondary: finalized `pipeline_data`
+   - fallback: department packages via the canonical envelope resolver
 5. `requires_additional_research=True` when unresolved points exist
 6. The follow-up result is exported as a follow-up artifact
 
@@ -294,7 +379,7 @@ Each run must produce:
 - `memory_snapshot.json` (includes `evidence_packets`, `gap_candidates`,
   `answer_matrix_updates`, `meeting_actions`, `resolution_plans`)
 - `checkpoints/<phase>.json` per major phase (after_first_pass, after_closure,
-  after_dashboard_resume, after_finalization)
+  after_synthesis, after_dashboard_resume, after_finalization)
 - follow-up artifacts when follow-up answers are generated
 - PDF export in German and English on demand
 

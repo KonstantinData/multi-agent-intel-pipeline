@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 
 from src.models.schemas import (
     CompanyProfile,
-    CompanyRecord,
     ContactIntelligenceSection,
     ContactPerson,
     EconomicSituation,
@@ -31,7 +30,6 @@ from src.models.schemas import (
     SourceRecord,
     TransactionEventIntelligence,
 )
-
 
 # ---------------------------------------------------------------------------
 # Company department sub-schemas

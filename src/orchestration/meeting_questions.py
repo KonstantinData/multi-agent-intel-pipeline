@@ -8,6 +8,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from src.orchestration.contracts import TASK_LIFECYCLE_STATUSES
 
 MEETING_QUESTION_REGISTRY: dict[str, dict[str, Any]] = {
     "q_company_fundamentals": {
@@ -104,6 +105,8 @@ def build_initial_answer_matrix() -> dict[str, dict[str, Any]]:
 
 def matrix_status_for_task_status(task_status: str) -> str:
     """Normalize task lifecycle statuses to answer-matrix statuses."""
+    if task_status not in TASK_LIFECYCLE_STATUSES:
+        raise ValueError(f"Unknown task lifecycle status: {task_status}")
     if task_status == "accepted":
         return "answered"
     if task_status in {"degraded", "blocked"}:

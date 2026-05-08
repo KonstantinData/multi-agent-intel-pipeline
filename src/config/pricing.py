@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-
 MODEL_PRICING_PER_1M: dict[str, dict[str, float]] = {
     "gpt-5": {"input": 1.25, "output": 10.00},
     "gpt-5-mini": {"input": 0.25, "output": 2.00},
@@ -83,7 +82,7 @@ def summarize_worker_report_costs(worker_reports: list[dict[str, Any]]) -> dict[
     total_tokens = 0
     total_cost = 0.0
     models: dict[str, dict[str, float | int]] = {}
-    agents: dict[str, dict[str, dict[str, float | int]]] = {}
+    agents: dict[str, Any] = {}
 
     for report in worker_reports:
         usage = report.get("usage", {})

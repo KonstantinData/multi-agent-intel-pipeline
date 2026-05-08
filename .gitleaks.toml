@@ -1,0 +1,16 @@
+title = "Liquisto historical secret scan"
+
+[allowlist]
+description = "Generated outputs and local runtime state are excluded from CI secret history scans."
+paths = [
+  '''(^|/)artifacts/''',
+  '''(^|/)bom/(ai-bom|sbom)/.*\.json$''',
+  '''(^|/)reports/''',
+  '''(^|/)runs/''',
+  '''(^|/)tmp/''',
+  '''(^|/)\.mypy_cache/''',
+  '''(^|/)\.pytest_cache/''',
+  '''(^|/)\.ruff_cache/''',
+  '''(^|/)\.venv/''',
+  '''(^|/)venv/''',
+]

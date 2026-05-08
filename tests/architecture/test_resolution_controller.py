@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.orchestration.resolution_controller import ResolutionController
 from src.orchestration.follow_up import run_bounded_follow_up
+from src.orchestration.resolution_controller import ResolutionController
 
 
 def test_resolution_controller_auto_close_required_for_public_gaps():

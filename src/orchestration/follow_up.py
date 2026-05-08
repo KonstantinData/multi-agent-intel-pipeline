@@ -13,8 +13,9 @@ is loaded from the stored ``run_context.json``.  This includes:
 
 The answer is grounded in the rehydrated run brain:
 - Primary evidence: task_artifacts and decision_artifacts from the run
-- Secondary evidence: accepted_points from reviews
-- Unresolved: open_questions from decisions and open task artifacts
+- Secondary evidence: finalized pipeline_data
+- Fallback evidence: department packages
+- Unresolved: open_questions from decisions and package gates
 
 The difference between:
 - Answering from known run context: uses stored artifacts (this module)
@@ -26,19 +27,15 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from src.exporters.json_export import export_follow_up
 from src.models.schemas import FollowUpAnswer
-from src.orchestration.envelope import resolve_open_questions, resolve_raw_package
+from src.orchestration.envelope import resolve_raw_package
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
 from src.utils import dedup_safe as _dedup_safe
 
 logger = logging.getLogger(__name__)
-
-ROOT = Path(__file__).resolve().parents[2]
-RUNS_DIR = ROOT / "artifacts" / "runs"
-
 
 # ---------------------------------------------------------------------------
 # Run brain loading (CHG-08)
@@ -53,9 +50,7 @@ def load_run_artifact(run_id: str) -> dict[str, Any]:
     - pipeline_data  (final PipelineData)
     - run_context    (full run brain including department_run_states)
     """
-    run_dir = RUNS_DIR / run_id
-    if not run_dir.exists():
-        raise FileNotFoundError(f"Run '{run_id}' was not found.")
+    run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
     pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
     run_context = json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
     logger.info(
@@ -64,7 +59,7 @@ def load_run_artifact(run_id: str) -> dict[str, Any]:
         list(run_context.get("short_term_memory", {}).get("department_run_states", {}).keys()),
     )
     return {
-        "run_id": run_id,
+        "run_id": str(run_id).strip(),
         "run_dir": run_dir,
         "pipeline_data": pipeline_data,
         "run_context": run_context,
@@ -85,25 +80,77 @@ def _extract_task_evidence(
     evidence: list[str] = []
     unresolved: list[str] = []
 
-    # From task artifacts — facts from the latest attempt per task
-    for task_key, artifacts in department_run_state.get("task_artifacts", {}).items():
-        if artifacts:
-            latest = artifacts[-1]
-            evidence.extend(latest.get("facts", [])[:3])
+    decisions_by_task = department_run_state.get("decision_artifacts", {})
+    reviews_by_task = department_run_state.get("review_artifacts", {})
 
-    # From review artifacts — accepted points per task
-    for task_key, reviews in department_run_state.get("review_artifacts", {}).items():
-        if reviews:
-            latest = reviews[-1]
-            evidence.extend(latest.get("accepted_points", [])[:2])
-
-    # From decision artifacts — open questions from terminal decisions
-    for task_key, decisions in department_run_state.get("decision_artifacts", {}).items():
+    # From decision artifacts — terminal unresolved decisions take precedence.
+    blocked_tasks: set[str] = set()
+    for task_key, decisions in decisions_by_task.items():
         if decisions:
             latest = decisions[-1]
-            unresolved.extend(latest.get("open_questions", [])[:2])
+            if latest.get("outcome") in {"closed_unresolved", "blocked_by_dependency"}:
+                blocked_tasks.add(task_key)
+                unresolved.extend(latest.get("open_questions", [])[:3])
+
+    # From task artifacts — facts from the latest accepted/non-blocked attempt.
+    for task_key, artifacts in department_run_state.get("task_artifacts", {}).items():
+        if not artifacts or task_key in blocked_tasks:
+            continue
+        latest_decision = (decisions_by_task.get(task_key) or [])[-1:] or []
+        latest_review = (reviews_by_task.get(task_key) or [])[-1:] or []
+        if latest_decision:
+            if latest_decision[0].get("outcome") not in {"accepted", "accepted_with_gaps"}:
+                continue
+        elif latest_review and latest_review[0].get("approved") is not True:
+            continue
+        latest = artifacts[-1]
+        evidence.extend(latest.get("facts", [])[:3])
+
+    # From review artifacts — accepted points per task
+    for task_key, reviews in reviews_by_task.items():
+        if reviews and task_key not in blocked_tasks:
+            latest = reviews[-1]
+            if latest.get("approved") is True:
+                evidence.extend(latest.get("accepted_points", [])[:2])
 
     return _dedup_safe(list(filter(None, evidence))), _dedup_safe(list(filter(None, unresolved)))
+
+
+class FollowUpEvidenceResolver:
+    """Resolve follow-up grounding in documented priority order."""
+
+    def resolve(
+        self,
+        *,
+        department: str,
+        pipeline_candidates: list[str],
+        pipeline_data: dict[str, Any],
+        run_context: dict[str, Any],
+    ) -> tuple[list[str], list[str]]:
+        run_state = _get_department_run_state(run_context, department)
+        artifact_evidence, artifact_unresolved = _extract_task_evidence(run_state)
+        package = (
+            run_context.get("short_term_memory", {})
+            .get("department_packages", {})
+            .get(department, {})
+        )
+        raw_package = resolve_raw_package(package)
+        package_evidence = [
+            *[str(item) for item in raw_package.get("accepted_points", []) if str(item).strip()],
+            str(raw_package.get("summary", "") or "").strip(),
+            str((raw_package.get("report_segment", {}) or {}).get("narrative_summary", "") or "").strip(),
+        ]
+        package_open = raw_package.get("open_questions", [])
+        evidence = [
+            *artifact_evidence,
+            *[str(item) for item in pipeline_candidates if str(item).strip()],
+            *[item for item in package_evidence if item and item != "n/v"],
+        ]
+        unresolved = [
+            *artifact_unresolved,
+            *[str(item) for item in package_open if str(item).strip()],
+        ]
+        return _dedup_safe(evidence), _dedup_safe(unresolved)
 
 
 def _get_department_run_state(run_context: dict[str, Any], department: str) -> dict[str, Any]:
@@ -124,41 +171,16 @@ def _company_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     profile = pipeline_data.get("company_profile", {})
-    run_state = _get_department_run_state(run_context, "CompanyDepartment")
 
-    # RA-07: Primary grounding from answer matrix + evidence packets
-    answer_matrix = run_context.get("answer_matrix", {})
-    memory = run_context.get("short_term_memory", {})
-    evidence_packets = memory.get("evidence_packets", [])
-
-    artifact_evidence, artifact_unresolved = _extract_task_evidence(run_state)
-
-    # Evidence priority: answer_matrix > evidence_packets > task_artifacts > pipeline_data
-    matrix_evidence = []
-    for qid in ("q_company_fundamentals", "q_economic_commercial_situation", "q_product_asset_scope"):
-        entry = answer_matrix.get(qid, {})
-        if entry.get("answer") and entry["answer"] != "n/v":
-            matrix_evidence.append(entry["answer"][:200])
-
-    packet_evidence = [
-        str(p.get("claim", ""))[:200]
-        for p in evidence_packets[:4]
-        if isinstance(p, dict)
-        and p.get("metadata", {}).get("task_key", "").startswith("company")
-        and p.get("claim")
-    ]
-
-    evidence = [
-        *matrix_evidence[:3],
-        *packet_evidence[:3],
-        *artifact_evidence[:2],
-        profile.get("description", ""),
-    ]
-    unresolved = _dedup_safe(
-        [entry.get("notes", "") for entry in answer_matrix.values()
-         if entry.get("status") in {"pending", "blocked"} and entry.get("notes")]
-        + artifact_unresolved[:2]
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+        department="CompanyDepartment",
+        pipeline_candidates=[profile.get("description", "")],
+        pipeline_data=pipeline_data,
+        run_context=run_context,
     )
+
+    evidence = resolved_evidence
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Company follow-up for '{question}': "
         f"{profile.get('company_name', 'The target company')} is described as {profile.get('description', 'n/v')}. "
@@ -171,27 +193,15 @@ def _market_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     analysis = pipeline_data.get("industry_analysis", {})
-    run_state = _get_department_run_state(run_context, "MarketDepartment")
-    answer_matrix = run_context.get("answer_matrix", {})
-    artifact_evidence, artifact_unresolved = _extract_task_evidence(run_state)
-
-    matrix_evidence = []
-    for qid in ("q_market_situation",):
-        entry = answer_matrix.get(qid, {})
-        if entry.get("answer") and entry["answer"] != "n/v":
-            matrix_evidence.append(entry["answer"][:200])
-
-    evidence = [
-        *matrix_evidence[:3],
-        *artifact_evidence[:3],
-        analysis.get("assessment", ""),
-        analysis.get("demand_outlook", ""),
-    ]
-    unresolved = _dedup_safe(
-        [entry.get("notes", "") for qid, entry in answer_matrix.items()
-         if qid.startswith("q_market") and entry.get("status") in {"pending", "blocked"} and entry.get("notes")]
-        + artifact_unresolved[:2]
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+        department="MarketDepartment",
+        pipeline_candidates=[analysis.get("assessment", ""), analysis.get("demand_outlook", "")],
+        pipeline_data=pipeline_data,
+        run_context=run_context,
     )
+
+    evidence = resolved_evidence
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Market follow-up for '{question}': "
         f"Industry assessment: {analysis.get('assessment', 'n/v')}. "
@@ -204,30 +214,20 @@ def _buyer_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     network = pipeline_data.get("market_network", {})
-    run_state = _get_department_run_state(run_context, "BuyerDepartment")
-    answer_matrix = run_context.get("answer_matrix", {})
-    artifact_evidence, artifact_unresolved = _extract_task_evidence(run_state)
-
-    matrix_evidence = []
-    for qid in ("q_peer_companies", "q_monetization_redeployment"):
-        entry = answer_matrix.get(qid, {})
-        if entry.get("answer") and entry["answer"] != "n/v":
-            matrix_evidence.append(entry["answer"][:200])
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+        department="BuyerDepartment",
+        pipeline_candidates=[
+            network.get("peer_competitors", {}).get("assessment", ""),
+            network.get("downstream_buyers", {}).get("assessment", ""),
+        ],
+        pipeline_data=pipeline_data,
+        run_context=run_context,
+    )
 
     peers = network.get("peer_competitors", {}).get("companies", [])
     buyers = network.get("downstream_buyers", {}).get("companies", [])
-    evidence = [
-        *matrix_evidence[:2],
-        *artifact_evidence[:3],
-        network.get("peer_competitors", {}).get("assessment", ""),
-        network.get("downstream_buyers", {}).get("assessment", ""),
-    ]
-    unresolved = _dedup_safe(
-        [entry.get("notes", "") for qid, entry in answer_matrix.items()
-         if qid in ("q_peer_companies", "q_monetization_redeployment")
-         and entry.get("status") in {"pending", "blocked"} and entry.get("notes")]
-        + artifact_unresolved[:2]
-    )
+    evidence = resolved_evidence
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Buyer follow-up for '{question}': "
         f"Peer assessment: {network.get('peer_competitors', {}).get('assessment', 'n/v')}. "
@@ -241,24 +241,19 @@ def _contact_answer(
     question: str, pipeline_data: dict[str, Any], run_context: dict[str, Any]
 ) -> tuple[str, list[str], list[str]]:
     section = pipeline_data.get("contact_intelligence", {})
-    run_state = _get_department_run_state(run_context, "ContactDepartment")
-    answer_matrix = run_context.get("answer_matrix", {})
-    artifact_evidence, artifact_unresolved = _extract_task_evidence(run_state)
-
-    matrix_entry = answer_matrix.get("q_contact_intelligence", {})
-    matrix_evidence = [matrix_entry["answer"][:200]] if matrix_entry.get("answer") and matrix_entry["answer"] != "n/v" else []
+    resolved_evidence, artifact_unresolved = FollowUpEvidenceResolver().resolve(
+        department="ContactDepartment",
+        pipeline_candidates=[section.get("narrative_summary", "")],
+        pipeline_data=pipeline_data,
+        run_context=run_context,
+    )
 
     contacts = section.get("prioritized_contacts", section.get("contacts", []))
     evidence = [
-        *matrix_evidence,
-        *artifact_evidence[:2],
-        section.get("narrative_summary", ""),
+        *resolved_evidence,
         *[f"{c.get('name', '')} — {c.get('rolle_titel', '')} at {c.get('firma', '')}" for c in contacts[:3]],
     ]
-    unresolved = _dedup_safe(
-        ([matrix_entry.get("notes", "")] if matrix_entry.get("status") in {"pending", "blocked"} and matrix_entry.get("notes") else [])
-        + artifact_unresolved[:2]
-    )
+    unresolved = _dedup_safe(artifact_unresolved)
     answer = (
         f"Contact intelligence follow-up for '{question}': "
         f"{section.get('narrative_summary', 'n/v')} "
@@ -330,9 +325,10 @@ def answer_follow_up(
     CHG-08: each department answer function now reads from ``department_run_states``
     (the full artifact history) in addition to the final package and pipeline_data.
     """
+    safe_run_id = validate_run_id(run_id)
     logger.info(
         "answer_follow_up: run_id=%s route=%s question_len=%d",
-        run_id, route, len(question),
+        safe_run_id, route, len(question),
     )
 
     if route == "MarketDepartment":
@@ -348,7 +344,7 @@ def answer_follow_up(
         answer, evidence, unresolved = _company_answer(question, pipeline_data, run_context)
 
     payload = FollowUpAnswer(
-        run_id=run_id,
+        run_id=safe_run_id,
         routed_to=route,
         question=question,
         answer=answer,
@@ -356,7 +352,7 @@ def answer_follow_up(
         unresolved_points=unresolved,
         requires_additional_research=bool(unresolved),
     ).model_dump(mode="json")
-    export_follow_up(RUNS_DIR / run_id, payload)
+    export_follow_up(resolve_run_dir(safe_run_id, runs_root=RUNS_DIR), payload)
     return payload
 
 
@@ -365,7 +361,7 @@ def run_bounded_follow_up(
     run_id: str,
     run_context: dict[str, Any],
     pipeline_data: dict[str, Any],
-    public_gap_questions: list[str],
+    public_gap_questions: list[Any],
     max_questions: int = 4,
 ) -> dict[str, Any]:
     """Run bounded, run-brain-grounded follow-up for public evidence gaps.
@@ -373,11 +369,25 @@ def run_bounded_follow_up(
     This helper is used inside the live run (before final export) and therefore
     does not write follow-up artifacts to disk.
     """
-    candidates = [q.strip() for q in public_gap_questions if str(q).strip()]
+    candidates: list[dict[str, Any]] = []
+    for item in public_gap_questions:
+        if isinstance(item, dict):
+            question = str(item.get("question", "")).strip()
+            if question:
+                candidates.append({
+                    "question": question,
+                    "gap_id": str(item.get("gap_id", "")).strip(),
+                    "question_ids": [str(qid) for qid in item.get("question_ids", []) if str(qid).strip()],
+                })
+        else:
+            question = str(item).strip()
+            if question:
+                candidates.append({"question": question, "gap_id": "", "question_ids": []})
     queue = candidates[:max_questions]
     attempts: list[dict[str, Any]] = []
 
-    for question in queue:
+    for candidate in queue:
+        question = candidate["question"]
         lowered = question.lower()
         if any(token in lowered for token in ("contact", "buyer firm", "decision maker", "reach")):
             route = "ContactDepartment"
@@ -392,13 +402,18 @@ def run_bounded_follow_up(
             route = "CompanyDepartment"
             answer, evidence, unresolved = _company_answer(question, pipeline_data, run_context)
 
+        resolved = bool(evidence) and not bool(unresolved)
         attempts.append({
             "route": route,
             "question": question,
+            "gap_id": candidate.get("gap_id", ""),
+            "question_ids": list(candidate.get("question_ids", [])),
             "answer": answer,
             "evidence_used": evidence[:3],
             "unresolved_points": unresolved[:2],
-            "resolved": not bool(unresolved),
+            "resolved": resolved,
+            "resolved_gap_ids": [candidate.get("gap_id", "")] if resolved and candidate.get("gap_id") else [],
+            "resolved_question_ids": list(candidate.get("question_ids", [])) if resolved else [],
         })
 
     unresolved_after = [
@@ -411,6 +426,18 @@ def run_bounded_follow_up(
         for item in attempts
         if item.get("resolved", False)
     ]
+    resolved_gap_ids = _dedup_safe([
+        gap_id
+        for item in attempts
+        for gap_id in item.get("resolved_gap_ids", [])
+        if gap_id
+    ])
+    resolved_question_ids = _dedup_safe([
+        question_id
+        for item in attempts
+        for question_id in item.get("resolved_question_ids", [])
+        if question_id
+    ])
     stop_reason = "all_questions_resolved" if not unresolved_after else "bounded_budget_exhausted"
     return {
         "run_id": run_id,
@@ -421,5 +448,7 @@ def run_bounded_follow_up(
         "stop_reason": stop_reason,
         "attempts": attempts,
         "resolved_questions": resolved_questions,
+        "resolved_gap_ids": resolved_gap_ids,
+        "resolved_question_ids": resolved_question_ids,
         "remaining_public_gaps": unresolved_after,
     }

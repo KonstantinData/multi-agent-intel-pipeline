@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any
 
 from src.models.meeting_ready import (
-    MinimumPackageStatus,
     MeetingAction,
     MeetingReadinessAssessment,
+    MinimumPackageStatus,
     ReadinessBlocker,
 )
 

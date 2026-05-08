@@ -1,12 +1,10 @@
 """P0-4: Regression tests for envelope resolvers and canonical shape access."""
 from __future__ import annotations
 
-import pytest
-
 from src.orchestration.envelope import (
     is_envelope,
-    resolve_admitted_payload,
     resolve_admission,
+    resolve_admitted_payload,
     resolve_confidence,
     resolve_open_questions,
     resolve_raw_package,

@@ -14,15 +14,6 @@
       "free_access": "public",
       "evidence_type": "hard",
       "confidence_weight": 0.95,
-      "search_patterns_de": [
-        "destatis <branche> produktion auftragseingang index",
-        "destatis <branche> erzeugerpreisindex preisdruck",
-        "destatis <branche> kapazitätsauslastung überkapazität"
-      ],
-      "search_patterns_en": [
-        "destatis <industry> output order intake index germany",
-        "destatis <industry> producer price supply pressure"
-      ],
       "fallback_label": "keine freien Quellen"
     },
     {
@@ -33,14 +24,6 @@
       "free_access": "public",
       "evidence_type": "hard",
       "confidence_weight": 0.9,
-      "search_patterns_de": [
-        "eurostat <branche> eu produktion nachfragerückgang",
-        "eurostat <branche> kapazitätsauslastung europa rückgang"
-      ],
-      "search_patterns_en": [
-        "eurostat <industry> demand decline growth EU",
-        "eurostat <industry> overcapacity utilisation rate"
-      ],
       "fallback_label": "keine freien Quellen"
     },
     {
@@ -51,16 +34,6 @@
       "free_access": "public",
       "evidence_type": "hard",
       "confidence_weight": 0.8,
-      "search_patterns_de": [
-        "ifo <branche> geschäftsklima konjunktur lage",
-        "ifo <branche> auftragseingang erwartungen nachfrage",
-        "ifo <branche> überkapazitäten preiserwartungen rückgang"
-      ],
-      "search_patterns_en": [
-        "ifo <industry> business climate survey germany",
-        "ifo <industry> demand outlook capacity utilisation",
-        "ifo <industry> order intake expectations decline growth"
-      ],
       "fallback_label": "keine freien Quellen"
     },
     {
@@ -71,16 +44,6 @@
       "free_access": "public",
       "evidence_type": "indicative",
       "confidence_weight": 0.55,
-      "search_patterns_de": [
-        "<produktkategorie> nachfrage rückgang überkapazität",
-        "<produktkategorie> gebraucht ersatzteile restbestand",
-        "<firma> bestand lager überschuss"
-      ],
-      "search_patterns_en": [
-        "<product category> demand decline growth trend",
-        "<product category> surplus aftermarket used equipment",
-        "<company> overcapacity inventory surplus"
-      ],
       "fallback_label": "keine freien Quellen"
     }
   ]

@@ -12,7 +12,16 @@
         "\"{company}\" Germany decline Poland plant North Carolina",
         "\"{company}\" temporary workers short-time work local for local",
         "site:{domain} {company} investor relations annual report"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "\"{company}\" management statement demand margin pressure",
+            "site:{domain} {company} press release revenue margin production",
+            "\"{company}\" restructuring inventory working capital"
+          ]
+        }
+      }
     },
     "financial_deep_dive": {
       "queries": [
@@ -30,7 +39,16 @@
         "site:{domain} {company} press release revenue margin production",
         "\"{company}\" CEO margin pressure demand Germany Poland plant",
         "\"{company}\" North Carolina investment capacity press release"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "\"{company}\" audited financial statements inventory debt",
+            "site:{domain} {company} annual report inventory working capital",
+            "\"{company}\" investor presentation margin pressure"
+          ]
+        }
+      }
     },
     "company_fundamentals": {
       "queries": [
@@ -44,7 +62,16 @@
         "site:{domain} {company} press release revenue",
         "site:bundesanzeiger.de \"{company}\" Jahresabschluss",
         "site:unternehmensregister.de \"{company}\" Jahresabschluss"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "site:{domain} {company} company profile products",
+            "\"{company}\" legal entity management employees",
+            "\"{company}\" product portfolio revenue"
+          ]
+        }
+      }
     },
     "product_asset_scope": {
       "queries": [
@@ -62,7 +89,16 @@
       "queries_extra": [
         "site:{domain} {company} spare parts components",
         "\"{company}\" product portfolio materials"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "site:{domain} {company} spare parts components",
+            "\"{company}\" product portfolio materials",
+            "\"{company}\" aftermarket components service parts"
+          ]
+        }
+      }
     },
     "transaction_event_intelligence": {
       "queries": [
@@ -74,7 +110,16 @@
         "site:{domain} {company} press release divestiture acquisition",
         "site:{domain} {company} press release Poland North Carolina local for local",
         "\"{company}\" data center growth strategy margin pressure press release"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "\"{company}\" strategic update divestiture acquisition",
+            "site:{domain} {company} press release portfolio review",
+            "\"{company}\" restructuring carve-out joint venture"
+          ]
+        }
+      }
     }
   }
 }

@@ -1,12 +1,10 @@
 """Cross-domain synthesis and report shaping."""
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from src.orchestration.envelope import resolve_raw_package
 from src.utils import dedup_safe as _dedup_safe
-
 
 NEGATIVE_PREFIXES = ("no ", "not ", "none", "kein", "keine", "keinen")
 UNCERTAIN_SIGNAL_MARKERS = (

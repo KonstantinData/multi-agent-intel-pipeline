@@ -14,7 +14,6 @@ from src.config.settings import (
     temperature_param,
 )
 
-
 # Words that appear in website chrome, not in product descriptions
 _STOPWORDS = {
     "home", "homepage", "about", "contact", "career", "careers", "welcome",
@@ -176,7 +175,10 @@ def summarize_visible_text(text: str, *, limit: int = 320) -> str:
     return compact[:limit].strip() or "n/v"
 
 
-LEGAL_SUFFIXES = ("gmbh", "ag", "se", "inc", "corp", "corporation", "ltd", "llc", "sarl", "spa", "bv")
+LEGAL_SUFFIX_RE = re.compile(
+    r"(?:\b(?:GmbH|AG|SE|Inc\.?|Corp\.?|Corporation|Ltd\.?|LLC|SARL|SpA|BV)\.?)$",
+    re.IGNORECASE,
+)
 
 _TITLE_NOISE_PREFIX = re.compile(
     r"^(homepage|welcome\s+to|about|official\s+site|home\s+-\s+|startseite)\s*",
@@ -187,6 +189,10 @@ _TITLE_NOISE_PREFIX = re.compile(
 def _clean_title_chunk(chunk: str) -> str:
     """Strip common navigation prefixes that are not part of a company name."""
     return _TITLE_NOISE_PREFIX.sub("", chunk).strip(" -:,")
+
+
+def _has_legal_suffix(name: str) -> bool:
+    return bool(LEGAL_SUFFIX_RE.search(" ".join((name or "").split())))
 
 
 def infer_company_identity(submitted_name: str, title: str, description: str, text: str) -> dict[str, str]:
@@ -230,7 +236,7 @@ def infer_company_identity(submitted_name: str, title: str, description: str, te
         verified_legal_name = " ".join(legal_match.group(1).split())
         verified_company_name = verified_legal_name
         name_confidence = "high"
-    elif any(verified_company_name.lower().endswith(suffix) for suffix in LEGAL_SUFFIXES):
+    elif _has_legal_suffix(verified_company_name):
         verified_legal_name = verified_company_name
         name_confidence = "high" if verified_company_name.lower() == submitted.lower() else "medium"
 

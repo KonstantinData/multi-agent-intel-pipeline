@@ -5,7 +5,6 @@ from pathlib import Path
 
 from src.orchestration.synthesis import build_contact_briefing_assets, build_playbook_assets
 
-
 BENCHMARK = json.loads(
     Path("tests/golden/quality_reference/ziehl_abegg_playbook_benchmark.json").read_text()
 )

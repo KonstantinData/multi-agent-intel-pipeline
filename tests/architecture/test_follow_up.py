@@ -40,8 +40,8 @@ def _make_run_context():
 
 
 def test_follow_up_company_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -59,8 +59,8 @@ def test_follow_up_company_route(tmp_path):
 
 
 def test_follow_up_market_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -78,8 +78,8 @@ def test_follow_up_market_route(tmp_path):
 
 
 def test_follow_up_buyer_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -97,8 +97,8 @@ def test_follow_up_buyer_route(tmp_path):
 
 
 def test_follow_up_contact_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -116,8 +116,8 @@ def test_follow_up_contact_route(tmp_path):
 
 
 def test_follow_up_synthesis_route(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -135,8 +135,8 @@ def test_follow_up_synthesis_route(tmp_path):
 
 
 def test_follow_up_unknown_route_defaults_to_company(tmp_path):
-    from src.orchestration.follow_up import answer_follow_up
     import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
     run_dir = tmp_path / "test_run"
     run_dir.mkdir()
     original_runs = fu_mod.RUNS_DIR
@@ -148,6 +148,151 @@ def test_follow_up_unknown_route_defaults_to_company(tmp_path):
             pipeline_data=_make_pipeline_data(), run_context=_make_run_context(),
         )
         assert result["routed_to"] == "CompanyDepartment"
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
+def test_follow_up_prefers_run_brain_artifacts_over_answer_matrix(tmp_path):
+    import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["answer_matrix"] = {
+        "q_company_fundamentals": {"status": "answered", "answer": "Matrix says old fact", "notes": ""}
+    }
+    context["short_term_memory"]["department_run_states"] = {
+        "CompanyDepartment": {
+            "task_artifacts": {
+                "company_fundamentals": [{"facts": ["Artifact says verified fact"], "open_questions": []}]
+            },
+            "review_artifacts": {"company_fundamentals": [{"approved": True, "accepted_points": []}]},
+            "decision_artifacts": {
+                "company_fundamentals": [{"outcome": "accepted", "open_questions": []}]
+            },
+        }
+    }
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="CompanyDepartment",
+            question="What is verified?",
+            pipeline_data=_make_pipeline_data(),
+            run_context=context,
+        )
+        assert result["evidence_used"][0] == "Artifact says verified fact"
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
+def test_follow_up_evidence_priority_prefers_task_artifacts_over_answer_matrix(tmp_path):
+    import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["answer_matrix"] = {
+        "q_market_situation": {"status": "answered", "answer": "Matrix evidence must not win", "notes": ""}
+    }
+    context["short_term_memory"]["department_run_states"] = {
+        "MarketDepartment": {
+            "task_artifacts": {
+                "market_situation": [{"facts": ["Artifact market fact"], "open_questions": []}]
+            },
+            "review_artifacts": {"market_situation": [{"approved": True, "accepted_points": []}]},
+            "decision_artifacts": {
+                "market_situation": [{"outcome": "accepted", "open_questions": []}]
+            },
+        }
+    }
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="MarketDepartment",
+            question="What is verified?",
+            pipeline_data=_make_pipeline_data(),
+            run_context=context,
+        )
+        assert result["evidence_used"][0] == "Artifact market fact"
+        assert "Matrix evidence must not win" not in result["evidence_used"]
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
+def test_follow_up_evidence_priority_falls_back_to_pipeline_data_then_package(tmp_path):
+    import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["short_term_memory"]["department_run_states"] = {"BuyerDepartment": {}}
+    context["short_term_memory"]["department_packages"]["BuyerDepartment"] = {
+        "admission": {"decision": "accepted", "downstream_visible": True},
+        "raw_package": {
+            "summary": "Package fallback summary",
+            "accepted_points": ["Package fallback accepted point"],
+            "open_questions": [],
+        }
+    }
+    pipeline_data = _make_pipeline_data()
+    pipeline_data["market_network"]["peer_competitors"]["assessment"] = "Pipeline peer assessment"
+    pipeline_data["market_network"]["downstream_buyers"]["assessment"] = "Pipeline buyer assessment"
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="BuyerDepartment",
+            question="What is the buyer picture?",
+            pipeline_data=pipeline_data,
+            run_context=context,
+        )
+        assert result["evidence_used"][0] == "Pipeline peer assessment"
+        assert result["evidence_used"][1] == "Pipeline buyer assessment"
+        assert "Package fallback accepted point" in result["evidence_used"]
+    finally:
+        fu_mod.RUNS_DIR = original_runs
+
+
+def test_follow_up_blocks_closed_unresolved_facts_from_evidence(tmp_path):
+    import src.orchestration.follow_up as fu_mod
+    from src.orchestration.follow_up import answer_follow_up
+
+    run_dir = tmp_path / "test_run"
+    run_dir.mkdir()
+    original_runs = fu_mod.RUNS_DIR
+    fu_mod.RUNS_DIR = tmp_path
+    context = _make_run_context()
+    context["short_term_memory"]["department_run_states"] = {
+        "CompanyDepartment": {
+            "task_artifacts": {
+                "company_fundamentals": [{"facts": ["Unsupported closed fact"], "open_questions": []}]
+            },
+            "decision_artifacts": {
+                "company_fundamentals": [{
+                    "outcome": "closed_unresolved",
+                    "open_questions": ["Evidence gap remains"],
+                }]
+            },
+        }
+    }
+    try:
+        result = answer_follow_up(
+            run_id="test_run",
+            route="CompanyDepartment",
+            question="What is verified?",
+            pipeline_data=_make_pipeline_data(),
+            run_context=context,
+        )
+        assert "Unsupported closed fact" not in result["evidence_used"]
+        assert "Evidence gap remains" in result["unresolved_points"]
     finally:
         fu_mod.RUNS_DIR = original_runs
 

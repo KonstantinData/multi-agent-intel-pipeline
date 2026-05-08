@@ -134,7 +134,7 @@ class ReportWriterAgent:
             ),
             "company_name": _safe_text(company.get("company_name", "n/v")),
             "executive_summary": _safe_text(synthesis.get("executive_summary", "n/v")),
-            "primary_opportunity_path": _safe_text(((synthesis.get("recommended_engagement_paths", []) or ["n/v"])[0])),
+            "primary_opportunity_path": _safe_text((synthesis.get("recommended_engagement_paths", []) or ["n/v"])[0]),
             "primary_opportunity_reasoning": _safe_text(synthesis.get("opportunity_assessment_summary", "n/v")),
             "confidence": _safe_text(synthesis.get("confidence") or quality.get("evidence_health") or "n/v"),
             "top_risks": [

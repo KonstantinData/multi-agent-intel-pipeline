@@ -42,6 +42,7 @@ _TASK_TO_DEPARTMENT = {
 
 ROOT = Path(__file__).resolve().parent.parent
 STRATEGY_DIR = ROOT / "knowledge" / "query_strategies"
+SOURCE_DIR = ROOT / "knowledge" / "sources"
 
 
 def _strategy_path(slug: str) -> Path:
@@ -189,10 +190,87 @@ def test_no_extra_strategy_tasks_without_mapping() -> None:
 # ---------------------------------------------------------------------------
 
 def test_validate_all_strategies_passes() -> None:
-    from src.research.query_resolver import validate_all_strategies, clear_strategy_cache
+    from src.research.query_resolver import clear_strategy_cache, validate_all_strategies
     clear_strategy_cache()
     errors = validate_all_strategies()
     assert not errors, (
         "validate_all_strategies() reported errors:\n"
         + "\n".join(f"  {slug}: {e}" for slug, errs in errors.items() for e in errs)
     )
+
+
+def test_source_kb_contains_no_runtime_query_patterns() -> None:
+    forbidden_prefixes = ("search_patterns", "queries", "template")
+    offenders: list[str] = []
+    for path in SOURCE_DIR.glob("*.yaml"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for idx, source in enumerate(data.get("sources", [])):
+            if not isinstance(source, dict):
+                continue
+            for key in source:
+                if key.startswith(forbidden_prefixes):
+                    offenders.append(f"{path.name}: sources[{idx}].{key}")
+    assert not offenders, "Source KB must not contain runtime query templates:\n" + "\n".join(offenders)
+
+
+def test_default_source_profiles_contain_no_runtime_query_patterns() -> None:
+    from src.orchestration.department_knowledge import _DEFAULT_SOURCE_PROFILES
+
+    forbidden_prefixes = ("search_patterns", "queries", "template")
+    offenders: list[str] = []
+    for slug, profile in _DEFAULT_SOURCE_PROFILES.items():
+        for idx, source in enumerate(profile.get("sources", [])):
+            if not isinstance(source, dict):
+                continue
+            for key in source:
+                if key.startswith(forbidden_prefixes):
+                    offenders.append(f"{slug}: sources[{idx}].{key}")
+    assert not offenders, (
+        "Default source profiles must not contain runtime query templates:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_runtime_query_templates_have_strategy_file_origin() -> None:
+    """Runtime adaptive overrides must reference KB variants, not free query text."""
+    from src.research.query_resolver import validate_query_overrides
+
+    token = "strategy:company_fundamentals:method_refinement"
+    assert validate_query_overrides([token]) == [token]
+
+    with pytest.raises(ValueError):
+        validate_query_overrides(["free form runtime query"])
+
+
+def test_coding_specialist_query_overrides_must_resolve_via_strategy_kb() -> None:
+    from src.agents.coding_assistant import CodingAssistantAgent
+    from src.domain.intake import SupervisorBrief
+    from src.research.query_resolver import resolve_queries
+
+    brief = SupervisorBrief(
+        submitted_company_name="ACME GmbH",
+        submitted_web_domain="acme.example",
+        verified_company_name="ACME GmbH",
+        verified_legal_name="ACME GmbH",
+        name_confidence="high",
+        website_reachable=True,
+        homepage_url="https://acme.example",
+        page_title="ACME Components",
+        meta_description="ACME manufactures industrial components",
+        raw_homepage_excerpt="industrial components spare parts",
+        normalized_domain="acme.example",
+        industry_hint="Industrial components",
+        observations=[],
+        sources=[],
+    )
+    support = CodingAssistantAgent().suggest_queries(
+        task_key="company_fundamentals",
+        section="company_profile",
+        brief=brief,
+        issues=["weak source coverage"],
+    )
+    overrides = support["query_overrides"]
+    assert overrides == ["strategy:company_fundamentals:method_refinement"]
+    resolved = resolve_queries("company_fundamentals", brief, query_overrides=overrides)
+    assert resolved
+    assert all(not query.startswith("strategy:") for query in resolved)
