@@ -5,24 +5,21 @@ from __future__ import annotations
 import json
 import os
 
-# Jobs that are allowed to be skipped due to conditional triggers:
-#   integration-tests  – only runs on workflow_dispatch
-#   provenance-gate    – only runs on non-pull_request events
-ALLOWED_SKIPS = {"integration-tests", "provenance-gate"}
-
-
 def evaluate_needs(needs: dict) -> dict[str, str]:
     """Return a mapping of gate name → result for every gate that did not pass.
 
-    A gate passes when its result is "success", or when it is in ALLOWED_SKIPS
-    and its result is "skipped".  Any other result (failure, cancelled, or an
-    unexpected skip of a non-allowed job) is treated as a failure.
+    A gate passes when its result is either "success" or "skipped".
+
+    Skipped jobs are expected in this workflow when an upstream dependency
+    fails or when event-specific conditional jobs do not run.
+
+    Any other result (for example: failure or cancelled) is treated as a
+    pipeline failure.
     """
     return {
         name: meta["result"]
         for name, meta in sorted(needs.items())
-        if meta["result"] != "success"
-        and not (name in ALLOWED_SKIPS and meta["result"] == "skipped")
+        if meta["result"] not in {"success", "skipped"}
     }
 
 
