@@ -45,6 +45,23 @@ def _find_existing_run_dir(root: Path, safe_run_id: str) -> Path | None:
     return None
 
 
+def _safe_run_id_to_dir(root: Path, safe_run_id: str) -> Path:
+    """Single sanctioned constructor for user-originated run directory paths."""
+    if Path(safe_run_id).name != safe_run_id:
+        raise InvalidRunIdError("Invalid run_id.")
+    if PurePosixPath(safe_run_id).is_absolute():
+        raise InvalidRunIdError("Invalid run_id.")
+    if PureWindowsPath(safe_run_id).is_absolute() or re.match(r"^[A-Za-z]:", safe_run_id):
+        raise InvalidRunIdError("Invalid run_id.")
+
+    candidate = (root / safe_run_id).resolve(strict=False)
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as exc:
+        raise InvalidRunIdError("Invalid run_id.") from exc
+    return (root / relative).resolve(strict=False)
+
+
 def _validate_relative_artifact_path_text(path_text: str) -> str:
     """Normalize and validate a relative artifact path text value."""
     normalized = str(path_text or "").strip()
@@ -112,21 +129,13 @@ def resolve_run_dir(
     Error messages deliberately avoid echoing filesystem paths.
     """
     safe_run_id = validate_run_id(run_id)
-    root = Path(runs_root).resolve()
+    root = Path(runs_root).resolve(strict=False)
 
     candidate = _find_existing_run_dir(root, safe_run_id)
 
     if candidate is None:
         if must_exist:
             raise FileNotFoundError("Run was not found.")
-        # Defense in depth: enforce basename semantics before constructing path.
-        basename = Path(safe_run_id).name
-        if basename != safe_run_id:
-            raise InvalidRunIdError("Invalid run_id.")
-        candidate = resolve_path_within_runs_root(basename, runs_root=root)
+        candidate = _safe_run_id_to_dir(root, safe_run_id)
 
-    try:
-        candidate.relative_to(root)
-    except ValueError as exc:
-        raise InvalidRunIdError("Invalid run_id.") from exc
-    return candidate
+    return _safe_run_id_to_dir(root, candidate.name)
