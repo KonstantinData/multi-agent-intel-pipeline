@@ -105,7 +105,8 @@ def resolve_path_within_runs_root(
     else:
         safe_relative_text = _validate_relative_artifact_path_text(candidate_text)
 
-    candidate = (root / safe_relative_text).resolve(strict=False)
+    safe_relative_path = Path(safe_relative_text)
+    candidate = (root / safe_relative_path).resolve(strict=False)
     try:
         candidate.relative_to(root)
     except ValueError as exc:
