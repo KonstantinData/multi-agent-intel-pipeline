@@ -188,7 +188,9 @@ def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
     safe_run_dir = _ensure_within_runs_dir(resolved_run_dir)
     safe_run_dir.path.mkdir(parents=True, exist_ok=True)
     safe_target = _ensure_within_runs_dir(safe_run_dir.path / "follow_up_history.json")
-    lock = FileLock(str(safe_target.path) + ".lock")
+    lock_path = safe_target.path.with_name(safe_target.path.name + ".lock")
+    safe_lock_path = _ensure_within_runs_dir(lock_path)
+    lock = FileLock(str(safe_lock_path.path))
     with lock:
         history: list[dict[str, Any]] = []
         if safe_target.path.exists():
