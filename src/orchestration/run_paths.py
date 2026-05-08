@@ -45,20 +45,37 @@ def _find_existing_run_dir(root: Path, safe_run_id: str) -> Path | None:
     return None
 
 
-def _resolve_within_root(root: Path, leaf_name: str) -> Path:
-    """Resolve ``leaf_name`` under ``root`` and enforce containment."""
-    safe_leaf_name = validate_run_id(leaf_name)
-    leaf_path = Path(safe_leaf_name)
-    if leaf_path.is_absolute() or leaf_path.name != safe_leaf_name or any(
-        part in ("", ".", "..") for part in leaf_path.parts
-    ):
+def resolve_path_within_runs_root(
+    candidate_path: str | Path,
+    *,
+    runs_root: str | Path = RUNS_DIR,
+) -> Path:
+    """Resolve ``candidate_path`` and enforce containment under ``runs_root``.
+
+    Absolute inputs are accepted only when already under ``runs_root``.
+    Relative inputs are resolved from ``runs_root`` and must not contain
+    traversal-like segments.
+    """
+    root = Path(runs_root).resolve(strict=False)
+    candidate_input = Path(candidate_path)
+    candidate_resolved = candidate_input.resolve(strict=False)
+
+    if candidate_input.is_absolute():
+        try:
+            rel = candidate_resolved.relative_to(root)
+        except ValueError as exc:
+            raise InvalidRunIdError("Invalid run_id.") from exc
+        return (root / rel).resolve(strict=False)
+
+    if any(part in ("", ".", "..") for part in candidate_input.parts):
         raise InvalidRunIdError("Invalid run_id.")
-    candidate = (root / safe_leaf_name).resolve()
+
+    candidate = (root / candidate_input).resolve(strict=False)
     try:
-        candidate.relative_to(root)
+        rel = candidate.relative_to(root)
     except ValueError as exc:
         raise InvalidRunIdError("Invalid run_id.") from exc
-    return candidate
+    return (root / rel).resolve(strict=False)
 
 
 def resolve_run_dir(
@@ -84,7 +101,7 @@ def resolve_run_dir(
         basename = Path(safe_run_id).name
         if basename != safe_run_id:
             raise InvalidRunIdError("Invalid run_id.")
-        candidate = _resolve_within_root(root, basename)
+        candidate = resolve_path_within_runs_root(basename, runs_root=root)
 
     try:
         candidate.relative_to(root)
