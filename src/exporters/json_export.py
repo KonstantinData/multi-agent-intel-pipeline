@@ -24,11 +24,17 @@ logger = logging.getLogger(__name__)
 def _ensure_within_runs_dir(path: str | Path) -> Path:
     """Resolve and enforce that ``path`` is contained in the trusted runs root."""
     root = Path(RUNS_DIR).resolve()
-    raw = Path(path).resolve()
+    raw = Path(path)
+
     if raw.is_absolute():
-        candidate = raw
+        try:
+            relative = raw.resolve().relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Refusing to write outside runs directory.") from exc
     else:
-        candidate = (root / raw).resolve()
+        relative = raw
+
+    candidate = (root / relative).resolve()
     try:
         candidate.relative_to(root)
     except ValueError as exc:
