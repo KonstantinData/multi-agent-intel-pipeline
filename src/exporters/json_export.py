@@ -168,6 +168,23 @@ def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> N
         atomic_write_json(target, history)
 
 
+def _sanitize_relative_artifact_path(relative_path: str) -> Path:
+    """Return a safe relative artifact path made of basename-like segments only."""
+    parts: list[str] = []
+    for raw_part in Path(str(relative_path or "")).parts:
+        part = str(raw_part).strip()
+        if not part or part in {".", ".."}:
+            continue
+        if part in {"/", "\\"}:
+            continue
+        safe_part = re.sub(r"[^A-Za-z0-9._-]", "_", part).strip("._-")
+        if safe_part:
+            parts.append(safe_part)
+    if not parts:
+        raise ValueError("Invalid artifact relative path.")
+    return Path(*parts)
+
+
 def export_binary_artifact(
     *,
     run_dir: str | Path,
@@ -176,7 +193,8 @@ def export_binary_artifact(
 ) -> Path:
     """Persist a generated binary export under the run artifact directory."""
     path = _ensure_within_runs_dir(run_dir)
-    target = _ensure_within_runs_dir(path / relative_path)
+    safe_relative_path = _sanitize_relative_artifact_path(relative_path)
+    target = _ensure_within_runs_dir(path / safe_relative_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
