@@ -219,3 +219,6 @@ test_real.py
 
 # draw.io temp/lock files
 *.dtmp
+
+# Claude Code local session data
+.claude/
