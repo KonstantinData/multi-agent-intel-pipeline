@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 def _ensure_within_runs_dir(path: str | Path) -> Path:
     """Resolve and enforce that ``path`` is contained in the trusted runs root."""
     root = Path(RUNS_DIR).resolve()
-    candidate = Path(path).resolve()
+    raw = Path(path)
+    candidate = (root / raw).resolve() if not raw.is_absolute() else raw.resolve()
     try:
         candidate.relative_to(root)
     except ValueError as exc:
