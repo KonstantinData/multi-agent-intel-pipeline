@@ -40,13 +40,14 @@ def atomic_write_json(target: Path, payload: Any) -> None:
     target = _ensure_within_runs_dir(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", target.name).strip("._-") or "artifact"
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False)
     with tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",
-        prefix=".artifact.",
         prefix=f".{safe_name}.",
         suffix=".tmp",
         delete=False,
+        dir=target.parent,
     ) as handle:
         handle.write(encoded)
         handle.flush()
