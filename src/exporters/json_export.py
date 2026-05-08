@@ -156,9 +156,14 @@ def export_run(
 
 def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
     safe_run_id = validate_run_id(run_id)
-    path = _ensure_within_runs_dir(resolve_run_dir(safe_run_id, runs_root=RUNS_DIR))
+    root = Path(RUNS_DIR).resolve()
+    path = (root / safe_run_id).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Refusing to write outside runs directory.") from exc
     path.mkdir(parents=True, exist_ok=True)
-    target = _ensure_within_runs_dir(path / "follow_up_history.json")
+    target = path / "follow_up_history.json"
     lock = FileLock(str(target) + ".lock")
     with lock:
         history: list[dict[str, Any]] = []
