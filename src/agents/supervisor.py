@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from src.app.use_cases import build_standard_scope
 from src.config import get_role_model_selection

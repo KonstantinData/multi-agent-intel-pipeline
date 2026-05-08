@@ -1,11 +1,11 @@
 """Synthesis-level runtime — thin wrapper around SynthesisDepartmentAgent."""
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from src.agents.synthesis_department import SynthesisDepartmentAgent
 from src.domain.intake import SupervisorBrief
-
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 

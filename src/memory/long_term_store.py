@@ -8,7 +8,6 @@ from typing import Any
 
 from filelock import FileLock
 
-
 _UNSAFE_URL_OR_DOMAIN_RE = re.compile(
     r"https?://|www\.|\b[\w\-]+\.(com|de|io|net|org|co\.uk|eu|at|ch)\b",
     re.IGNORECASE,

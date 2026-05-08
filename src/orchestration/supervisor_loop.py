@@ -3,27 +3,27 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
-from typing import Any, Callable, NamedTuple
+from typing import Any, NamedTuple
 
-from src.config.settings import SOFT_TOKEN_BUDGET, HARD_TOKEN_CAP
+from src.config.settings import HARD_TOKEN_CAP, SOFT_TOKEN_BUDGET
 from src.domain.intake import SupervisorBrief
 from src.memory.short_term_store import ShortTermMemoryStore
+from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
+from src.models.schemas import BlockedArtifact
 from src.orchestration.meeting_questions import (
     build_initial_answer_matrix,
     build_question_registry,
     matrix_status_for_task_status,
 )
+from src.orchestration.resolution_controller import ResolutionController
 from src.orchestration.task_router import (
     build_department_assignments,
     build_initial_assignments,
     evaluate_run_conditions,
 )
-from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
-from src.models.schemas import BlockedArtifact
-from src.orchestration.resolution_controller import ResolutionController
-
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 

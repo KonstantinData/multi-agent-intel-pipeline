@@ -19,7 +19,6 @@ import json
 import os
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from src.config.settings import ROOT
@@ -476,7 +475,10 @@ def resolve_queries(
     entry = _get_task_entry(department_slug, task_key)
 
     # Derive expansion values from brief + research helpers
-    from src.research.extract import extract_product_keywords, infer_industry  # local import avoids circular
+    from src.research.extract import (  # local import avoids circular
+        extract_product_keywords,
+        infer_industry,
+    )
 
     company = brief.company_name
     domain = brief.normalized_domain
@@ -524,7 +526,10 @@ def resolve_query_variant(
             f"Query variant '{variant_key}' for task '{task_key}' must be a dict."
         )
 
-    from src.research.extract import extract_product_keywords, infer_industry  # local import avoids circular
+    from src.research.extract import (  # local import avoids circular
+        extract_product_keywords,
+        infer_industry,
+    )
 
     company = brief.company_name
     domain = brief.normalized_domain

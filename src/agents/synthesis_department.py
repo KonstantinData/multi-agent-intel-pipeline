@@ -17,16 +17,20 @@ SynthesisLead tools:
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Callable
+from collections.abc import Callable
+from typing import Annotated, Any
 
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
-from src.config.settings import get_openai_api_key, get_role_model_selection, resolve_model_temperature
+from src.config.settings import (
+    get_openai_api_key,
+    get_role_model_selection,
+    resolve_model_temperature,
+)
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
-from src.orchestration.envelope import resolve_report_segment, resolve_confidence
+from src.orchestration.envelope import resolve_confidence, resolve_report_segment
 from src.orchestration.speaker_selector import build_synthesis_selector
-
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 

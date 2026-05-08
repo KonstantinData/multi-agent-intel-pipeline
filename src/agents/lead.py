@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Department Lead / Analyst — contract-driven, execution-autonomous AG2 GroupChat.
 
 Departments are **question-coverage contributors**, not final-briefing owners.
@@ -51,8 +52,8 @@ import html
 import json
 import logging
 import re
-from typing import Annotated, Any, Callable, Literal
-
+from collections.abc import Callable
+from typing import Annotated, Any, Literal
 
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -109,7 +110,6 @@ def _dedup_model_dump(items: list[Any]) -> list[dict[str, Any]]:
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
 from src.agents.coding_assistant import CodingAssistantAgent
-from src.orchestration.speaker_selector import build_department_selector
 from src.agents.critic import CriticAgent
 from src.agents.judge import JudgeAgent
 from src.agents.worker import ResearchWorker
@@ -124,7 +124,6 @@ from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCand
 from src.models.schemas import DepartmentPackage, DomainReportSegment
 from src.orchestration.contract_validation import validate_payload_against_task_schema
 from src.orchestration.contracts import (
-    ContractViolation,
     DepartmentPolicy,
     DepartmentRunState,
     TaskArtifact,
@@ -137,9 +136,9 @@ from src.orchestration.department_knowledge import (
     load_department_source_profile,
 )
 from src.orchestration.followup_config import FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT
-from src.orchestration.task_router import Assignment, DEPARTMENT_RESEARCHERS
+from src.orchestration.speaker_selector import build_department_selector
+from src.orchestration.task_router import DEPARTMENT_RESEARCHERS, Assignment
 from src.orchestration.tool_policy import resolve_allowed_tools
-from src.models.registry import resolve_output_schema
 from src.research.extract import extract_product_keywords, infer_industry
 from src.research.query_resolver import validate_query_overrides
 
@@ -1574,7 +1573,7 @@ class DepartmentLeadAgent:
             f"  {i + 1}. {_e(a.task_key)} — {_e(a.label)}\n"
             f"     Guidance: {_e(str(t['lead_guidance']))}"
             for i, (a, t) in enumerate(
-                zip(assignments, investigation_plan["task_sequence"])
+                zip(assignments, investigation_plan["task_sequence"], strict=False)
             )
         )
         domain_hypothesis = _e(str(investigation_plan.get("domain_hypothesis", "")))

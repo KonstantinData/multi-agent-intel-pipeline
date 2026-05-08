@@ -9,7 +9,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 ChartType = Literal[
     "kpi", "donut", "treemap", "bar", "stacked_bar",
     "line", "table", "callout", "map",

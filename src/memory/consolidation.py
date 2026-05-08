@@ -20,7 +20,6 @@ Sanitisation is enforced here before any write to ``FileLongTermMemoryStore``.
 """
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 

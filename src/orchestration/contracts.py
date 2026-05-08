@@ -120,7 +120,7 @@ class DepartmentPolicy:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "DepartmentPolicy":
+    def from_dict(cls, payload: dict[str, Any]) -> DepartmentPolicy:
         return cls(
             department=str(payload.get("department", "")),
             required_fields=tuple(str(item) for item in payload.get("required_fields", []) if str(item).strip()),
@@ -203,7 +203,7 @@ class TaskArtifact:
         }
 
     @classmethod
-    def from_worker_report(cls, report: dict[str, Any], attempt: int) -> "TaskArtifact":
+    def from_worker_report(cls, report: dict[str, Any], attempt: int) -> TaskArtifact:
         """Build a TaskArtifact from a ResearchWorker report dict."""
         return cls(
             task_key=str(report.get("task_key", "")),
@@ -266,7 +266,7 @@ class TaskReviewArtifact:
         }
 
     @classmethod
-    def from_critic_review(cls, review: dict[str, Any], *, task_key: str, attempt: int, reviewer: str = "") -> "TaskReviewArtifact":
+    def from_critic_review(cls, review: dict[str, Any], *, task_key: str, attempt: int, reviewer: str = "") -> TaskReviewArtifact:
         """Build a TaskReviewArtifact from a CriticAgent review dict."""
         return cls(
             task_key=task_key,
@@ -323,7 +323,7 @@ class TaskDecisionArtifact:
         return self.outcome in TERMINAL_OUTCOMES
 
     @classmethod
-    def from_judge_result(cls, result: dict[str, Any], *, task_key: str, attempt: int) -> "TaskDecisionArtifact":
+    def from_judge_result(cls, result: dict[str, Any], *, task_key: str, attempt: int) -> TaskDecisionArtifact:
         """Build a TaskDecisionArtifact from a JudgeAgent result dict.
 
         F7: Judge now returns Contract-Outcome vocabulary directly in
@@ -344,7 +344,7 @@ class TaskDecisionArtifact:
         )
 
     @classmethod
-    def lead_accepted(cls, *, task_key: str, attempt: int, review: "TaskReviewArtifact | None" = None) -> "TaskDecisionArtifact":
+    def lead_accepted(cls, *, task_key: str, attempt: int, review: TaskReviewArtifact | None = None) -> TaskDecisionArtifact:
         """Create a Lead-approved decision artifact (no Judge needed)."""
         confidence = "high" if review and review.core_passed == review.core_total else "medium"
         return cls(

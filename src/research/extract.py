@@ -14,7 +14,6 @@ from src.config.settings import (
     temperature_param,
 )
 
-
 # Words that appear in website chrome, not in product descriptions
 _STOPWORDS = {
     "home", "homepage", "about", "contact", "career", "careers", "welcome",

@@ -206,7 +206,7 @@ class ShortTermMemoryStore:
     def record_follow_up(self, answer: dict[str, Any]) -> None:
         self.follow_up_sessions.append(answer)
 
-    def create_working_set(self) -> "ShortTermMemoryStore":
+    def create_working_set(self) -> ShortTermMemoryStore:
         """F5: Create an isolated working-set store seeded with a read-only snapshot.
 
         The working set starts with a frozen copy of the current state so
@@ -231,7 +231,7 @@ class ShortTermMemoryStore:
         ws.section_outputs = {k: dict(v) for k, v in self.section_outputs.items()}
         return ws
 
-    def delta_from(self, baseline: "ShortTermMemoryStore") -> "ShortTermMemoryStore":
+    def delta_from(self, baseline: ShortTermMemoryStore) -> ShortTermMemoryStore:
         """F5: Extract only the new writes relative to a baseline snapshot.
 
         Returns a new store containing only the data that was added after
@@ -290,7 +290,7 @@ class ShortTermMemoryStore:
             delta.usage_totals[k] = self.usage_totals.get(k, 0) - baseline.usage_totals.get(k, 0)
         return delta
 
-    def merge_from(self, other: "ShortTermMemoryStore") -> None:
+    def merge_from(self, other: ShortTermMemoryStore) -> None:
         """F5: Merge an isolated working-set store into this store.
 
         Used after parallel department runs to consolidate results
@@ -418,7 +418,7 @@ class ShortTermMemoryStore:
 
 
     @classmethod
-    def from_snapshot(cls, payload: dict[str, Any]) -> "ShortTermMemoryStore":
+    def from_snapshot(cls, payload: dict[str, Any]) -> ShortTermMemoryStore:
         data = dict(payload or {})
         legacy_open_questions = list(data.get("open_questions", []))
         gap_payload = data.get("gap_candidates")

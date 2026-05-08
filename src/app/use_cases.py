@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 LIQUISTO_STANDARD_SCOPE = """
 Prepare a Liquisto pre-meeting briefing for a new target company.
 

@@ -16,26 +16,68 @@ from openai import OpenAI
 
 from src.agents._helpers import (
     SECTION_MODELS,
+)
+from src.agents._helpers import (
     assess_contact_coverage as _assess_contact_coverage_impl,
+)
+from src.agents._helpers import (
     build_memory_context as _build_memory_context_impl,
-    coerce_contact_records as _coerce_contact_records_impl,
-    coerce_to_string as _coerce_to_string_impl,
-    coerce_string_list as _coerce_string_list_impl,
-    coerce_people as _coerce_people_impl,
+)
+from src.agents._helpers import (
     coerce_company_records as _coerce_company_records_impl,
+)
+from src.agents._helpers import (
+    coerce_contact_records as _coerce_contact_records_impl,
+)
+from src.agents._helpers import (
+    coerce_people as _coerce_people_impl,
+)
+from src.agents._helpers import (
     coerce_sources as _coerce_sources_impl,
-    deep_merge as _deep_merge_impl,
+)
+from src.agents._helpers import (
+    coerce_string_list as _coerce_string_list_impl,
+)
+from src.agents._helpers import (
+    coerce_to_string as _coerce_to_string_impl,
+)
+from src.agents._helpers import (
     dedup_list as _dedup_list_impl,
-    extract_financial_deep_dive as _extract_financial_deep_dive_impl,
+)
+from src.agents._helpers import (
+    deep_merge as _deep_merge_impl,
+)
+from src.agents._helpers import (
     extract_contacts_from_facts as _extract_contacts_from_facts_impl,
+)
+from src.agents._helpers import (
+    extract_financial_deep_dive as _extract_financial_deep_dive_impl,
+)
+from src.agents._helpers import (
     extract_transaction_events as _extract_transaction_events_impl,
-    normalize_contact_fields as _normalize_contact_fields_impl,
-    normalize_payload_updates as _normalize_payload_updates_impl,
-    parse_contact_from_title as _parse_contact_from_title_static,
-    pick_field as _pick_field_static,
-    prioritize_contact_records as _prioritize_contact_records_impl,
+)
+from src.agents._helpers import (
     is_plausible_named_contact as _is_plausible_named_contact_impl,
+)
+from src.agents._helpers import (
+    normalize_contact_fields as _normalize_contact_fields_impl,
+)
+from src.agents._helpers import (
+    normalize_payload_updates as _normalize_payload_updates_impl,
+)
+from src.agents._helpers import (
+    parse_contact_from_title as _parse_contact_from_title_static,
+)
+from src.agents._helpers import (
+    pick_field as _pick_field_static,
+)
+from src.agents._helpers import (
+    prioritize_contact_records as _prioritize_contact_records_impl,
+)
+from src.agents._helpers import (
     salvage_valid_fields as _salvage_valid_fields_impl,
+)
+from src.agents._helpers import (
     sanitize_for_section as _sanitize_for_section_impl,
 )
 from src.config.settings import (
@@ -50,9 +92,12 @@ from src.orchestration.tool_policy import tool_is_allowed
 from src.research.extract import extract_product_keywords, infer_industry, summarize_visible_text
 from src.research.fetch import fetch_website_snapshot
 from src.research.query_resolver import is_verify_mode, resolve_queries
-from src.research.search import build_buyer_queries, build_company_queries, build_market_queries, perform_search
+from src.research.search import (
+    build_buyer_queries,
+    build_company_queries,
+    perform_search,
+)
 from src.utils import strict_json_dumps
-
 
 _MAX_LLM_SYSTEM_CONTENT_CHARS = 12_000
 _MAX_LLM_USER_CONTENT_CHARS = 24_000
@@ -1112,7 +1157,7 @@ class ResearchWorker:
             self._client.close()
             self._client = None
 
-    def __enter__(self) -> "ResearchWorker":
+    def __enter__(self) -> ResearchWorker:
         return self
 
     def __exit__(self, *_: object) -> None:

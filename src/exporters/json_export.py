@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -111,7 +111,7 @@ def export_run(
 ) -> None:
     path = _ensure_within_runs_dir(run_dir)
     path.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
 
     run_meta = {
         "run_id": run_id,

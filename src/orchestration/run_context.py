@@ -70,7 +70,7 @@ class RunContext:
 
 
     @classmethod
-    def from_snapshot(cls, payload: dict[str, Any]) -> "RunContext":
+    def from_snapshot(cls, payload: dict[str, Any]) -> RunContext:
         return cls(
             run_id=str(payload.get("run_id", "")),
             intake=dict(payload.get("intake", {})),
