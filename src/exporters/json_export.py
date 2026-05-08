@@ -17,7 +17,7 @@ from src.app.use_cases import (
     SUCCESS_RUN_STATUS,
     sanitize_success_unresolved,
 )
-from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
+from src.orchestration.run_paths import RUNS_DIR, InvalidRunIdError, resolve_path_within_runs_root, resolve_run_dir, validate_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -31,28 +31,13 @@ class SafeRunPath:
 
 def _ensure_within_runs_dir(path: str | Path) -> SafeRunPath:
     """Resolve and enforce that ``path`` is contained in the trusted runs root."""
-    root = Path(RUNS_DIR).resolve(strict=False)
-    candidate_input = Path(path)
-    candidate_resolved = candidate_input.resolve(strict=False)
-
-    # Already-absolute inputs are only accepted when they are proven to be within root.
-    if candidate_input.is_absolute():
-        try:
-            rel = candidate_resolved.relative_to(root)
-        except ValueError as exc:
-            raise ValueError("Refusing to write outside runs directory.") from exc
-        return SafeRunPath(path=root / rel)
-
-    # Relative inputs must remain relative and must not contain parent traversal.
-    if any(part in ("", ".", "..") for part in candidate_input.parts):
-        raise ValueError("Invalid relative artifact path.")
-
-    candidate = (root / candidate_input).resolve(strict=False)
     try:
-        rel = candidate.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("Refusing to write outside runs directory.") from exc
-    return SafeRunPath(path=root / rel)
+        resolved = resolve_path_within_runs_root(path, runs_root=RUNS_DIR)
+    except InvalidRunIdError as exc:
+        if Path(path).is_absolute():
+            raise ValueError("Refusing to write outside runs directory.") from exc
+        raise ValueError("Invalid relative artifact path.") from exc
+    return SafeRunPath(path=resolved)
 
 
 def atomic_write_json(target: SafeRunPath, payload: Any) -> None:
