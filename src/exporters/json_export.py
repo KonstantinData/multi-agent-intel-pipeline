@@ -10,6 +10,7 @@ from typing import Any
 
 from filelock import FileLock
 
+from src.orchestration.run_paths import RUNS_DIR
 from src.app.use_cases import (
     DISCOVERY_READY_RUN_STATUS,
     SUCCESS_RUN_STATUS,
@@ -19,9 +20,20 @@ from src.app.use_cases import (
 logger = logging.getLogger(__name__)
 
 
+def _ensure_within_runs_dir(path: str | Path) -> Path:
+    """Resolve and enforce that ``path`` is contained in the trusted runs root."""
+    root = Path(RUNS_DIR).resolve()
+    candidate = Path(path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Refusing to write outside runs directory.") from exc
+    return candidate
+
+
 def atomic_write_json(path: str | Path, payload: Any) -> None:
     """Write JSON atomically via a same-directory tempfile and replace."""
-    target = Path(path)
+    target = _ensure_within_runs_dir(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     encoded = json.dumps(payload, indent=2, ensure_ascii=False)
     with tempfile.NamedTemporaryFile(
@@ -142,9 +154,9 @@ def export_run(
 
 
 def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> None:
-    path = Path(run_dir)
+    path = _ensure_within_runs_dir(run_dir)
     path.mkdir(parents=True, exist_ok=True)
-    target = path / "follow_up_history.json"
+    target = _ensure_within_runs_dir(path / "follow_up_history.json")
     lock = FileLock(str(target) + ".lock")
     with lock:
         history: list[dict[str, Any]] = []
@@ -161,8 +173,8 @@ def export_binary_artifact(
     content: bytes,
 ) -> Path:
     """Persist a generated binary export under the run artifact directory."""
-    path = Path(run_dir)
-    target = path / relative_path
+    path = _ensure_within_runs_dir(run_dir)
+    target = _ensure_within_runs_dir(path / relative_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
