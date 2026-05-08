@@ -109,7 +109,7 @@ def export_run(
     budget: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> None:
-    path = Path(run_dir)
+    path = _ensure_within_runs_dir(run_dir)
     path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).isoformat()
 
