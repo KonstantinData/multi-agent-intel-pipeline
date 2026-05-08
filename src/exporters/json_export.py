@@ -26,9 +26,8 @@ def _ensure_within_runs_dir(path: str | Path) -> Path:
     root = Path(RUNS_DIR).resolve(strict=False)
     candidate_input = Path(path)
     if candidate_input.is_absolute():
-        candidate = candidate_input.resolve(strict=False)
-    else:
-        candidate = (root / candidate_input).resolve(strict=False)
+        raise ValueError("Absolute paths are not allowed for run artifacts.")
+    candidate = (root / candidate_input).resolve(strict=False)
     try:
         rel = candidate.relative_to(root)
     except ValueError as exc:
