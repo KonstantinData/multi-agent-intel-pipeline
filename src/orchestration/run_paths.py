@@ -49,12 +49,22 @@ def resolve_run_dir(
     """
     safe_run_id = validate_run_id(run_id)
     root = Path(runs_root).resolve()
-    candidate = (root / safe_run_id).resolve()
+
+    candidate: Path | None = None
+    if root.exists():
+        for child in root.iterdir():
+            if child.is_dir() and child.name == safe_run_id:
+                candidate = child.resolve()
+                break
+
+    if candidate is None:
+        if must_exist:
+            raise FileNotFoundError("Run was not found.")
+        candidate = (root / safe_run_id).resolve()
+
     try:
         candidate.relative_to(root)
     except ValueError as exc:
         raise InvalidRunIdError("Invalid run_id.") from exc
-    if must_exist and not candidate.exists():
-        raise FileNotFoundError("Run was not found.")
     return candidate
 
