@@ -49,9 +49,10 @@ def _ensure_within_runs_dir(path: str | Path) -> Path:
 
 def atomic_write_json(target: Path, payload: Any) -> None:
     """Write JSON atomically via a same-directory tempfile and replace."""
-    target = _ensure_within_runs_dir(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", target.name).strip("._-") or "artifact"
+    safe_target = _ensure_within_runs_dir(target)
+    safe_parent = safe_target.parent
+    safe_parent.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", safe_target.name).strip("._-") or "artifact"
     encoded = json.dumps(payload, indent=2, ensure_ascii=False)
     with tempfile.NamedTemporaryFile(
         "w",
@@ -59,12 +60,12 @@ def atomic_write_json(target: Path, payload: Any) -> None:
         prefix=f".{safe_name}.",
         suffix=".tmp",
         delete=False,
-        dir=target.parent,
+        dir=safe_parent,
     ) as handle:
         handle.write(encoded)
         handle.flush()
         temp_name = handle.name
-    Path(temp_name).replace(target)
+    Path(temp_name).replace(safe_target)
 
 
 def _sanitize_pipeline_data_for_status(
@@ -175,7 +176,7 @@ def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
     resolved_run_dir = resolve_run_dir(safe_run_id, runs_root=RUNS_DIR, must_exist=False)
     path = _ensure_within_runs_dir(resolved_run_dir)
     path.mkdir(parents=True, exist_ok=True)
-    target = path / "follow_up_history.json"
+    target = _ensure_within_runs_dir(path / "follow_up_history.json")
     lock = FileLock(str(target) + ".lock")
     with lock:
         history: list[dict[str, Any]] = []
