@@ -38,6 +38,7 @@ def _ensure_within_runs_dir(path: str | Path) -> Path:
 
 def atomic_write_json(target: Path, payload: Any) -> None:
     """Write JSON atomically via a same-directory tempfile and replace."""
+    target = _ensure_within_runs_dir(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", target.name).strip("._-") or "artifact"
     with tempfile.NamedTemporaryFile(
