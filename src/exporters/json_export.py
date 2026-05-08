@@ -21,10 +21,12 @@ from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
 logger = logging.getLogger(__name__)
 
 
-def _ensure_within_runs_dir(path: str | Path) -> Path:
+def _ensure_within_runs_dir(path: Path) -> Path:
     """Resolve and enforce that ``path`` is contained in the trusted runs root."""
+    if not isinstance(path, Path):
+        raise TypeError("Expected a pathlib.Path for filesystem operations.")
     root = Path(RUNS_DIR).resolve(strict=False)
-    candidate = Path(path).resolve(strict=False)
+    candidate = path.resolve(strict=False)
     try:
         candidate.relative_to(root)
     except ValueError as exc:
