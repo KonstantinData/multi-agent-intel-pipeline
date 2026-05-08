@@ -28,10 +28,10 @@ def _ensure_within_runs_dir(path: Path) -> Path:
     root = Path(RUNS_DIR).resolve(strict=False)
     candidate = path.resolve(strict=False)
     try:
-        candidate.relative_to(root)
+        rel = candidate.relative_to(root)
     except ValueError as exc:
         raise ValueError("Refusing to write outside runs directory.") from exc
-    return candidate
+    return root / rel
 
 
 def atomic_write_json(target: Path, payload: Any) -> None:
