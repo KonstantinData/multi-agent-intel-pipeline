@@ -54,12 +54,7 @@ def _safe_run_id_to_dir(root: Path, safe_run_id: str) -> Path:
     if PureWindowsPath(safe_run_id).is_absolute() or re.match(r"^[A-Za-z]:", safe_run_id):
         raise InvalidRunIdError("Invalid run_id.")
 
-    candidate = (root / safe_run_id).resolve(strict=False)
-    try:
-        relative = candidate.relative_to(root)
-    except ValueError as exc:
-        raise InvalidRunIdError("Invalid run_id.") from exc
-    return (root / relative).resolve(strict=False)
+    return resolve_path_within_runs_root(safe_run_id, runs_root=root)
 
 
 def _validate_relative_artifact_path_text(path_text: str) -> str:
