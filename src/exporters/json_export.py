@@ -11,12 +11,12 @@ from typing import Any
 
 from filelock import FileLock
 
-from src.orchestration.run_paths import RUNS_DIR
 from src.app.use_cases import (
     DISCOVERY_READY_RUN_STATUS,
     SUCCESS_RUN_STATUS,
     sanitize_success_unresolved,
 )
+from src.orchestration.run_paths import RUNS_DIR
 
 logger = logging.getLogger(__name__)
 
