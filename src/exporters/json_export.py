@@ -172,7 +172,8 @@ def export_run(
 
 def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
     safe_run_id = validate_run_id(run_id)
-    path = resolve_run_dir(safe_run_id, runs_root=RUNS_DIR, must_exist=False)
+    resolved_run_dir = resolve_run_dir(safe_run_id, runs_root=RUNS_DIR, must_exist=False)
+    path = _ensure_within_runs_dir(resolved_run_dir)
     path.mkdir(parents=True, exist_ok=True)
     target = path / "follow_up_history.json"
     lock = FileLock(str(target) + ".lock")
