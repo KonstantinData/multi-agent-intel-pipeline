@@ -16,7 +16,7 @@ from src.app.use_cases import (
     SUCCESS_RUN_STATUS,
     sanitize_success_unresolved,
 )
-from src.orchestration.run_paths import RUNS_DIR
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -154,8 +154,9 @@ def export_run(
             logger.warning("pdf export failed for run %s: %s", run_id, exc)
 
 
-def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> None:
-    path = _ensure_within_runs_dir(run_dir)
+def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
+    safe_run_id = validate_run_id(run_id)
+    path = _ensure_within_runs_dir(resolve_run_dir(safe_run_id, runs_root=RUNS_DIR))
     path.mkdir(parents=True, exist_ok=True)
     target = _ensure_within_runs_dir(path / "follow_up_history.json")
     lock = FileLock(str(target) + ".lock")

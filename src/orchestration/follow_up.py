@@ -352,7 +352,7 @@ def answer_follow_up(
         unresolved_points=unresolved,
         requires_additional_research=bool(unresolved),
     ).model_dump(mode="json")
-    export_follow_up(resolve_run_dir(safe_run_id, runs_root=RUNS_DIR), payload)
+    export_follow_up(safe_run_id, payload)
     return payload
 
 
