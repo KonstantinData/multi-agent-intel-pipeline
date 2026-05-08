@@ -32,7 +32,7 @@ from typing import Any
 from src.exporters.json_export import export_follow_up
 from src.models.schemas import FollowUpAnswer
 from src.orchestration.envelope import resolve_raw_package
-from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
 from src.utils import dedup_safe as _dedup_safe
 
 logger = logging.getLogger(__name__)
@@ -325,9 +325,10 @@ def answer_follow_up(
     CHG-08: each department answer function now reads from ``department_run_states``
     (the full artifact history) in addition to the final package and pipeline_data.
     """
+    safe_run_id = validate_run_id(run_id)
     logger.info(
         "answer_follow_up: run_id=%s route=%s question_len=%d",
-        run_id, route, len(question),
+        safe_run_id, route, len(question),
     )
 
     if route == "MarketDepartment":
@@ -343,7 +344,7 @@ def answer_follow_up(
         answer, evidence, unresolved = _company_answer(question, pipeline_data, run_context)
 
     payload = FollowUpAnswer(
-        run_id=run_id,
+        run_id=safe_run_id,
         routed_to=route,
         question=question,
         answer=answer,
@@ -351,7 +352,7 @@ def answer_follow_up(
         unresolved_points=unresolved,
         requires_additional_research=bool(unresolved),
     ).model_dump(mode="json")
-    export_follow_up(resolve_run_dir(run_id, runs_root=RUNS_DIR), payload)
+    export_follow_up(resolve_run_dir(safe_run_id, runs_root=RUNS_DIR), payload)
     return payload
 
 
