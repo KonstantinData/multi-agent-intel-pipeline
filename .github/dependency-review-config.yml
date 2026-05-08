@@ -1,6 +1,3 @@
-# Mirrors policies/license/dependency-license-policy.json (conservative).
-# Copyleft and network-copyleft licenses are denied without a documented exception.
-
 fail-on-severity: moderate
 vulnerability-check: true
 license-check: true
@@ -8,18 +5,31 @@ fail-on-scopes:
   - runtime
 warn-only: false
 
-deny-licenses:
-  - GPL-2.0
-  - GPL-2.0-only
-  - GPL-2.0-or-later
-  - GPL-3.0
-  - GPL-3.0-only
-  - GPL-3.0-or-later
-  - LGPL-2.0
-  - LGPL-2.1
-  - LGPL-3.0
-  - AGPL-3.0
-  - AGPL-3.0-only
-  - AGPL-3.0-or-later
-  - SSPL-1.0
-  - BUSL-1.1
+# Allowlist of approved SPDX identifiers (replaces deprecated deny-licenses).
+# Copyleft (GPL, LGPL, AGPL) and source-available (SSPL, BUSL) licenses are
+# excluded by omission.
+allow-licenses:
+  - MIT
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - BSD-3-Clause-Clear
+  - ISC
+  - Unlicense
+  - CC0-1.0
+  - CC-BY-4.0
+  - PSF-2.0
+  - Python-2.0
+  - HPND
+  - Artistic-2.0
+  - MPL-2.0
+  - 0BSD
+
+# Packages whose license metadata is absent from the GitHub dependency graph
+# (PyPI reports Null). Actual licenses: ag2=Apache-2.0, filelock=Unlicense,
+# keyring=MIT, pypdf=BSD-3-Clause — all permissive.
+allow-dependencies-licenses:
+  - pkg:pypi/ag2
+  - pkg:pypi/filelock
+  - pkg:pypi/keyring
+  - pkg:pypi/pypdf
