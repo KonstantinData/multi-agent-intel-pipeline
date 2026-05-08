@@ -16,7 +16,7 @@ from src.app.use_cases import (
     SUCCESS_RUN_STATUS,
     sanitize_success_unresolved,
 )
-from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
 
 logger = logging.getLogger(__name__)
 
@@ -165,13 +165,7 @@ def export_run(
 
 
 def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
-    safe_run_id = validate_run_id(run_id)
-    root = Path(RUNS_DIR).resolve()
-    path = (root / safe_run_id).resolve()
-    try:
-        path.relative_to(root)
-    except ValueError as exc:
-        raise ValueError("Refusing to write outside runs directory.") from exc
+    path = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=False)
     path.mkdir(parents=True, exist_ok=True)
     target = path / "follow_up_history.json"
     lock = FileLock(str(target) + ".lock")
