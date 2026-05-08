@@ -28,6 +28,7 @@ import validate_secret_scan as val_secret_scan  # noqa: E402
 import check_scorecard_policy as scorecard_policy  # noqa: E402
 import check_workflow_needs_result as needs_checker  # noqa: E402
 import dependency_diff as dep_diff  # noqa: E402
+import generate_trivyignore as gen_trivyignore  # noqa: E402
 
 
 def test_ai_bom_roundtrip(tmp_path: Path) -> None:
@@ -801,6 +802,63 @@ def test_needs_result_rejects_integration_tests_failure_not_just_skip() -> None:
     needs = _needs(("lint", "success"), ("integration-tests", "failure"))
     failures = needs_checker.evaluate_needs(needs)
     assert "integration-tests" in failures
+
+
+# ---------------------------------------------------------------------------
+# P2-1: generate_trivyignore contract tests
+# ---------------------------------------------------------------------------
+
+
+def _exceptions_file(tmp_path: Path, exceptions: list) -> Path:
+    f = tmp_path / "dependency-risk-exceptions.json"
+    f.write_text(json.dumps({"schema_version": "1.0", "exceptions": exceptions}), encoding="utf-8")
+    return f
+
+
+def test_generate_trivyignore_empty_exceptions(tmp_path: Path) -> None:
+    ef = _exceptions_file(tmp_path, [])
+    content = gen_trivyignore.generate_trivyignore(ef)
+    assert "exp:" not in content
+    assert "Auto-generated" in content
+
+
+def test_generate_trivyignore_writes_valid_entry(tmp_path: Path) -> None:
+    ef = _exceptions_file(tmp_path, [{
+        "id": "CVE-2099-1234",
+        "package": "somepkg",
+        "owner": "@owner",
+        "reason": "no fix available",
+        "expires": "2099-12-31",
+        "accepted_risk": "low",
+    }])
+    content = gen_trivyignore.generate_trivyignore(ef)
+    assert "CVE-2099-1234 exp:2099-12-31" in content
+    assert "@owner" in content
+    assert "no fix available" in content
+
+
+def test_generate_trivyignore_blocks_expired_exception(tmp_path: Path) -> None:
+    ef = _exceptions_file(tmp_path, [{
+        "id": "CVE-2020-0001",
+        "package": "oldpkg",
+        "owner": "@owner",
+        "reason": "accepted",
+        "expires": "2020-01-01",
+        "accepted_risk": "low",
+    }])
+    with pytest.raises(SystemExit, match="CVE-2020-0001"):
+        gen_trivyignore.generate_trivyignore(ef)
+
+
+def test_generate_trivyignore_multiple_entries_all_valid(tmp_path: Path) -> None:
+    ef = _exceptions_file(tmp_path, [
+        {"id": "CVE-2099-0001", "package": "a", "owner": "@o", "reason": "r1",
+         "expires": "2099-01-01", "accepted_risk": "low"},
+        {"id": "CVE-2099-0002", "package": "b", "owner": "@o", "reason": "r2",
+         "expires": "2099-06-01", "accepted_risk": "medium"},
+    ])
+    content = gen_trivyignore.generate_trivyignore(ef)
+    assert content.count("exp:") == 2
 
 
 def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:
