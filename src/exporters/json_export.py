@@ -16,17 +16,16 @@ from src.app.use_cases import (
     SUCCESS_RUN_STATUS,
     sanitize_success_unresolved,
 )
-from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
+from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_within_runs_dir(path: Path) -> Path:
+def _ensure_within_runs_dir(path: str | Path) -> Path:
     """Resolve and enforce that ``path`` is contained in the trusted runs root."""
-    if not isinstance(path, Path):
-        raise TypeError("Expected a pathlib.Path for filesystem operations.")
+    candidate_input = Path(path)
     root = Path(RUNS_DIR).resolve(strict=False)
-    candidate = path.resolve(strict=False)
+    candidate = candidate_input.resolve(strict=False)
     try:
         rel = candidate.relative_to(root)
     except ValueError as exc:
@@ -157,7 +156,8 @@ def export_run(
 
 
 def export_follow_up(run_id: str, follow_up_answer: dict[str, Any]) -> None:
-    path = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=False)
+    safe_run_id = validate_run_id(run_id)
+    path = resolve_run_dir(safe_run_id, runs_root=RUNS_DIR, must_exist=False)
     path.mkdir(parents=True, exist_ok=True)
     target = path / "follow_up_history.json"
     lock = FileLock(str(target) + ".lock")
