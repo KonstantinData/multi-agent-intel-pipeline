@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from src.exporters.json_export import _ensure_within_runs_dir
-from src.orchestration.run_paths import InvalidRunIdError, resolve_path_within_runs_root, resolve_run_dir
+from src.orchestration.run_paths import (
+    InvalidRunIdError,
+    resolve_path_within_runs_root,
+    resolve_run_dir,
+)
 
 
 @pytest.mark.parametrize("run_id", ["../outside", "..\\outside", "/tmp/x", "C:\\temp\\x", "a/../b"])
