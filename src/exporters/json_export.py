@@ -67,12 +67,19 @@ def atomic_write_json(target: SafeRunPath, payload: Any) -> None:
         prefix=f".{safe_name}.",
         suffix=".tmp",
         delete=False,
-        dir=safe_parent,
+        dir=str(safe_parent),
     ) as handle:
         handle.write(encoded)
         handle.flush()
         temp_name = handle.name
-    Path(temp_name).replace(target.path)
+        # Path-injection hardening and static-analysis clarity for temp file containment.
+        temp_path = Path(temp_name).resolve(strict=False)
+        if temp_path.parent != safe_parent.resolve(strict=False):
+            raise ValueError("Temporary file escaped the target directory.")
+    safe_target = _ensure_within_runs_dir(target.path).path
+    # Explicit containment assertions before replace for hardening/static-analysis clarity.
+    safe_temp = _ensure_within_runs_dir(temp_path).path
+    safe_temp.replace(safe_target)
 
 
 def _sanitize_pipeline_data_for_status(
