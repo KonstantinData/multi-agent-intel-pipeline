@@ -105,16 +105,16 @@ def resolve_path_within_runs_root(
             rel = candidate_resolved.relative_to(root)
         except ValueError as exc:
             raise InvalidRunIdError("Invalid run_id.") from exc
-        candidate = (root / rel).resolve(strict=False)
+        safe_relative_text = _validate_relative_artifact_path_text(str(rel))
     else:
         safe_relative_text = _validate_relative_artifact_path_text(candidate_text)
-        candidate = (root / safe_relative_text).resolve(strict=False)
 
+    candidate = (root / safe_relative_text).resolve(strict=False)
     try:
-        rel = candidate.relative_to(root)
+        candidate.relative_to(root)
     except ValueError as exc:
         raise InvalidRunIdError("Invalid run_id.") from exc
-    return (root / rel).resolve(strict=False)
+    return candidate
 
 
 def resolve_run_dir(
