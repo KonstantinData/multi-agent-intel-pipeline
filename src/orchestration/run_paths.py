@@ -45,6 +45,16 @@ def _find_existing_run_dir(root: Path, safe_run_id: str) -> Path | None:
     return None
 
 
+def _resolve_within_root(root: Path, leaf_name: str) -> Path:
+    """Resolve ``leaf_name`` under ``root`` and enforce containment."""
+    candidate = (root / leaf_name).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise InvalidRunIdError("Invalid run_id.") from exc
+    return candidate
+
+
 def resolve_run_dir(
     run_id: str,
     *,
@@ -68,7 +78,7 @@ def resolve_run_dir(
         basename = Path(safe_run_id).name
         if basename != safe_run_id:
             raise InvalidRunIdError("Invalid run_id.")
-        candidate = root.joinpath(basename).resolve()
+        candidate = _resolve_within_root(root, basename)
 
     try:
         candidate.relative_to(root)
