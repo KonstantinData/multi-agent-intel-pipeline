@@ -25,8 +25,20 @@ def _ensure_within_runs_dir(path: str | Path) -> Path:
     """Resolve and enforce that ``path`` is contained in the trusted runs root."""
     root = Path(RUNS_DIR).resolve(strict=False)
     candidate_input = Path(path)
+    candidate_resolved = candidate_input.resolve(strict=False)
+
+    # Already-absolute inputs are only accepted when they are proven to be within root.
     if candidate_input.is_absolute():
-        raise ValueError("Absolute paths are not allowed for run artifacts.")
+        try:
+            rel = candidate_resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Refusing to write outside runs directory.") from exc
+        return root / rel
+
+    # Relative inputs must remain relative and must not contain parent traversal.
+    if any(part in ("", ".", "..") for part in candidate_input.parts):
+        raise ValueError("Invalid relative artifact path.")
+
     candidate = (root / candidate_input).resolve(strict=False)
     try:
         rel = candidate.relative_to(root)
