@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,11 +37,12 @@ def atomic_write_json(path: str | Path, payload: Any) -> None:
     target = _ensure_within_runs_dir(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     encoded = json.dumps(payload, indent=2, ensure_ascii=False)
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", target.name).strip("._-") or "artifact"
     with tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",
         dir=target.parent,
-        prefix=f".{target.name}.",
+        prefix=f".{safe_name}.",
         suffix=".tmp",
         delete=False,
     ) as handle:
