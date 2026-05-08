@@ -82,7 +82,7 @@ def summarize_worker_report_costs(worker_reports: list[dict[str, Any]]) -> dict[
     total_tokens = 0
     total_cost = 0.0
     models: dict[str, dict[str, float | int]] = {}
-    agents: dict[str, dict[str, dict[str, float | int]]] = {}
+    agents: dict[str, Any] = {}
 
     for report in worker_reports:
         usage = report.get("usage", {})

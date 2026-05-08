@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-def test_dependency_light_architecture_modules_do_not_import_runtime_heavy_modules():
+def test_dependency_light_architecture_modules_do_not_import_runtime_heavy_modules() -> None:
     code = """
 import sys
 import src.orchestration.contracts
@@ -22,7 +22,7 @@ if loaded:
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
-def test_architecture_tests_do_not_import_runtime_heavy_dependencies():
+def test_architecture_tests_do_not_import_runtime_heavy_dependencies() -> None:
     architecture_dir = Path(__file__).parent
     forbidden_tokens = (
         "import openai",

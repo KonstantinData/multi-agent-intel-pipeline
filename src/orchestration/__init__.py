@@ -3,7 +3,7 @@
 __all__ = ["RunContext"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name == "RunContext":
         from src.orchestration.run_context import RunContext
 

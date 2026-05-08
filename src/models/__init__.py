@@ -31,7 +31,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name in {"PipelineData", "validate_pipeline_data"}:
         from src.models.schemas import PipelineData, validate_pipeline_data
 
