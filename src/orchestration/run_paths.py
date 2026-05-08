@@ -47,7 +47,8 @@ def _find_existing_run_dir(root: Path, safe_run_id: str) -> Path | None:
 
 def _resolve_within_root(root: Path, leaf_name: str) -> Path:
     """Resolve ``leaf_name`` under ``root`` and enforce containment."""
-    candidate = (root / leaf_name).resolve()
+    safe_leaf_name = validate_run_id(leaf_name)
+    candidate = (root / safe_leaf_name).resolve()
     try:
         candidate.relative_to(root)
     except ValueError as exc:
