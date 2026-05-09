@@ -468,6 +468,7 @@ jobs:
             -v "$PWD/bom/sbom:/bom" \
             "$SYFT_IMAGE" dir:/project \
             --exclude './.git/**' \
+            --exclude './.github/**' \
             --exclude './.mypy_cache/**' \
             --exclude './.ruff_cache/**' \
             --exclude './bom/**' \
