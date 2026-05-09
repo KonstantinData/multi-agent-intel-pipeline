@@ -25,6 +25,8 @@ certifi==2026.4.22
     #   httpcore
     #   httpx
     #   requests
+cffi==2.0.0
+    # via cryptography
 charset-normalizer==3.4.7
     # via
     #   reportlab
@@ -33,8 +35,6 @@ click==8.3.3
     # via streamlit
 cryptography==48.0.0
     # via secretstorage
-cffi==2.0.0
-    # via cryptography
 distro==1.9.0
     # via openai
 fast-depends==3.0.8
