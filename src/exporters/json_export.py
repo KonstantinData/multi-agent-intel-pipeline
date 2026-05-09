@@ -135,7 +135,11 @@ def export_run(
     error: str | None = None,
 ) -> None:
     safe_run_id = validate_run_id(run_id)
-    safe_run_dir = _ensure_within_runs_dir(safe_run_id)
+    requested_run_dir = Path(run_dir).resolve(strict=False)
+    if requested_run_dir.name != safe_run_id:
+        raise ValueError("run_dir must end with run_id.")
+    runs_root = requested_run_dir.parent
+    safe_run_dir = _ensure_within_runs_dir(safe_run_id, runs_root)
     safe_run_dir.path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).isoformat()
 
@@ -154,18 +158,19 @@ def export_run(
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
 
-    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_meta.json"), run_meta)
-    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json"), chat_history)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_meta.json", runs_root), run_meta, runs_root)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json", runs_root), chat_history, runs_root)
     sanitized_pipeline_data = _sanitize_pipeline_data_for_status(
         status=status,
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
-    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/pipeline_data.json"), sanitized_pipeline_data)
-    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_context.json"), run_context)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/pipeline_data.json", runs_root), sanitized_pipeline_data, runs_root)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_context.json", runs_root), run_context, runs_root)
     atomic_write_json(
-        _ensure_within_runs_dir(f"{safe_run_id}/memory_snapshot.json"),
+        _ensure_within_runs_dir(f"{safe_run_id}/memory_snapshot.json", runs_root),
         run_context.get("short_term_memory", {}),
+        runs_root,
     )
     if sanitized_pipeline_data:
         try:
