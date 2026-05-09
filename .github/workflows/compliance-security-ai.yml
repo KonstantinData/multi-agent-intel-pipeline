@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install lint dependencies
-        run: python -m pip install ruff==0.15.12
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install ruff==0.15.12
       - name: Run Ruff
         run: ruff check src scripts tests
 
@@ -57,7 +57,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install type-check dependencies
-        run: python -m pip install -r requirements.lock mypy==1.18.2 pytest==8.4.2
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install -r requirements.lock mypy==1.18.2 pytest==8.4.2
       - name: Run MyPy
         run: mypy
 
@@ -75,7 +75,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install SAST dependencies
-        run: python -m pip install bandit==1.8.6
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install bandit==1.8.6
       - name: Run Bandit
         run: bandit -q -r src scripts -x tests
 
@@ -93,7 +93,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install lock tooling
-        run: python -m pip install uv==0.8.22
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install uv==0.8.22
       - name: Verify dependency lock is current
         run: |
           uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock
@@ -113,7 +113,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install audit dependencies
-        run: python -m pip install pip-audit==2.9.0
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install pip-audit==2.9.0
       - name: Run pip-audit with CVE exception policy
         run: python scripts/run_pip_audit_with_policy.py
 
@@ -131,7 +131,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install secret scanning dependencies
-        run: python -m pip install detect-secrets==1.5.0
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install detect-secrets==1.5.0
       - name: Scan for potential secrets
         run: detect-secrets scan . --all-files --exclude-files '(^|[\\/])(\\.git|\\.mypy_cache|\\.ruff_cache|\\.pytest_cache|venv|\\.venv|runs|reports|bom[\\/]sbom|bom[\\/]ai-bom)([\\/]|$)' > .secrets.scan.json
       - name: Fail on potential secrets
@@ -252,7 +252,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python -m pip install -r requirements.lock
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install -r requirements.lock
       - name: Validate dependency license and registry policy
         run: python scripts/validate_dependency_policy.py
 
@@ -338,7 +338,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install test dependencies
-        run: python -m pip install pytest==8.4.2
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install pytest==8.4.2
       - name: Run script contract tests
         run: pytest -q tests/test_scripts_contracts.py
 
@@ -358,7 +358,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependency-light test dependencies
-        run: python -m pip install pytest==8.4.2 pydantic==2.12.3 filelock==3.20.0 python-dotenv==1.2.1
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install pytest==8.4.2 pydantic==2.12.3 filelock==3.20.0 python-dotenv==1.2.1
       - name: Collect architecture tests
         run: pytest -q tests/architecture --collect-only --junitxml=reports/architecture-collect.xml
       - name: Run architecture tests
@@ -387,7 +387,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install runtime test dependencies
-        run: python -m pip install -r requirements.lock pytest==8.4.2
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install -r requirements.lock pytest==8.4.2
       - name: Run readiness, golden, query, and smoke tests
         run: pytest -q tests/meeting_readiness tests/golden tests/test_query_*.py tests/smoke --junitxml=reports/runtime-contracts.xml
       - name: Upload runtime test reports
@@ -412,7 +412,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install runtime dependencies
-        run: python -m pip install -r requirements.lock pytest==8.4.2
+        run: python -m pip install 'pip==24.0' --hash=sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc && python -m pip install -r requirements.lock pytest==8.4.2
       - name: Run integration tests
         run: pytest -q -m integration --junitxml=reports/integration.xml
       - name: Upload integration test reports
