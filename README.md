@@ -176,6 +176,10 @@ A successful run does **not** contain:
 - generic `open_questions` block
 - unresolved publicly researchable meeting-critical questions
 
+## Security
+
+Security architecture, threat model, agent permissions, CI/CD gates, and data classification are documented in the [Security Hub](docs/en/security/README.md).
+
 ## Configuration
 
 - **Secrets management**: API-key lookup, OS-keyring setup, no-`.env` API-key rule, and logging requirements are documented in [docs/Secrets-Management.md](docs/Secrets-Management.md).
