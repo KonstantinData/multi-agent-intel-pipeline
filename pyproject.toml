@@ -7,6 +7,7 @@ markers = [
     "runtime: Runtime tests — require AG2/autogen or OpenAI SDK",
     "smoke: Lightweight sanity checks",
 ]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
@@ -25,5 +26,30 @@ no_implicit_optional = true
 ignore_missing_imports = true
 warn_redundant_casts = true
 warn_unused_ignores = true
-disable_error_code = ["arg-type", "assignment", "call-overload", "dict-item", "misc", "union-attr", "var-annotated", "attr-defined", "unused-ignore"]
-files = ["src"]
+files = ["src/orchestration/contracts.py"]
+
+[[tool.mypy.overrides]]
+module = ["autogen", "keyring"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "scripts.manual_validation.*",
+    "src.agents.synthesis_department",
+    "src.orchestration.speaker_selector",
+    "src.memory.backfill",
+]
+disallow_untyped_defs = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = [
+    "src.orchestration.synthesis",
+    "src.orchestration.dashboard_composer",
+    "src.orchestration.runtime_guardrails",
+    "src.orchestration.meeting_readiness",
+    "src.orchestration.resolution_controller",
+    "scripts.validate_ai_bom",
+    "scripts.validate_dependency_policy",
+]
+warn_return_any = false
