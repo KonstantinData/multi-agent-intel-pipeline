@@ -2481,7 +2481,7 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
                     **temperature_param(translation_model, 0),
                 )
                 translated: dict[str, str] = json.loads(resp.choices[0].message.content)
-            except Exception:
+            except Exception:  # nosec B112 - skip failed chunk translation and continue remaining chunks
                 continue
             for token in chunk_tokens:
                 if token in translated:
