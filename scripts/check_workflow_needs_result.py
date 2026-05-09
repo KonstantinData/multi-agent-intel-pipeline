@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 
+
 def evaluate_needs(needs: dict) -> dict[str, str]:
     """Return a mapping of gate name → result for every gate that did not pass.
 
