@@ -24,10 +24,10 @@ def test_resolve_run_dir_accepts_timestamp_and_fixture_ids(run_id: str, tmp_path
     assert resolved == (tmp_path / run_id).resolve()
 
 
-def test_resolve_path_within_runs_root_accepts_absolute_in_root(tmp_path: Path):
+def test_resolve_path_within_runs_root_rejects_absolute_in_root(tmp_path: Path):
     absolute_in_root = (tmp_path / "run_1" / "artifact.json").resolve()
-    resolved = resolve_path_within_runs_root(absolute_in_root, runs_root=tmp_path)
-    assert resolved == absolute_in_root
+    with pytest.raises(InvalidRunIdError):
+        resolve_path_within_runs_root(absolute_in_root, runs_root=tmp_path)
 
 
 def test_resolve_path_within_runs_root_rejects_absolute_out_of_root(tmp_path: Path):
@@ -121,8 +121,8 @@ def test_resolve_path_within_runs_root_with_symlinked_root_stays_contained(tmp_p
 def test_json_export_containment_uses_shared_rules_for_absolute_and_relative(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("src.exporters.json_export.RUNS_DIR", tmp_path)
 
-    safe_absolute = _ensure_within_runs_dir((tmp_path / "run_meta.json").resolve())
-    assert safe_absolute.path == (tmp_path / "run_meta.json").resolve()
+    with pytest.raises(ValueError, match="Refusing to write outside runs directory"):
+        _ensure_within_runs_dir((tmp_path / "run_meta.json").resolve())
 
     with pytest.raises(ValueError, match="Refusing to write outside runs directory"):
         _ensure_within_runs_dir((tmp_path.parent / "oops.json").resolve())
