@@ -352,7 +352,7 @@ def answer_follow_up(
         unresolved_points=unresolved,
         requires_additional_research=bool(unresolved),
     ).model_dump(mode="json")
-    export_follow_up(safe_run_id, payload)
+    export_follow_up(safe_run_id, payload, runs_root=RUNS_DIR)
     return payload
 
 
@@ -443,8 +443,8 @@ def run_bounded_follow_up(
         "run_id": run_id,
         "attempted_questions": len(attempts),
         "max_questions": max_questions,
-        "closure_iteration": 1,
-        "max_closure_iterations": 1,
+        "closure_pass": 1,
+        "max_closure_passes": 1,
         "stop_reason": stop_reason,
         "attempts": attempts,
         "resolved_questions": resolved_questions,
