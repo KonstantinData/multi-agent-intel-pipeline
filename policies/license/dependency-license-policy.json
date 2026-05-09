@@ -13,7 +13,10 @@
     "PSFL",
     "Unlicense",
     "CC0-1.0",
-    "MPL-2.0"
+    "MPL-2.0",
+    "0BSD",
+    "Zlib",
+    "CNRI-Python-GPL-Compatible"
   ],
   "denied": [
     "GPL-2.0",

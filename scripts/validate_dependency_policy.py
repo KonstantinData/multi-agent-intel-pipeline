@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import re
+from email.message import Message
 from datetime import date
 from pathlib import Path
 
@@ -67,6 +68,17 @@ _LICENSE_ALIASES: dict[str, str] = {
     # Unlicense / CC0
     "the unlicense": "Unlicense",
     "cc0 1.0 universal": "CC0-1.0",
+
+    "dual license": "MIT OR Apache-2.0",
+    "3-clause bsd license": "BSD-3-Clause",
+    "mit-cmu": "MIT",
+    "apache-2.0 and cnri-python": "Apache-2.0 AND CNRI-Python-GPL-Compatible",
+    "apache-2.0 or bsd-3-clause": "Apache-2.0 OR BSD-3-Clause",
+    "apache-2.0 or bsd-2-clause": "Apache-2.0 OR BSD-2-Clause",
+    "mit or apache-2.0": "MIT OR Apache-2.0",
+    "mpl-2.0 and mit": "MPL-2.0 AND MIT",
+    "bsd-3-clause and 0bsd and mit and zlib and cc0-1.0": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+    "bsd license (see license.txt for details), copyright (c) 2000-2025, reportlab inc.": "BSD-3-Clause",
     # GPL (denied)
     "gpl": "GPL-2.0",
     "gpl v2": "GPL-2.0",
@@ -118,6 +130,24 @@ def _normalize_license(raw: str) -> str:
     return first_line
 
 
+def _all_classifier_values(meta: Message) -> list[str]:
+    return [v for v in meta.get_all("Classifier", []) if v]
+
+
+def _license_tokens(value: str) -> set[str]:
+    parts = re.split(r"\s+(?:AND|OR|WITH)\s+|[(),]", value)
+    return {p.strip() for p in parts if p.strip()}
+
+
+def _is_allowed_expression(lic: str, allowed: set[str], denied: set[str]) -> bool:
+    tokens = {_normalize_license(t) for t in _license_tokens(lic)}
+    if not tokens:
+        return False
+    if any(t in denied for t in tokens):
+        return False
+    return all((t in allowed) for t in tokens)
+
+
 def _locked_packages(lock_path: Path) -> set[str]:
     """Return normalised package names present in a requirements.lock file."""
     result: set[str] = set()
@@ -150,10 +180,16 @@ def validate_licenses(policy: dict, lock_file: Path | None = None) -> list[str]:
         raw_license = dist.metadata.get("License") or dist.metadata.get("License-Expression") or "Unknown"
         lic = _normalize_license(raw_license)
 
+        if lic in {"Unknown", "UNKNOWN", "unknown", ""}:
+            classifiers = _all_classifier_values(dist.metadata)
+            classifier_licenses = [c.split("::")[-1].strip() for c in classifiers if "License ::" in c]
+            if classifier_licenses:
+                lic = _normalize_license(classifier_licenses[-1])
+
         if lic in denied:
             if name.lower() not in exception_packages:
                 failures.append(f"{name}: denied license '{lic}'")
-        elif lic not in allowed:
+        elif lic not in allowed and not _is_allowed_expression(lic, allowed, denied):
             if unknown_action == "block" and name.lower() not in exception_packages:
                 failures.append(f"{name}: unknown license '{lic}' (block policy)")
     return failures
