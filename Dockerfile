@@ -13,7 +13,7 @@ RUN addgroup --system liquisto && adduser --system --ingroup liquisto liquisto
 
 COPY requirements.lock requirements.lock
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir -r requirements.lock
+    && python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY --chown=liquisto:liquisto . .
 
