@@ -467,10 +467,10 @@ jobs:
             -v "$PWD:/project" \
             -v "$PWD/bom/sbom:/bom" \
             "$SYFT_IMAGE" dir:/project \
-            --exclude '/project/.git/**' \
-            --exclude '/project/.mypy_cache/**' \
-            --exclude '/project/.ruff_cache/**' \
-            --exclude '/project/bom/**' \
+            --exclude './.git/**' \
+            --exclude './.mypy_cache/**' \
+            --exclude './.ruff_cache/**' \
+            --exclude './bom/**' \
             -o cyclonedx-json=/bom/sbom.json
       - name: Validate SBOM
         run: python scripts/validate_sbom.py bom/sbom/sbom.json
