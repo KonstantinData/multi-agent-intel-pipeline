@@ -98,10 +98,9 @@ def resolve_path_within_runs_root(
     root = Path(runs_root).resolve(strict=False)
     candidate_text = str(candidate_path or "").strip()
 
-    # Validate lexical safety before constructing a Path from user-derived text.
-    if str(candidate_path).startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", candidate_text):
-        candidate_input = Path(candidate_text)
-        candidate_resolved = candidate_input.resolve(strict=False)
+    # Absolute paths are allowed only for already-materialized Path objects.
+    if isinstance(candidate_path, Path) and candidate_path.is_absolute():
+        candidate_resolved = candidate_path.resolve(strict=False)
         try:
             rel = candidate_resolved.relative_to(root)
         except ValueError as exc:
