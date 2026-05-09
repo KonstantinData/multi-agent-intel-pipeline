@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 - subprocess is required to invoke pip-audit as a separate tool
 import sys
 from datetime import date
 from pathlib import Path
@@ -44,7 +44,7 @@ def main() -> None:
         "--format", "json",
         "-r", str(LOCKFILE),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)  # nosec B603 - command is static and shell is not used
     raw = result.stdout.strip()
 
     try:
