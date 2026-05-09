@@ -5,8 +5,8 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import re
-from email.message import Message
 from datetime import date
+from email.message import Message
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
