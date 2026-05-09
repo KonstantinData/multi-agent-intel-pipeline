@@ -91,23 +91,17 @@ def resolve_path_within_runs_root(
 ) -> Path:
     """Resolve ``candidate_path`` and enforce containment under ``runs_root``.
 
-    Absolute inputs are accepted only when already under ``runs_root``.
-    Relative inputs are resolved from ``runs_root`` and must not contain
-    traversal-like segments.
+    Only relative path inputs are accepted. Inputs are resolved from
+    ``runs_root`` and must not contain traversal-like segments.
     """
     root = Path(runs_root).resolve(strict=False)
     candidate_text = str(candidate_path or "").strip()
 
-    # Absolute paths are allowed only for already-materialized Path objects.
+    # Reject absolute path forms; only relative artifact paths are supported.
     if isinstance(candidate_path, Path) and candidate_path.is_absolute():
-        candidate_resolved = candidate_path.resolve(strict=False)
-        try:
-            rel = candidate_resolved.relative_to(root)
-        except ValueError as exc:
-            raise InvalidRunIdError("Invalid run_id.") from exc
-        safe_relative_text = _validate_relative_artifact_path_text(str(rel))
-    else:
-        safe_relative_text = _validate_relative_artifact_path_text(candidate_text)
+        raise InvalidRunIdError("Invalid run_id.")
+
+    safe_relative_text = _validate_relative_artifact_path_text(candidate_text)
 
     safe_relative_parts = _validated_relative_artifact_parts(safe_relative_text)
     candidate = root.joinpath(*safe_relative_parts).resolve(strict=False)
