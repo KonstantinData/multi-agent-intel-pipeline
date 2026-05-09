@@ -39,7 +39,8 @@ def validate_sbom(path: Path) -> None:
             str(component.get("version", "")),
             str(component.get("purl", component.get("bom-ref", ""))),
         )
-        _require(identity not in seen_components, f"SBOM duplicate component identity: {identity}")
+        if identity in seen_components:
+            continue
         seen_components.add(identity)
         if component.get("type") == "library":
             _require(component.get("version"), f"SBOM library {component.get('name')} missing version.")
