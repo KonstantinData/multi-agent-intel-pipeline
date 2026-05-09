@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 
-
 ALLOWED_SKIPS = {"integration-tests", "provenance-gate"}
 
 
