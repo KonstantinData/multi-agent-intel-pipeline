@@ -21,7 +21,6 @@ from src.orchestration.run_paths import (
     RUNS_DIR,
     InvalidRunIdError,
     resolve_path_within_runs_root,
-    resolve_run_dir,
     validate_run_id,
 )
 
@@ -36,19 +35,13 @@ class SafeRunPath:
 
 
 def _ensure_within_runs_dir(path: str | Path, runs_root: Path | None = None) -> SafeRunPath:
-    """Resolve and enforce that ``path`` is contained in the trusted runs root."""
+    """Resolve and enforce that ``path`` is a relative artifact path contained in the trusted runs root."""
     effective_root = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
-    candidate = Path(path)
-    if candidate.is_absolute():
-        resolved = candidate.resolve(strict=False)
-        try:
-            resolved.relative_to(effective_root)
-        except ValueError as exc:
-            raise ValueError("Refusing to write outside runs directory.") from exc
-        return SafeRunPath(path=resolved)
     try:
         resolved = resolve_path_within_runs_root(path, runs_root=effective_root)
     except InvalidRunIdError as exc:
+        if Path(path).is_absolute():
+            raise ValueError("Refusing to write outside runs directory.") from exc
         raise ValueError("Invalid relative artifact path.") from exc
     return SafeRunPath(path=resolved)
 
@@ -74,10 +67,14 @@ def atomic_write_json(target: SafeRunPath, payload: Any, runs_root: Path | None 
         temp_path = Path(temp_name).resolve(strict=False)
         if temp_path.parent != safe_parent.resolve(strict=False):
             raise ValueError("Temporary file escaped the target directory.")
-    safe_target = _ensure_within_runs_dir(target.path, runs_root).path
-    # Explicit containment assertions before replace for hardening/static-analysis clarity.
-    safe_temp = _ensure_within_runs_dir(temp_path, runs_root).path
-    safe_temp.replace(safe_target)
+    runs_root_resolved = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
+    # Explicit containment before replace — breaks taint chain for static analysis.
+    try:
+        target.path.relative_to(runs_root_resolved)
+        temp_path.relative_to(runs_root_resolved)
+    except ValueError as exc:
+        raise ValueError("Refusing to write outside runs directory.") from exc
+    temp_path.replace(target.path)
 
 
 def _sanitize_pipeline_data_for_status(
@@ -137,12 +134,13 @@ def export_run(
     budget: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> None:
-    safe_run_dir = _ensure_within_runs_dir(run_dir)
+    safe_run_id = validate_run_id(run_id)
+    safe_run_dir = _ensure_within_runs_dir(safe_run_id)
     safe_run_dir.path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).isoformat()
 
     run_meta = {
-        "run_id": run_id,
+        "run_id": safe_run_id,
         "timestamp": timestamp,
         "company_name": company_name,
         "web_domain": web_domain,
@@ -156,17 +154,17 @@ def export_run(
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
 
-    atomic_write_json(_ensure_within_runs_dir(safe_run_dir.path / "run_meta.json"), run_meta)
-    atomic_write_json(_ensure_within_runs_dir(safe_run_dir.path / "chat_history.json"), chat_history)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_meta.json"), run_meta)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json"), chat_history)
     sanitized_pipeline_data = _sanitize_pipeline_data_for_status(
         status=status,
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
-    atomic_write_json(_ensure_within_runs_dir(safe_run_dir.path / "pipeline_data.json"), sanitized_pipeline_data)
-    atomic_write_json(_ensure_within_runs_dir(safe_run_dir.path / "run_context.json"), run_context)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/pipeline_data.json"), sanitized_pipeline_data)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_context.json"), run_context)
     atomic_write_json(
-        _ensure_within_runs_dir(safe_run_dir.path / "memory_snapshot.json"),
+        _ensure_within_runs_dir(f"{safe_run_id}/memory_snapshot.json"),
         run_context.get("short_term_memory", {}),
     )
     if sanitized_pipeline_data:
@@ -174,28 +172,26 @@ def export_run(
             from src.exporters.pdf_report import generate_pdf
 
             for lang in ("de", "en"):
-                file_name = f"liquisto_briefing_{run_id}_{lang.upper()}.pdf"
+                file_name = f"liquisto_briefing_{safe_run_id}_{lang.upper()}.pdf"
                 pdf_payload = dict(sanitized_pipeline_data)
-                pdf_payload.setdefault("run_id", run_id)
+                pdf_payload.setdefault("run_id", safe_run_id)
                 export_binary_artifact(
                     run_dir=safe_run_dir,
                     relative_path=f"reports/{file_name}",
                     content=generate_pdf(pdf_payload, lang=lang),
                 )
         except Exception as exc:  # pragma: no cover - non-fatal export hardening
-            logger.warning("pdf export failed for run %s: %s", run_id, exc)
+            logger.warning("pdf export failed for run %s: %s", safe_run_id, exc)
 
 
 def export_follow_up(run_id: str, follow_up_answer: dict[str, Any], *, runs_root: Path | None = None) -> None:
     """Append follow-up answer history; expects sanitized path only."""
     effective_root: Path = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
     safe_run_id = validate_run_id(run_id)
-    resolved_run_dir = resolve_run_dir(safe_run_id, runs_root=effective_root, must_exist=False)
-    safe_run_dir = _ensure_within_runs_dir(resolved_run_dir, effective_root)
+    safe_run_dir = _ensure_within_runs_dir(safe_run_id, effective_root)
     safe_run_dir.path.mkdir(parents=True, exist_ok=True)
-    safe_target = _ensure_within_runs_dir(safe_run_dir.path / "follow_up_history.json", effective_root)
-    lock_path = safe_target.path.with_name(safe_target.path.name + ".lock")
-    safe_lock_path = _ensure_within_runs_dir(lock_path, effective_root)
+    safe_target = _ensure_within_runs_dir(f"{safe_run_id}/follow_up_history.json", effective_root)
+    safe_lock_path = _ensure_within_runs_dir(f"{safe_run_id}/follow_up_history.json.lock", effective_root)
     lock = FileLock(str(safe_lock_path.path))
     with lock:
         history: list[dict[str, Any]] = []
