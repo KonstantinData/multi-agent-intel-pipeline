@@ -401,7 +401,6 @@ jobs:
     needs: runtime-contract-tests
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
     steps:
@@ -475,7 +474,6 @@ jobs:
     needs: sbom-gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       id-token: write
