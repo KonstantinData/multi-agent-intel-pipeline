@@ -31,10 +31,10 @@ charset-normalizer==3.4.7
     #   requests
 click==8.3.3
     # via streamlit
-colorama==0.4.6
-    # via
-    #   click
-    #   tqdm
+cryptography==48.0.0
+    # via secretstorage
+cffi==2.0.0
+    # via cryptography
 distro==1.9.0
     # via openai
 fast-depends==3.0.8
@@ -64,6 +64,10 @@ jaraco-context==6.1.2
     # via keyring
 jaraco-functools==4.4.0
     # via keyring
+jeepney==0.9.0
+    # via
+    #   keyring
+    #   secretstorage
 jinja2==3.1.6
     # via
     #   altair
@@ -106,6 +110,8 @@ protobuf==6.33.6
     # via streamlit
 pyarrow==24.0.0
     # via streamlit
+pycparser==3.0
+    # via cffi
 pydantic==2.12.5
     # via
     #   -r requirements.txt
@@ -126,8 +132,6 @@ python-dotenv==1.2.2
     #   ag2
 pytz==2026.2
     # via pandas
-pywin32-ctypes==0.2.3
-    # via keyring
 pyyaml==6.0.3
     # via ag2
 referencing==0.37.0
@@ -146,6 +150,8 @@ rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
+secretstorage==3.5.0
+    # via keyring
 six==1.17.0
     # via python-dateutil
 smmap==5.0.3
