@@ -136,7 +136,7 @@ Display the private key (needed for GitHub Secrets):
 cat ~/.ssh/github_deploy
 ```
 
-Copy the entire output from `-----BEGIN OPENSSH PRIVATE KEY-----` to `-----END OPENSSH PRIVATE KEY-----` (inclusive).
+Copy the entire output from `-----BEGIN OPENSSH PRIVATE KEY-----` to `-----END OPENSSH PRIVATE KEY-----` (inclusive). <!-- pragma: allowlist secret -->
 
 ---
 
