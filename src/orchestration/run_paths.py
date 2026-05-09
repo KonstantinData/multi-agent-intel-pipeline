@@ -57,8 +57,8 @@ def _safe_run_id_to_dir(root: Path, safe_run_id: str) -> Path:
     return resolve_path_within_runs_root(safe_run_id, runs_root=root)
 
 
-def _validate_relative_artifact_path_text(path_text: str) -> str:
-    """Normalize and validate a relative artifact path text value."""
+def _validated_relative_artifact_parts(path_text: str) -> tuple[str, ...]:
+    """Return validated relative artifact path segments."""
     normalized = str(path_text or "").strip()
     if not normalized:
         raise InvalidRunIdError("Invalid run_id.")
@@ -73,10 +73,15 @@ def _validate_relative_artifact_path_text(path_text: str) -> str:
     if PureWindowsPath(normalized).is_absolute():
         raise InvalidRunIdError("Invalid run_id.")
 
-    parts = [part for part in re.split(r"[\\/]+", normalized) if part]
-    if any(part in (".", "..") for part in parts):
+    parts = tuple(part for part in re.split(r"[\\/]+", normalized) if part)
+    if not parts or any(part in (".", "..") for part in parts):
         raise InvalidRunIdError("Invalid run_id.")
-    return normalized
+    return parts
+
+
+def _validate_relative_artifact_path_text(path_text: str) -> str:
+    """Normalize and validate a relative artifact path text value."""
+    return "/".join(_validated_relative_artifact_parts(path_text))
 
 
 def resolve_path_within_runs_root(
@@ -105,8 +110,8 @@ def resolve_path_within_runs_root(
     else:
         safe_relative_text = _validate_relative_artifact_path_text(candidate_text)
 
-    safe_relative_path = Path(safe_relative_text)
-    candidate = (root / safe_relative_path).resolve(strict=False)
+    safe_relative_parts = _validated_relative_artifact_parts(safe_relative_text)
+    candidate = root.joinpath(*safe_relative_parts).resolve(strict=False)
     try:
         candidate.relative_to(root)
     except ValueError as exc:
