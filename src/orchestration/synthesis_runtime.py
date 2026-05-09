@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from src.agents.synthesis_department import SynthesisDepartmentAgent
 from src.domain.intake import SupervisorBrief
 
 MessageHook = Callable[[dict[str, Any]], None] | None
@@ -14,6 +13,9 @@ class SynthesisRuntime:
     """Exposes the Strategic Synthesis Department as a runnable unit."""
 
     def __init__(self) -> None:
+        # Deferred to avoid pulling autogen into the module-import graph.
+        from src.agents.synthesis_department import SynthesisDepartmentAgent
+
         self.agent = SynthesisDepartmentAgent()
 
     def run(
