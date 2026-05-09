@@ -6,13 +6,15 @@ import json
 import os
 
 
+ALLOWED_SKIPS = {"integration-tests", "provenance-gate"}
+
+
 def evaluate_needs(needs: dict) -> dict[str, str]:
     """Return a mapping of gate name → result for every gate that did not pass.
 
-    A gate passes when its result is either "success" or "skipped".
+    A gate passes when its result is "success".
 
-    Skipped jobs are expected in this workflow when an upstream dependency
-    fails or when event-specific conditional jobs do not run.
+    Skipped jobs are only expected for gates listed in ALLOWED_SKIPS.
 
     Any other result (for example: failure or cancelled) is treated as a
     pipeline failure.
@@ -20,7 +22,8 @@ def evaluate_needs(needs: dict) -> dict[str, str]:
     return {
         name: meta["result"]
         for name, meta in sorted(needs.items())
-        if meta["result"] not in {"success", "skipped"}
+        if meta["result"] != "success"
+        and not (name in ALLOWED_SKIPS and meta["result"] == "skipped")
     }
 
 
