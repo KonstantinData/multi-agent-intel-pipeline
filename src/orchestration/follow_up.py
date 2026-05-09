@@ -443,7 +443,7 @@ def run_bounded_follow_up(
         "run_id": run_id,
         "attempted_questions": len(attempts),
         "max_questions": max_questions,
-        "closure_pass": 1,
+        "closure_pass": 1,  # nosec B105 - iteration counter, not a password
         "max_closure_passes": 1,
         "stop_reason": stop_reason,
         "attempts": attempts,
