@@ -392,7 +392,7 @@ def salvage_valid_fields(section: str, payload_updates: dict[str, Any]) -> dict[
             try:
                 model_cls.model_validate({key: coerced})
                 salvaged[key] = coerced
-            except Exception:
+            except Exception:  # nosec B110 - best-effort salvage for partially valid fields
                 pass
     return salvaged
 

@@ -151,7 +151,7 @@ def fetch_website_snapshot(url: str, *, timeout: int = 8) -> dict[str, str | boo
             cleaned_url,
             headers={"User-Agent": "Mozilla/5.0 (compatible; LiquistoBot/1.0)"},
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310 - scheme is required and intended for web/PDF fetch
             content_type = str(response.headers.get("Content-Type", "") or "")
             charset = getattr(response.headers, "get_content_charset", lambda: None)()
             if charset and "charset=" not in content_type.lower():
