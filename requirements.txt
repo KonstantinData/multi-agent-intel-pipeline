@@ -1,5 +1,5 @@
 ag2>=0.12.3,<0.13
-filelock>=3.20.3,<4
+filelock>=3.29.0,<4
 keyring>=25.6.0,<26
 openai>=2.29.0,<3
 pydantic>=2.12.5,<3
