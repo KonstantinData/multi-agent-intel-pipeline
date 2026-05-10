@@ -6,4 +6,4 @@ pydantic>=2.12.5,<3
 pypdf>=6.10.2,<7
 python-dotenv>=1.2.2,<2
 streamlit>=1.55.0,<2
-reportlab>=4.4.10,<5
+reportlab>=4.5.0,<5
