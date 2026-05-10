@@ -25,18 +25,55 @@ class _OkHandler(BaseHTTPRequestHandler):
 def test_load_openai_api_key_rejects_empty_or_commented_value(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    (tmp_path / ".env").write_text("# OPENAI_API_KEY=test\nOPENAI_API_KEY=\n", encoding="utf-8")
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": ""})
     with pytest.raises(ValueError):
         preflight._load_openai_api_key()
 
 
-def test_load_openai_api_key_accepts_non_empty_env_file(tmp_path, monkeypatch):
+def test_load_openai_api_key_ignores_env_file_even_when_legacy_flag_is_set(tmp_path, monkeypatch):
     monkeypatch.setattr(preflight, "ROOT", tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    (tmp_path / ".env").write_text("OPENAI_API_KEY=test-key\n", encoding="utf-8")
+    monkeypatch.setenv("LIQUISTO_ALLOW_DOTENV_SECRETS", "1")
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "test-key"})  # pragma: allowlist secret
+    with pytest.raises(ValueError):
+        preflight._load_openai_api_key()
+
+
+def test_load_openai_api_key_ignores_env_file_by_default(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LIQUISTO_ALLOW_DOTENV_SECRETS", raising=False)
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})  # pragma: allowlist secret
+    with pytest.raises(ValueError):
+        preflight._load_openai_api_key()
+
+
+def test_load_openai_api_key_prefers_process_environment(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "process-key")
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})  # pragma: allowlist secret
     key, source = preflight._load_openai_api_key()
-    assert key == "test-key"
-    assert source == ".env"
+    assert key == "process-key"
+    assert source == "environment"
+
+
+def test_load_openai_api_key_reads_os_keyring_before_env_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "keyring-key")  # pragma: allowlist secret
+    monkeypatch.setattr("src.config.settings._dotenv_lookup", lambda: {"OPENAI_API_KEY": "file-key"})  # pragma: allowlist secret
+    key, source = preflight._load_openai_api_key()
+    assert key == "keyring-key"
+    assert source == "keyring:liquisto-department-runtime/OPENAI_API_KEY"
+
+
+def test_preflight_credential_status_does_not_expose_source(monkeypatch):
+    monkeypatch.setattr(preflight, "_load_openai_api_key", lambda: ("test-key", "keyring:service/OPENAI_API_KEY"))
+
+    assert preflight._model_api_credential_status() == "configured"
 
 
 def test_port_status_accepts_reachable_local_http_service():
@@ -54,25 +91,6 @@ def test_port_status_accepts_reachable_local_http_service():
 
 def test_pure_modules_importable():
     """Verify that architecture-layer modules can be imported without AG2."""
-    import src.orchestration.contracts
-    import src.orchestration.follow_up
-    import src.orchestration.task_router
-    import src.orchestration.tool_policy
-    import src.orchestration.synthesis
-    import src.orchestration.run_context
-    import src.memory.short_term_store
-    import src.memory.consolidation
-    import src.memory.policies
-    import src.models.registry
-    import src.models.schemas
-    import src.app.use_cases
-    import src.domain.intake
-    import src.agents.critic
-    import src.agents.judge
-    import src.agents.supervisor
-    import src.agents.specs
-    import src.agents.registry
-    import src.orchestration.speaker_selector
 
 
 def test_dependency_graph_is_valid():
@@ -141,6 +159,7 @@ def test_report_writer_exists_as_runtime_agent():
 def test_pipeline_runner_requires_report_writer_agent():
     """pipeline_runner should access agents['report_writer'] for report assembly."""
     import inspect
+
     from src import pipeline_runner
     source = inspect.getsource(pipeline_runner.run_pipeline)
     assert 'agents["report_writer"]' in source or "agents['report_writer']" in source
@@ -197,7 +216,7 @@ def test_phase_invariants_match_backlog():
     """P2-3: All research tasks must belong to exactly one department."""
     from src.app.use_cases import STANDARD_TASK_BACKLOG
     all_owned = set()
-    for dept, keys in _DEPARTMENT_TASK_OWNERSHIP.items():
+    for _dept, keys in _DEPARTMENT_TASK_OWNERSHIP.items():
         overlap = all_owned & keys
         assert not overlap, f"Tasks {overlap} assigned to multiple departments"
         all_owned |= keys
@@ -260,8 +279,8 @@ def test_sequential_departments_respect_order():
 def test_no_cross_domain_strategic_analyst_references():
     """P2-1: CrossDomainStrategicAnalyst must not appear in any active registry."""
     from src.config.settings import ROLE_MODEL_DEFAULTS, ROLE_STRUCTURED_MODEL_DEFAULTS
-    from src.orchestration.tool_policy import BASE_TOOL_POLICY, TASK_TOOL_OVERRIDES
     from src.memory.consolidation import MEMORY_ROLE_STATUS
+    from src.orchestration.tool_policy import BASE_TOOL_POLICY, TASK_TOOL_OVERRIDES
 
     assert "CrossDomainStrategicAnalyst" not in ROLE_MODEL_DEFAULTS
     assert "CrossDomainStrategicAnalyst" not in ROLE_STRUCTURED_MODEL_DEFAULTS
@@ -305,4 +324,3 @@ def test_no_input_artifacts_in_backlog():
 
 def test_envelope_module_importable():
     """P0-5: envelope.py must be importable as a pure module."""
-    import src.orchestration.envelope

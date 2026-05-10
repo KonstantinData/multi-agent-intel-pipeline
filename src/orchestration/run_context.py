@@ -36,7 +36,7 @@ class RunContext:
         model_name: str | None = None,
         allowed_tools: tuple[str, ...] | list[str] | None = None,
     ) -> None:
-        entry = {"assignee": assignee, "objective": objective, "section": section, "status": status}
+        entry: dict[str, Any] = {"assignee": assignee, "objective": objective, "section": section, "status": status}
         if task_key:
             entry["task_key"] = task_key
         if model_name:
@@ -70,7 +70,7 @@ class RunContext:
 
 
     @classmethod
-    def from_snapshot(cls, payload: dict[str, Any]) -> "RunContext":
+    def from_snapshot(cls, payload: dict[str, Any]) -> RunContext:
         return cls(
             run_id=str(payload.get("run_id", "")),
             intake=dict(payload.get("intake", {})),

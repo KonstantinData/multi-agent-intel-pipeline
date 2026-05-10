@@ -8,13 +8,14 @@ Migration rule: the resolver must NOT proceed until these tests are green.
 from __future__ import annotations
 
 import os
+
 import pytest
 
 # Suppress LLM calls in tests
 os.environ.setdefault("PYTEST_CURRENT_TEST", "1")
 
 from src.domain.intake import SupervisorBrief
-from src.research.query_resolver import resolve_queries, clear_strategy_cache
+from src.research.query_resolver import clear_strategy_cache, resolve_queries
 
 # ---------------------------------------------------------------------------
 # Fixed brief fixture — identical for every task to ensure deterministic output
@@ -148,13 +149,14 @@ def test_parity_contact_discovery_no_buyers() -> None:
 
 
 # ---------------------------------------------------------------------------
-# query_overrides semantics (Option A — preserve or-idiom exactly)
+# query_overrides semantics (KB-owned strategy variant tokens)
 # ---------------------------------------------------------------------------
 
-def test_override_non_empty_skips_resolver() -> None:
-    overrides = ["custom query A", "custom query B"]
+def test_override_non_empty_resolves_strategy_variant() -> None:
+    overrides = ["strategy:company_fundamentals:method_refinement"]
     result = resolve_queries("company_fundamentals", _BRIEF, query_overrides=overrides)
-    assert result == overrides
+    assert result
+    assert all("acme" in query.lower() or "acme-automotive.de" in query.lower() for query in result)
 
 
 def test_override_empty_list_falls_through_to_resolver() -> None:
@@ -169,6 +171,23 @@ def test_override_none_uses_resolver() -> None:
     result = resolve_queries("company_fundamentals", _BRIEF, query_overrides=None)
     assert isinstance(result, list)
     assert len(result) > 0
+
+
+@pytest.mark.parametrize("overrides", [["<firma> annual report"], ["{unknown} revenue"], [""], ["custom query A"]])
+def test_override_validation_rejects_free_form_or_empty_values(overrides) -> None:
+    from src.research.query_resolver import validate_query_overrides
+
+    with pytest.raises(ValueError):
+        validate_query_overrides(overrides)
+
+
+def test_override_rejects_mismatched_task_key() -> None:
+    with pytest.raises(ValueError):
+        resolve_queries(
+            "company_fundamentals",
+            _BRIEF,
+            query_overrides=["strategy:market_situation:method_refinement"],
+        )
 
 
 # ---------------------------------------------------------------------------

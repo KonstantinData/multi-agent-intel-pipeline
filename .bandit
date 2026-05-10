@@ -1,0 +1,3 @@
+[bandit]
+exclude = tests,scripts/manual_validation
+skips = B101

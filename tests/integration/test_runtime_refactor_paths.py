@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.models.meeting_ready import MeetingReadinessAssessment
 from src.exporters.json_export import export_run
+from src.models.meeting_ready import MeetingReadinessAssessment
 from src.orchestration.run_context import RunContext
 
 
@@ -14,7 +14,7 @@ def test_export_run_persists_pdf_reports(tmp_path, monkeypatch):
     run_dir = tmp_path / "pdf_export"
 
     def _fake_generate_pdf(pipeline_data: dict, *, lang: str = "de") -> bytes:
-        return f"%PDF-{lang}".encode("utf-8")
+        return f"%PDF-{lang}".encode()
 
     monkeypatch.setattr(pdf_report, "generate_pdf", _fake_generate_pdf)
 

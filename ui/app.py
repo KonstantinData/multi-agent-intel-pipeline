@@ -22,7 +22,9 @@ from src.config import summarize_runtime_models
 from src.exporters.json_export import export_binary_artifact
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
-from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline, resume_pipeline
+from src.orchestration.run_paths import InvalidRunIdError, resolve_run_dir, validate_run_id
+from src.app.pipeline_metadata import AGENT_META, PIPELINE_STEPS
+from src.pipeline_runner import run_pipeline, resume_pipeline
 from ui.components.dashboard_renderer import render_dashboard
 from ui.i18n import (
     confidence_badge,
@@ -216,7 +218,7 @@ def _build_pdf_export(lang: str) -> tuple[bytes, str]:
     pdf_payload.setdefault("run_id", st.session_state.run_id)
     pdf_bytes = generate_pdf(pdf_payload, lang=lang)
     export_binary_artifact(
-        run_dir=RUNS_DIR / st.session_state.run_id,
+        run_dir=resolve_run_dir(st.session_state.run_id, runs_root=RUNS_DIR),
         relative_path=f"reports/{file_name}",
         content=pdf_bytes,
     )
@@ -646,14 +648,19 @@ def _render_follow_up_panel(L: dict) -> None:
         if not run_id.strip() or not question.strip():
             st.warning(L["followup_required"])
         else:
+            try:
+                safe_run_id = validate_run_id(run_id.strip())
+            except InvalidRunIdError:
+                st.warning(L["followup_required"])
+                return
             with st.spinner(L["followup_routing"]):
                 try:
-                    artifact = load_run_artifact(run_id.strip())
+                    artifact = load_run_artifact(safe_run_id)
                     from src.agents.supervisor import SupervisorAgent
                     supervisor = SupervisorAgent()
                     route = supervisor.route_question(question=question.strip(), source="user_ui")
                     answer = answer_follow_up(
-                        run_id=run_id.strip(),
+                        run_id=safe_run_id,
                         route=route["route"],
                         question=question.strip(),
                         pipeline_data=artifact["pipeline_data"],
@@ -661,7 +668,7 @@ def _render_follow_up_panel(L: dict) -> None:
                     )
                     st.session_state.follow_up_answer = {**answer, "route_reason": route["reason"]}
                 except FileNotFoundError:
-                    st.error(f"{L['followup_not_found']}: '{run_id.strip()}'")
+                    st.error(f"{L['followup_not_found']}: '{safe_run_id}'")
                 except Exception as exc:
                     st.error(f"{L['followup_error']}: {exc}")
 

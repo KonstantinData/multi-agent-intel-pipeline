@@ -14,7 +14,7 @@ All consumers MUST use these resolvers instead of ad-hoc ``.get()`` chains.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 def is_envelope(pkg: dict[str, Any]) -> bool:
@@ -48,29 +48,29 @@ def resolve_admitted_payload(pkg: dict[str, Any]) -> dict[str, Any] | None:
 def resolve_admission(pkg: dict[str, Any]) -> dict[str, Any]:
     """Extract the admission metadata dict."""
     if is_envelope(pkg):
-        return pkg.get("admission", {})
+        return cast(dict[str, Any], pkg.get("admission", {}))
     return {"decision": "unknown", "reason": "not an envelope", "downstream_visible": True}
 
 
 def resolve_report_segment(pkg: dict[str, Any]) -> dict[str, Any]:
     """Extract report_segment from an envelope or raw package."""
     raw = resolve_raw_package(pkg)
-    return raw.get("report_segment", {})
+    return cast(dict[str, Any], raw.get("report_segment", {}))
 
 
 def resolve_visual_focus(pkg: dict[str, Any]) -> list[str]:
     """Extract visual_focus from an envelope or raw package."""
     raw = resolve_raw_package(pkg)
-    return raw.get("visual_focus", [])
+    return cast(list[str], raw.get("visual_focus", []))
 
 
 def resolve_confidence(pkg: dict[str, Any]) -> str:
     """Extract confidence from an envelope or raw package."""
     raw = resolve_raw_package(pkg)
-    return raw.get("confidence", "low")
+    return cast(str, raw.get("confidence", "low"))
 
 
 def resolve_open_questions(pkg: dict[str, Any]) -> list[str]:
     """Extract open_questions from an envelope or raw package."""
     raw = resolve_raw_package(pkg)
-    return raw.get("open_questions", [])
+    return cast(list[str], raw.get("open_questions", []))

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.agents.report_writer import ReportWriterAgent
-from src.exporters.pdf_report import _select_composed_report
+from src.exporters.report_utils import select_composed_report
 from src.orchestration.report_knowledge import load_report_blueprint
 
 
@@ -129,7 +129,7 @@ def test_select_composed_report_prefers_valid_language_and_falls_back():
             "en": {"passed": True},
         },
     }
-    selected_de = _select_composed_report(report_package, "de")
+    selected_de = select_composed_report(report_package, "de")
     assert selected_de.get("executive_summary") == "Zusammenfassung DE"
-    selected_en = _select_composed_report(report_package, "en")
+    selected_en = select_composed_report(report_package, "en")
     assert selected_en.get("executive_summary") == "Summary EN"

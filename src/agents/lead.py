@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Department Lead / Analyst — contract-driven, execution-autonomous AG2 GroupChat.
 
 Departments are **question-coverage contributors**, not final-briefing owners.
@@ -47,9 +48,31 @@ The Lead drives the internal workflow through its messages.
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
-from typing import Annotated, Any, Callable, Literal
+import re
+from collections.abc import Callable
+from typing import Annotated, Any, Literal
+
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _safe_prompt_text(value: Any) -> str:
+    """Neutralize untrusted text before embedding it in prompt/HTML-like traces."""
+    text = _CONTROL_CHARS_RE.sub("", str(value or ""))
+    return html.escape(text, quote=True)
+
+
+def _safe_output_value(value: Any) -> Any:
+    """HTML-encode strings in dynamic package output while preserving shape."""
+    if isinstance(value, str):
+        return _safe_prompt_text(value)
+    if isinstance(value, list):
+        return [_safe_output_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _safe_output_value(item) for key, item in value.items()}
+    return value
 
 
 def _dedup(items: list) -> list:
@@ -87,7 +110,6 @@ def _dedup_model_dump(items: list[Any]) -> list[dict[str, Any]]:
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
 from src.agents.coding_assistant import CodingAssistantAgent
-from src.orchestration.speaker_selector import build_department_selector
 from src.agents.critic import CriticAgent
 from src.agents.judge import JudgeAgent
 from src.agents.worker import ResearchWorker
@@ -100,8 +122,8 @@ from src.config.settings import (
 from src.domain.intake import SupervisorBrief
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import DepartmentPackage, DomainReportSegment
+from src.orchestration.contract_validation import validate_payload_against_task_schema
 from src.orchestration.contracts import (
-    ContractViolation,
     DepartmentPolicy,
     DepartmentRunState,
     TaskArtifact,
@@ -113,67 +135,19 @@ from src.orchestration.department_knowledge import (
     load_department_policy,
     load_department_source_profile,
 )
-from src.orchestration.task_router import Assignment, DEPARTMENT_RESEARCHERS
+from src.orchestration.followup_config import FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT
+from src.orchestration.speaker_selector import build_department_selector
+from src.orchestration.task_router import DEPARTMENT_RESEARCHERS, Assignment
 from src.orchestration.tool_policy import resolve_allowed_tools
-from src.models.registry import resolve_output_schema
 from src.research.extract import extract_product_keywords, infer_industry
+from src.research.query_resolver import validate_query_overrides
 
 logger = logging.getLogger(__name__)
 
-_FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT = {
-    "CompanyDepartment": "company_profile",
-    "MarketDepartment": "industry_analysis",
-    "BuyerDepartment": "market_network",
-    "ContactDepartment": "contact_intelligence",
-}
+_FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT = FOLLOWUP_TARGET_SECTION_BY_DEPARTMENT
 
 
-def _validate_payload_against_task_schema(
-    schema_key: str,
-    payload_updates: dict[str, Any],
-) -> list[ContractViolation]:
-    """F4: Validate payload_updates (delta) against the task-level schema.
-
-    Returns a list of ContractViolation records.  Uses Pydantic validation
-    errors to produce structured violations.
-    """
-    if not schema_key:
-        return []
-    try:
-        schema_cls = resolve_output_schema(schema_key)
-    except KeyError:
-        return []
-    try:
-        schema_cls.model_validate(payload_updates)
-        return []
-    except Exception as exc:
-        violations: list[ContractViolation] = []
-        errors = getattr(exc, "errors", lambda: [])() if hasattr(exc, "errors") else []
-        if errors:
-            for err in errors:
-                field_path = ".".join(str(p) for p in err.get("loc", ["unknown"]))
-                err_type = str(err.get("type", "unknown"))
-                violation_type = "type_mismatch" if "type" in err_type else "missing_required_field"
-                violations.append(ContractViolation(
-                    field_path=field_path,
-                    violation_type=violation_type,
-                    severity="medium",
-                    message=str(err.get("msg", str(exc)))[:200],
-                ))
-        else:
-            violations.append(ContractViolation(
-                field_path="*",
-                violation_type="type_mismatch",
-                severity="high",
-                message=str(exc)[:200],
-            ))
-        # Severity escalation: if no expected field has a non-default value
-        schema_fields = set(schema_cls.model_fields.keys()) - {"sources"}
-        filled = {k for k, v in payload_updates.items() if k in schema_fields and v and v != "n/v"}
-        if not filled:
-            for v in violations:
-                v.severity = "high"
-        return violations
+_validate_payload_against_task_schema = validate_payload_against_task_schema
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -510,13 +484,10 @@ class DepartmentLeadAgent:
                         "blocked_by": dep_key,
                     }, ensure_ascii=False)
 
-            # Track attempts
-            attempt = run_state.attempts.get(task_key, 0)
-            run_state.attempts[task_key] = attempt + 1
-
             # Skip duplicate execution when no revision was requested.
             # Exception: blocked_by_dependency artifacts are NOT real completions —
             # if the dependency is now satisfied, the task must re-run.
+            current_attempt = run_state.attempts.get(task_key, 0)
             if (
                 task_key in run_state.task_artifacts
                 and task_key not in run_state.revision_requests
@@ -553,6 +524,27 @@ class DepartmentLeadAgent:
                             ensure_ascii=False,
                         )
                 elif needs_retry:
+                    if current_attempt >= MAX_TASK_RETRIES:
+                        decision = TaskDecisionArtifact(
+                            task_key=task_key,
+                            attempt=current_attempt,
+                            outcome="closed_unresolved",
+                            task_status="degraded",
+                            decided_by="runtime",
+                            confidence="low",
+                            open_questions=list(latest_review.missing_points or latest_review.issues or latest_review.rejected_points),
+                            reason=f"Retry limit reached ({MAX_TASK_RETRIES}); research closed unresolved.",
+                        )
+                        run_state.record_decision_artifact(decision)
+                        return json.dumps(
+                            {
+                                "task_key": task_key,
+                                "status": "retry_limit_reached",
+                                "next_required_action": f"judge_decision(task_key='{task_key}')",
+                                "open_questions": decision.open_questions[:5],
+                            },
+                            ensure_ascii=False,
+                        )
                     logger.info(
                         "run_research: task=%s has rejected latest review — allowing retry",
                         task_key,
@@ -571,6 +563,7 @@ class DepartmentLeadAgent:
                         ensure_ascii=False,
                     )
 
+            run_state.attempts[task_key] = current_attempt + 1
             logger.info(
                 "run_research: task=%s attempt=%d department=%s",
                 task_key, run_state.attempts[task_key], self.department,
@@ -736,6 +729,7 @@ class DepartmentLeadAgent:
             )
             try:
                 support = self.coding_assistant.suggest_queries(
+                    task_key=task_key,
                     section=assignment.target_section,
                     brief=brief,
                     issues=review_dict.get("issues", []),
@@ -748,13 +742,31 @@ class DepartmentLeadAgent:
                 logger.error("suggest_refined_queries failed: task=%s error=%s", task_key, exc)
                 return json.dumps({"error": f"suggest_refined_queries failed: {exc}", "task_key": task_key})
 
-            run_state.query_overrides[task_key] = support["query_overrides"]
-            run_state.record_coding_support(task_key, support["query_overrides"])
+            try:
+                validated_overrides = validate_query_overrides(support.get("query_overrides", []))
+            except (KeyError, ValueError) as exc:
+                err = {"tool": "suggest_refined_queries", "task_key": task_key, "error": str(exc)}
+                run_state.tool_errors.append(err)
+                return json.dumps(
+                    {"error": f"invalid query_overrides: {exc}", "task_key": task_key},
+                    ensure_ascii=False,
+                )
+
+            run_state.query_overrides[task_key] = validated_overrides
+            run_state.record_coding_support(task_key, validated_overrides)
+            run_state.strategy_changes.append({
+                "task_key": task_key,
+                "attempt": run_state.attempts.get(task_key, 0),
+                "agent": self.coding_name,
+                "reason": "coding_specialist_query_override",
+                "review_issue": list(review_dict.get("issues", []))[:5],
+                "query_override_count": len(validated_overrides),
+            })
 
             return json.dumps(
                 {
                     "task_key": task_key,
-                    "query_overrides": support["query_overrides"],
+                    "query_overrides": validated_overrides,
                     "summary": support["summary"],
                 },
                 ensure_ascii=False,
@@ -764,9 +776,50 @@ class DepartmentLeadAgent:
             task_key: Annotated[str, "The task_key to decide on"],
         ) -> str:
             """Make a final edge-case decision when retries are exhausted."""
+            assignment = next((a for a in assignments if a.task_key == task_key), None)
+            if not assignment:
+                return json.dumps({
+                    "error": f"Unknown task_key: {task_key}",
+                    "decision": "closed_unresolved",
+                    "task_status": "degraded",
+                    "confidence": "low",
+                    "open_questions": [f"Unknown task_key: {task_key}"],
+                }, ensure_ascii=False)
+
+            artifact = run_state.latest_artifact(task_key)
+            if artifact is None:
+                attempt = run_state.attempts.get(task_key, 0)
+                result = {
+                    "decision": "closed_unresolved",
+                    "task_status": "degraded",
+                    "confidence": "low",
+                    "reason": "Judge cannot accept a task before a TaskArtifact exists.",
+                    "open_questions": [f"Run run_research(task_key='{task_key}') before judge_decision."],
+                }
+                run_state.record_decision_artifact(
+                    TaskDecisionArtifact.from_judge_result(
+                        result, task_key=task_key, attempt=attempt
+                    )
+                )
+                return json.dumps(result, ensure_ascii=False)
+
             review = run_state.latest_review(task_key)
-            review_dict = review.to_dict() if review else {}
-            attempt = run_state.attempts.get(task_key, 0)
+            if review is None:
+                review = TaskReviewArtifact(
+                    task_key=task_key,
+                    attempt=artifact.attempt,
+                    approved=False,
+                    reviewer="runtime_fallback",
+                    issues=["No Critic review existed before judge_decision."],
+                    missing_points=list(artifact.open_questions),
+                    evidence_strength="weak",
+                    feedback_to_worker=[
+                        "Judge fallback review generated because no Critic review was stored."
+                    ],
+                )
+                run_state.record_review_artifact(review)
+            review_dict = review.to_dict()
+            attempt = artifact.attempt
 
             logger.info(
                 "judge_decision: task=%s attempt=%d department=%s",
@@ -782,6 +835,7 @@ class DepartmentLeadAgent:
                 err = {"tool": "judge_decision", "task_key": task_key, "error": str(exc)}
                 run_state.tool_errors.append(err)
                 result = {
+                    "decision": "closed_unresolved",
                     "task_status": "degraded",
                     "reason": f"Judge failed: {exc}",
                     "open_questions": [str(exc)],
@@ -858,7 +912,16 @@ class DepartmentLeadAgent:
                             f"{high_count} high-severity schema mismatches"
                         )
 
-                if decision:
+                if decision and not artifact:
+                    task_status = "degraded"
+                    task_accepted = []
+                    task_open = _dedup(
+                        decision.open_questions
+                        + [f"Decision for {task_key} ignored as accepted evidence because no TaskArtifact exists."]
+                    )
+                    task_sources = []
+                    task_summary = assignment.objective
+                elif decision:
                     # Primary path (CHG-07): use stored decision — no re-judging
                     task_status = decision.task_status
                     task_accepted = review.accepted_points if review else []
@@ -1029,6 +1092,22 @@ class DepartmentLeadAgent:
                 confidence = "medium"
             else:
                 confidence = "low"
+            safe_department = _safe_prompt_text(self.department)
+            safe_lead_name = _safe_prompt_text(self.name)
+            safe_summary = (
+                _safe_prompt_text(summary)
+                if summary
+                else f"{safe_department} investigation completed by {safe_lead_name}."
+            )
+            safe_package_summary = (
+                _safe_prompt_text(summary)
+                if summary
+                else f"{safe_department} domain package assembled by {safe_lead_name}."
+            )
+            safe_accepted_points = _safe_output_value(_dedup(accepted_points))
+            safe_open_questions = _safe_output_value(_dedup(open_questions))
+            safe_task_summaries = _safe_output_value(task_summaries)
+            safe_sources = _safe_output_value(sources[:12])
 
             # Lead-owned: classify goods for CompanyDepartment
             if self.department == "CompanyDepartment":
@@ -1044,26 +1123,26 @@ class DepartmentLeadAgent:
                         ]
 
             report_segment = DomainReportSegment(
-                department=self.department,
-                narrative_summary=summary or f"{self.department} investigation completed by {self.name}.",
+                department=safe_department,
+                narrative_summary=safe_summary,
                 confidence=confidence,
-                key_findings=_dedup(accepted_points)[:10],
-                open_questions=_dedup(open_questions)[:6],
+                key_findings=safe_accepted_points[:10],
+                open_questions=safe_open_questions[:6],
                 sources=[],
             ).model_dump(mode="json")
 
             package = DepartmentPackage.model_validate(
                 {
-                    "department": self.department,
-                    "target_section": assignments[0].target_section if assignments else "n/v",
-                    "summary": summary or f"{self.department} domain package assembled by {self.name}.",
-                    "section_payload": run_state.current_payload,
-                    "completed_tasks": task_summaries,
-                    "accepted_points": _dedup(accepted_points),
-                    "open_questions": _dedup(open_questions),
-                    "visual_focus": _VISUAL_FOCUS.get(self.department, []),
-                    "sources": sources[:12],
-                    "autogen_group": self.autogen_group_spec(),
+                    "department": safe_department,
+                    "target_section": _safe_prompt_text(assignments[0].target_section if assignments else "n/v"),
+                    "summary": safe_package_summary,
+                    "section_payload": _safe_output_value(run_state.current_payload),
+                    "completed_tasks": safe_task_summaries,
+                    "accepted_points": safe_accepted_points,
+                    "open_questions": safe_open_questions,
+                    "visual_focus": _safe_output_value(_VISUAL_FOCUS.get(self.department, [])),
+                    "sources": safe_sources,
+                    "autogen_group": _safe_output_value(self.autogen_group_spec()),
                     "report_segment": report_segment,
                     "confidence": confidence,
                     "evidence_packages": _dedup_model_dump(evidence_packages),
@@ -1156,7 +1235,7 @@ class DepartmentLeadAgent:
             name="suggest_refined_queries",
             description=(
                 "Suggest refined search queries to unblock a stuck research task. "
-                "Returns a list of query_overrides for the Researcher."
+                "Returns KB-owned query variant tokens for the Researcher."
             ),
         )
         register_function(
@@ -1222,7 +1301,10 @@ class DepartmentLeadAgent:
             },
             ensure_ascii=False,
         )
-        lead_ca.initiate_chat(manager, message=initiation_message)
+        try:
+            lead_ca.initiate_chat(manager, message=initiation_message)
+        finally:
+            self.worker.close()
 
         # ── Convert AG2 message history to event stream ────────────────────
         package_messages: list[dict[str, Any]] = []
@@ -1376,12 +1458,13 @@ class DepartmentLeadAgent:
             if artifact is None:
                 blocked_finalize_attempts += 1
                 if blocked_finalize_attempts >= 2:
+                    safe_question = _safe_prompt_text(question)
                     result_holder["report_segment"] = {
-                        "department": self.department,
-                        "narrative_summary": f"Follow-up for '{question}' remains unresolved after repeated finalize attempts without evidence.",
+                        "department": _safe_prompt_text(self.department),
+                        "narrative_summary": f"Follow-up for '{safe_question}' remains unresolved after repeated finalize attempts without evidence.",
                         "confidence": "low",
                         "key_findings": [],
-                        "open_questions": [question],
+                        "open_questions": [safe_question],
                         "sources": [],
                     }
                     return "FOLLOWUP_READY\nTERMINATE"
@@ -1396,12 +1479,12 @@ class DepartmentLeadAgent:
                 blocked_finalize_attempts += 1
                 if blocked_finalize_attempts >= 2:
                     result_holder["report_segment"] = {
-                        "department": self.department,
-                        "narrative_summary": summary,
+                        "department": _safe_prompt_text(self.department),
+                        "narrative_summary": _safe_prompt_text(summary),
                         "confidence": "low",
-                        "key_findings": artifact.facts[:6],
-                        "open_questions": artifact.open_questions[:4],
-                        "sources": artifact.sources[:8],
+                        "key_findings": _safe_output_value(artifact.facts[:6]),
+                        "open_questions": _safe_output_value(artifact.open_questions[:4]),
+                        "sources": _safe_output_value(artifact.sources[:8]),
                     }
                     return "FOLLOWUP_READY\nTERMINATE"
                 return json.dumps(
@@ -1413,12 +1496,12 @@ class DepartmentLeadAgent:
                 )
             facts = artifact.facts if artifact else []
             result_holder["report_segment"] = {
-                "department": self.department,
-                "narrative_summary": summary,
+                "department": _safe_prompt_text(self.department),
+                "narrative_summary": _safe_prompt_text(summary),
                 "confidence": "medium" if facts and review.approved else "low",
-                "key_findings": facts[:8],
-                "open_questions": artifact.open_questions[:4] if artifact else [],
-                "sources": artifact.sources[:8] if artifact else [],
+                "key_findings": _safe_output_value(facts[:8]),
+                "open_questions": _safe_output_value(artifact.open_questions[:4] if artifact else []),
+                "sources": _safe_output_value(artifact.sources[:8] if artifact else []),
             }
             return "FOLLOWUP_READY\nTERMINATE"
 
@@ -1440,15 +1523,18 @@ class DepartmentLeadAgent:
             llm_config=self._llm_config(self.name),
             is_termination_msg=lambda msg: "TERMINATE" in str(msg.get("content", "")),
         )
-        lead_ca.initiate_chat(
-            manager,
-            message=json.dumps({
-                "status": "followup_started",
-                "question": question,
-                "context": context,
-                "task_key": "followup_question",
-            }, ensure_ascii=False),
-        )
+        try:
+            lead_ca.initiate_chat(
+                manager,
+                message=json.dumps({
+                    "status": "followup_started",
+                    "question": question,
+                    "context": context,
+                    "task_key": "followup_question",
+                }, ensure_ascii=False),
+            )
+        finally:
+            self.worker.close()
 
         for msg in groupchat.messages:
             if on_message:
@@ -1460,11 +1546,11 @@ class DepartmentLeadAgent:
 
         return result_holder if result_holder else {
             "report_segment": {
-                "department": self.department,
-                "narrative_summary": f"Follow-up for '{question}' could not be completed.",
+                "department": _safe_prompt_text(self.department),
+                "narrative_summary": f"Follow-up for '{_safe_prompt_text(question)}' could not be completed.",
                 "confidence": "low",
                 "key_findings": [],
-                "open_questions": [question],
+                "open_questions": [_safe_prompt_text(question)],
                 "sources": [],
             }
         }
@@ -1476,26 +1562,33 @@ class DepartmentLeadAgent:
     def _lead_system_prompt(
         self, investigation_plan: dict[str, Any], assignments: list[Assignment]
     ) -> str:
+        _e = _safe_prompt_text
+        s_name = _e(self.name)
+        s_dept = _e(self.department)
+        s_researcher = _e(self.researcher_name)
+        s_critic = _e(self.critic_name)
+        s_judge = _e(self.judge_name)
+        s_coding = _e(self.coding_name)
         task_list = "\n".join(
-            f"  {i + 1}. {a.task_key} — {a.label}\n"
-            f"     Guidance: {t['lead_guidance']}"
+            f"  {i + 1}. {_e(a.task_key)} — {_e(a.label)}\n"
+            f"     Guidance: {_e(str(t['lead_guidance']))}"
             for i, (a, t) in enumerate(
-                zip(assignments, investigation_plan["task_sequence"])
+                zip(assignments, investigation_plan["task_sequence"], strict=False)
             )
         )
-        domain_hypothesis = investigation_plan.get("domain_hypothesis", "")
-        classification_frame = investigation_plan.get("classification_frame", "")
+        domain_hypothesis = _e(str(investigation_plan.get("domain_hypothesis", "")))
+        classification_frame = _e(str(investigation_plan.get("classification_frame", "")))
         mandatory_count = len(assignments)
-        source_priority = ", ".join(investigation_plan.get("source_priority", [])) or "n/v"
+        source_priority = _e(", ".join(investigation_plan.get("source_priority", [])) or "n/v")
         recommended_source_lines = "\n".join(
-            f"- {item.get('name', 'n/v')} [{item.get('priority', 'secondary')}]"
+            f"- {_e(str(item.get('name', 'n/v')))} [{_e(str(item.get('priority', 'secondary')))}]"
             for item in investigation_plan.get("recommended_sources", [])[:6]
         ) or "- n/v"
         required_field_lines = "\n".join(
-            f"- {field_name}"
+            f"- {_e(str(field_name))}"
             for field_name in investigation_plan.get("policy_required_fields", [])[:8]
         ) or "- n/v"
-        return f"""You are {self.name}, the Lead of the {self.department} in the Liquisto intelligence platform.
+        return f"""You are {s_name}, the Lead of the {s_dept} in the Liquisto intelligence platform.
 
 ## Your contract (fixed by Supervisor)
 - **Mandatory tasks**: all {mandatory_count} assigned tasks must either be answered with sufficient evidence, or explicitly documented as unresolved with a justified reason.
@@ -1528,25 +1621,25 @@ The Supervisor sees only the contract handoff and the final package. It does NOT
 - If public information is exhausted, document the gap explicitly (for contacts: "keine freien Quellen").
 
 ## Your group members
-- {self.researcher_name}: Runs web research. Calls run_research(task_key).
-- {self.critic_name}: Reviews research quality. Calls review_research(task_key).
-- {self.judge_name}: Final quality gate. Calls judge_decision(task_key). Use only when retries are exhausted.
-- {self.coding_name}: Unblocks stuck searches. Calls suggest_refined_queries(task_key). Use when method/query issues remain after a retry.
+- {s_researcher}: Runs web research. Calls run_research(task_key).
+- {s_critic}: Reviews research quality. Calls review_research(task_key).
+- {s_judge}: Final quality gate. Calls judge_decision(task_key). Use only when retries are exhausted.
+- {s_coding}: Unblocks stuck searches. Calls suggest_refined_queries(task_key). Use when method/query issues remain after a retry.
 
 ## Mandatory tasks assigned to this department
 {task_list}
 
 ## Department workflow protocol
 For each mandatory task:
-1. Tell {self.researcher_name} to call run_research(task_key) for the task.
-2. Tell {self.critic_name} to call review_research(task_key).
+1. Tell {s_researcher} to call run_research(task_key) for the task.
+2. Tell {s_critic} to call review_research(task_key).
 3. Read the review result carefully — distinguish between CORE and SUPPORTING failures:
    - **APPROVED** (approved=true) → note the accepted points, move to the next task.
    - **REJECTED with core failures** (approved=false AND core_passed < core_total, attempt < {MAX_TASK_RETRIES}):
-     - If method_issue=true → ask {self.coding_name} to suggest_refined_queries(task_key), then ask {self.researcher_name} to run_research again.
-     - Otherwise → ask {self.researcher_name} to run_research again (with the rejected_points as revision context).
+     - If method_issue=true → ask {s_coding} to suggest_refined_queries(task_key), then ask {s_researcher} to run_research again.
+     - Otherwise → ask {s_researcher} to run_research again (with the rejected_points as revision context).
    - **REJECTED with only supporting failures** (approved=false BUT core_passed == core_total) → do NOT retry. Accept the task with documented gaps and move to the next task. Supporting gaps are expected and do not justify consuming retry budget.
-   - **REJECTED** (approved=false, attempt ≥ {MAX_TASK_RETRIES}) → ask {self.judge_name} to judge_decision(task_key). The Judge's decision is final.
+   - **REJECTED** (approved=false, attempt ≥ {MAX_TASK_RETRIES}) → ask {s_judge} to judge_decision(task_key). The Judge's decision is final.
 4. After all tasks are complete (or explicitly unresolved with justification):
    - Call finalize_package(summary) with a full narrative domain report section.
    - Write it as a briefing-ready paragraph: key findings, confidence, what remains open.
@@ -1560,19 +1653,21 @@ For each mandatory task:
 - Do NOT call finalize_package until you have started ALL {mandatory_count} tasks.
 
 ## Rules
-- Always name the next agent explicitly in your message (e.g., "{self.researcher_name}, please call run_research(task_key=...)")
+- Always name the next agent explicitly in your message (e.g., "{s_researcher}, please call run_research(task_key=...)")
 - Never skip a mandatory task without documenting the justification in the summary
 - A task is complete when it has an accepted decision OR a justified unresolved record
 - If a task cannot be answered, write that explicitly in the summary — do not hide evidence gaps
 """
 
     def _researcher_system_prompt(self) -> str:
-        return f"""You are {self.researcher_name} in the Liquisto intelligence platform.
+        s_researcher = _safe_prompt_text(self.researcher_name)
+        s_lead = _safe_prompt_text(self.name)
+        return f"""You are {s_researcher} in the Liquisto intelligence platform.
 
 Your job is to investigate the target company using web search and page fetching.
 
 ## Adaptive search behaviour
-When {self.name} directs you to a task:
+When {s_lead} directs you to a task:
 1. Call run_research(task_key) with the exact task_key provided.
 2. If the revision context mentions specific rejected points, adjust your search strategy to target those gaps.
 3. Report the result concisely: key facts found, open questions, payload coverage.
@@ -1584,11 +1679,14 @@ If evidence is weak after genuine effort, say so clearly — that is useful info
 """
 
     def _critic_system_prompt(self) -> str:
-        return f"""You are {self.critic_name} in the Liquisto intelligence platform.
+        s_critic = _safe_prompt_text(self.critic_name)
+        s_lead = _safe_prompt_text(self.name)
+        s_researcher = _safe_prompt_text(self.researcher_name)
+        return f"""You are {s_critic} in the Liquisto intelligence platform.
 
 Your job is to review research quality and provide defect-class feedback.
 
-When {self.name} or after {self.researcher_name} presents results:
+When {s_lead} or after {s_researcher} presents results:
 1. Call review_research(task_key) for the task that was just researched.
 2. Report your findings to the group:
    - **APPROVED**: "Task <key> approved. Core rules passed: <count>/<total>. Accepted: <points>"
@@ -1605,12 +1703,14 @@ Do not approve weak or unsupported findings. Your feedback must be actionable.
 """
 
     def _judge_system_prompt(self) -> str:
-        return f"""You are {self.judge_name} in the Liquisto intelligence platform.
+        s_judge = _safe_prompt_text(self.judge_name)
+        s_lead = _safe_prompt_text(self.name)
+        return f"""You are {s_judge} in the Liquisto intelligence platform.
 
 Your job is to make final principle-based quality gate decisions on tasks that cannot be improved further.
 
 ## When you are called
-{self.name} calls judge_decision(task_key) only after retries are exhausted and genuine ambiguity remains.
+{s_lead} calls judge_decision(task_key) only after retries are exhausted and genuine ambiguity remains.
 
 ## Your decision principles
 1. Call judge_decision(task_key) for the given task.
@@ -1624,27 +1724,31 @@ Your decisions are final and traceable. Accept that some evidence gaps will rema
 """
 
     def _followup_lead_system_prompt(self, question: str, context: str) -> str:
-        return f"""You are {self.name}, leading a targeted follow-up investigation.
+        _e = _safe_prompt_text
+        return f"""You are {_e(self.name)}, leading a targeted follow-up investigation.
 
 A follow-up question has been submitted that requires additional research.
 
-Question: {question}
-Context: {context}
+Question: {_e(question)}
+Context: {_e(context)}
 
 Your workflow:
-1. Tell {self.researcher_name}: "Please run_research for task_key: followup_question"
-2. Tell {self.critic_name} to review the result
+1. Tell {_e(self.researcher_name)}: "Please run_research for task_key: followup_question"
+2. Tell {_e(self.critic_name)} to review the result
 3. Call finalize_followup(summary) with your updated findings
 
 Keep it focused. Answer the specific question. Do not run a full department investigation.
 """
 
     def _coding_system_prompt(self) -> str:
-        return f"""You are {self.coding_name} in the Liquisto intelligence platform.
+        s_coding = _safe_prompt_text(self.coding_name)
+        s_lead = _safe_prompt_text(self.name)
+        s_researcher = _safe_prompt_text(self.researcher_name)
+        return f"""You are {s_coding} in the Liquisto intelligence platform.
 
 Your job is to unblock stuck research by suggesting better search queries and methods.
 
-When {self.name} asks you to help with a blocked task:
+When {s_lead} asks you to help with a blocked task:
 1. Call suggest_refined_queries(task_key) for the given task.
 2. Report back: "Refined queries for <key>: <query list>"
 
@@ -1654,7 +1758,7 @@ When {self.name} asks you to help with a blocked task:
 - If the company name is ambiguous: add location, industry, or legal form terms.
 - Suggest 3-5 diverse queries that target the specific defect class the Critic identified.
 
-Your query suggestions will be used by {self.researcher_name} on the next research attempt.
+Your query suggestions will be used by {s_researcher} on the next research attempt.
 """
 
     # ------------------------------------------------------------------
@@ -1922,19 +2026,20 @@ Your query suggestions will be used by {self.researcher_name} on the next resear
             fallback_confidence = "medium"
         else:
             fallback_confidence = "low"
+        safe_department = _safe_prompt_text(self.department)
 
         return DepartmentPackage.model_validate(
             {
-                "department": self.department,
-                "target_section": assignments[0].target_section if assignments else "n/v",
-                "summary": f"{self.department} package degraded — max_round reached before finalization.",
-                "section_payload": run_state.current_payload,
-                "completed_tasks": task_summaries,
-                "accepted_points": _dedup(accepted_points),
-                "open_questions": _dedup(open_questions),
-                "visual_focus": _VISUAL_FOCUS.get(self.department, []),
-                "sources": sources[:12],
-                "autogen_group": self.autogen_group_spec(),
+                "department": safe_department,
+                "target_section": _safe_prompt_text(assignments[0].target_section if assignments else "n/v"),
+                "summary": f"{safe_department} package degraded — max_round reached before finalization.",
+                "section_payload": _safe_output_value(run_state.current_payload),
+                "completed_tasks": _safe_output_value(task_summaries),
+                "accepted_points": _safe_output_value(_dedup(accepted_points)),
+                "open_questions": _safe_output_value(_dedup(open_questions)),
+                "visual_focus": _safe_output_value(_VISUAL_FOCUS.get(self.department, [])),
+                "sources": _safe_output_value(sources[:12]),
+                "autogen_group": _safe_output_value(self.autogen_group_spec()),
                 "confidence": fallback_confidence,
                 "evidence_packages": _dedup_model_dump(evidence_packages),
                 "gap_candidates": _dedup_model_dump(gap_candidates),

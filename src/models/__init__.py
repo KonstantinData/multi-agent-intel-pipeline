@@ -5,15 +5,14 @@ from src.models.meeting_ready import (
     EvidencePacket,
     FinalBriefing,
     GapCandidate,
-    MinimumPackageStatus,
     MeetingAction,
     MeetingReadinessAssessment,
+    MinimumPackageStatus,
     ReadinessBlocker,
     ResolutionDecision,
     ResolutionPlan,
     RunStatus,
 )
-from src.models.schemas import PipelineData, validate_pipeline_data
 
 __all__ = [
     "AnswerMatrixUpdate",
@@ -30,3 +29,11 @@ __all__ = [
     "RunStatus",
     "validate_pipeline_data",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name in {"PipelineData", "validate_pipeline_data"}:
+        from src.models.schemas import PipelineData, validate_pipeline_data
+
+        return {"PipelineData": PipelineData, "validate_pipeline_data": validate_pipeline_data}[name]
+    raise AttributeError(name)

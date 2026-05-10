@@ -1,0 +1,4 @@
+# Trivy CVE exceptions
+# Format: CVE-YYYY-NNNNN
+# Each entry must be justified in policies/license/dependency-risk-exceptions.json
+# with id, package, owner, reason, expires, accepted_risk fields.

@@ -1,0 +1,18 @@
+services:
+  app:
+    image: ghcr.io/konstantindata/multi-agent-intel-pipeline:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - artifacts:/app/artifacts
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  artifacts:

@@ -11,22 +11,26 @@ Group structure:
 
 SynthesisLead tools:
     read_report_segment        — reads a department's report_segment
-    request_department_followup — delegates a back-request via supervisor
+    request_department_followup — records a structured back-request artifact
     finalize_synthesis         — produces the final output → TERMINATE
 """
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Callable
+from collections.abc import Callable
+from typing import Annotated, Any
 
 from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent, register_function
 
-from src.config.settings import get_openai_api_key, get_role_model_selection, resolve_model_temperature
+from src.config.settings import (
+    get_openai_api_key,
+    get_role_model_selection,
+    resolve_model_temperature,
+)
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
-from src.orchestration.envelope import resolve_raw_package, resolve_report_segment, resolve_confidence
+from src.orchestration.envelope import resolve_confidence, resolve_report_segment
 from src.orchestration.speaker_selector import build_synthesis_selector
-
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -58,8 +62,6 @@ class SynthesisDepartmentAgent:
         *,
         brief: SupervisorBrief,
         department_packages: dict[str, dict[str, Any]],
-        supervisor,
-        departments: dict[str, Any],
         memory_store=None,
         on_message: MessageHook = None,
         synthesis_context: dict[str, Any] | None = None,
@@ -71,7 +73,6 @@ class SynthesisDepartmentAgent:
             "department_packages": department_packages,
             "back_requests": [],
             "synthesis_result": {},
-            "synthesis_step": "start",
             "synthesis_context": synthesis_context or {},
         }
 
@@ -135,47 +136,23 @@ class SynthesisDepartmentAgent:
             subject: Annotated[str, "Specific topic that needs clarification or strengthening"],
             context: Annotated[str, "Why this is needed and what the synthesis currently has"],
         ) -> str:
-            """Send a targeted follow-up request to a department via the supervisor router."""
+            """Record a targeted follow-up request for outer runtime handling."""
             back_request = BackRequest(
                 department=department,
                 type=request_type,
                 subject=subject,
                 context=context,
             )
-            run_state["back_requests"].append(back_request.model_dump())
-
-            route = supervisor.route_question(
-                question=f"{request_type}: {subject}. Context: {context}",
-                source="synthesis",
-            )
-            routed_dept = route.get("route", department)
-            dept_runtime = departments.get(routed_dept)
-            if dept_runtime is None:
-                return json.dumps({"error": f"Department runtime not found: {routed_dept}"})
-
-            followup_result = dept_runtime.run_followup(
-                question=subject,
-                context=context,
-                brief=brief,
-                memory_store=memory_store,
-                on_message=on_message,
-            )
-            updated_segment = followup_result.get("report_segment", {})
-            if updated_segment:
-                # P0-3: Write follow-up results into raw_package, not envelope root
-                pkg = dict(run_state["department_packages"].get(routed_dept, {}))
-                raw = dict(resolve_raw_package(pkg))
-                raw["report_segment"] = updated_segment
-                pkg["raw_package"] = raw
-                run_state["department_packages"][routed_dept] = pkg
+            payload = back_request.model_dump()
+            run_state["back_requests"].append(payload)
 
             return json.dumps(
                 {
-                    "department": routed_dept,
+                    "department": department,
                     "back_request_type": request_type,
                     "subject": subject,
-                    "updated_findings": updated_segment.get("key_findings", [])[:5],
-                    "updated_confidence": updated_segment.get("confidence", "low"),
+                    "status": "back_request_recorded",
+                    "outer_runtime_action": "route_after_synthesis",
                 },
                 ensure_ascii=False,
             )
@@ -244,7 +221,7 @@ class SynthesisDepartmentAgent:
             caller=lead_ca,
             executor=executor_ca,
             name="request_department_followup",
-            description="Send a targeted back-request to a department for clarification or strengthening.",
+            description="Record a targeted back-request artifact for clarification or strengthening.",
         )
         register_function(
             finalize_synthesis,

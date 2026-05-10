@@ -19,7 +19,22 @@
         "{industry} service network procurement director",
         "{industry} procurement director head of purchasing decision maker"
       ],
-      "result_limit": 10
+      "result_limit": 10,
+      "query_variants": {
+        "method_refinement": {
+          "queries_per_buyer": [
+            "\"{buyer}\" head of procurement aftermarket",
+            "\"{buyer}\" operations director spare parts",
+            "site:linkedin.com/in \"{buyer}\" supply chain procurement"
+          ],
+          "buyer_limit": 5,
+          "queries_fallback": [
+            "{industry} aftermarket procurement decision maker",
+            "{industry} spare parts operations director"
+          ],
+          "result_limit": 10
+        }
+      }
     },
     "contact_qualification": {
       "queries_per_buyer": [
@@ -39,7 +54,22 @@
         "{industry} service network procurement director",
         "{industry} procurement director head of purchasing decision maker"
       ],
-      "result_limit": 10
+      "result_limit": 10,
+      "query_variants": {
+        "method_refinement": {
+          "queries_per_buyer": [
+            "\"{buyer}\" procurement director aftermarket contact",
+            "\"{buyer}\" operations asset management contact",
+            "site:linkedin.com/in \"{buyer}\" aftermarket procurement"
+          ],
+          "buyer_limit": 5,
+          "queries_fallback": [
+            "{industry} aftermarket procurement contact",
+            "{industry} operations director spare parts contact"
+          ],
+          "result_limit": 10
+        }
+      }
     },
     "target_company_contacts": {
       "queries": [
@@ -56,7 +86,16 @@
         "\"{company}\" trade fair speaker procurement operations",
         "\"{company}\" association board plant operations supply chain",
         "\"{company}\" local registry legal entity managing director plant"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "\"{company}\" leadership procurement operations",
+            "site:{domain} {company} management team procurement",
+            "site:linkedin.com/in \"{company}\" operations procurement aftermarket"
+          ]
+        }
+      }
     }
   }
 }

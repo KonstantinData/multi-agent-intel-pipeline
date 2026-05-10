@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from src.orchestration.meeting_questions import question_ids_for_task
+
 ResolutionBucket = Literal[
     "AUTO_CLOSE_REQUIRED",
     "USER_DECISION_REQUIRED",
@@ -45,6 +47,37 @@ def _extract_typed_gaps(package_envelope: dict[str, Any]) -> list[str]:
     return [str(q).strip() for q in raw.get("open_questions", []) if str(q).strip()]
 
 
+def _extract_typed_gap_candidates(package_envelope: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = _resolve_raw_package(package_envelope)
+    candidates: list[dict[str, Any]] = []
+    for gap in raw.get("gap_candidates", []):
+        if not isinstance(gap, dict):
+            continue
+        question = str(gap.get("question", "")).strip()
+        if not question:
+            continue
+        gap_id = str(gap.get("gap_id", "")).strip()
+        task_key = gap_id.split("-gap-", 1)[0] if "-gap-" in gap_id else ""
+        candidates.append({
+            "gap_id": gap_id,
+            "question": question,
+            "task_key": task_key,
+            "question_ids": list(question_ids_for_task(task_key)),
+        })
+    if candidates:
+        return candidates
+    return [
+        {
+            "gap_id": "",
+            "question": str(q).strip(),
+            "task_key": "",
+            "question_ids": [],
+        }
+        for q in raw.get("open_questions", [])
+        if str(q).strip()
+    ]
+
+
 class ResolutionController:
     """Classify first-round run state into exactly one resolution bucket."""
 
@@ -66,16 +99,26 @@ class ResolutionController:
         blocked_tasks = [k for k, status in task_statuses.items() if status == "blocked"]
 
         unresolved_by_department: dict[str, list[str]] = {}
+        unresolved_candidates_by_department: dict[str, list[dict[str, Any]]] = {}
         for dept, envelope in department_packages.items():
             gaps = _extract_typed_gaps(envelope)
             if gaps:
                 unresolved_by_department[dept] = gaps
+            candidates = _extract_typed_gap_candidates(envelope)
+            if candidates:
+                unresolved_candidates_by_department[dept] = candidates
 
         meeting_critical_public_gaps = [
             q
             for dept, questions in unresolved_by_department.items()
             if dept in self._PUBLIC_EVIDENCE_DEPARTMENTS
             for q in questions
+        ]
+        meeting_critical_public_gap_candidates = [
+            item
+            for dept, candidates in unresolved_candidates_by_department.items()
+            if dept in self._PUBLIC_EVIDENCE_DEPARTMENTS
+            for item in candidates
         ]
         unresolved_contact_gaps = unresolved_by_department.get("ContactDepartment", [])
 
@@ -109,6 +152,7 @@ class ResolutionController:
             "blocked_tasks": blocked_tasks,
             "unresolved_by_department": unresolved_by_department,
             "meeting_critical_public_gaps": meeting_critical_public_gaps,
+            "meeting_critical_public_gap_candidates": meeting_critical_public_gap_candidates,
             "unresolved_contact_gaps": unresolved_contact_gaps,
             "unresolved_matrix_questions": unresolved_matrix,
             "first_round_sections": sorted(sections.keys()),

@@ -16,26 +16,68 @@ from openai import OpenAI
 
 from src.agents._helpers import (
     SECTION_MODELS,
+)
+from src.agents._helpers import (
     assess_contact_coverage as _assess_contact_coverage_impl,
+)
+from src.agents._helpers import (
     build_memory_context as _build_memory_context_impl,
-    coerce_contact_records as _coerce_contact_records_impl,
-    coerce_to_string as _coerce_to_string_impl,
-    coerce_string_list as _coerce_string_list_impl,
-    coerce_people as _coerce_people_impl,
+)
+from src.agents._helpers import (
     coerce_company_records as _coerce_company_records_impl,
+)
+from src.agents._helpers import (
+    coerce_contact_records as _coerce_contact_records_impl,
+)
+from src.agents._helpers import (
+    coerce_people as _coerce_people_impl,
+)
+from src.agents._helpers import (
     coerce_sources as _coerce_sources_impl,
-    deep_merge as _deep_merge_impl,
+)
+from src.agents._helpers import (
+    coerce_string_list as _coerce_string_list_impl,
+)
+from src.agents._helpers import (
+    coerce_to_string as _coerce_to_string_impl,
+)
+from src.agents._helpers import (
     dedup_list as _dedup_list_impl,
-    extract_financial_deep_dive as _extract_financial_deep_dive_impl,
+)
+from src.agents._helpers import (
+    deep_merge as _deep_merge_impl,
+)
+from src.agents._helpers import (
     extract_contacts_from_facts as _extract_contacts_from_facts_impl,
+)
+from src.agents._helpers import (
+    extract_financial_deep_dive as _extract_financial_deep_dive_impl,
+)
+from src.agents._helpers import (
     extract_transaction_events as _extract_transaction_events_impl,
-    normalize_contact_fields as _normalize_contact_fields_impl,
-    normalize_payload_updates as _normalize_payload_updates_impl,
-    parse_contact_from_title as _parse_contact_from_title_static,
-    pick_field as _pick_field_static,
-    prioritize_contact_records as _prioritize_contact_records_impl,
+)
+from src.agents._helpers import (
     is_plausible_named_contact as _is_plausible_named_contact_impl,
+)
+from src.agents._helpers import (
+    normalize_contact_fields as _normalize_contact_fields_impl,
+)
+from src.agents._helpers import (
+    normalize_payload_updates as _normalize_payload_updates_impl,
+)
+from src.agents._helpers import (
+    parse_contact_from_title as _parse_contact_from_title_static,
+)
+from src.agents._helpers import (
+    pick_field as _pick_field_static,
+)
+from src.agents._helpers import (
+    prioritize_contact_records as _prioritize_contact_records_impl,
+)
+from src.agents._helpers import (
     salvage_valid_fields as _salvage_valid_fields_impl,
+)
+from src.agents._helpers import (
     sanitize_for_section as _sanitize_for_section_impl,
 )
 from src.config.settings import (
@@ -50,8 +92,23 @@ from src.orchestration.tool_policy import tool_is_allowed
 from src.research.extract import extract_product_keywords, infer_industry, summarize_visible_text
 from src.research.fetch import fetch_website_snapshot
 from src.research.query_resolver import is_verify_mode, resolve_queries
-from src.research.search import build_buyer_queries, build_company_queries, build_market_queries, perform_search
+from src.research.search import (
+    build_buyer_queries,
+    build_company_queries,
+    perform_search,
+)
 from src.utils import strict_json_dumps
+
+_MAX_LLM_SYSTEM_CONTENT_CHARS = 12_000
+_MAX_LLM_USER_CONTENT_CHARS = 24_000
+
+
+def _bounded_llm_content(value: str, *, limit: int) -> str:
+    """Cap LLM request content to avoid unbounded prompt resource growth."""
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n[TRUNCATED]"
 
 
 class ResearchWorker:
@@ -79,10 +136,11 @@ class ResearchWorker:
     ) -> dict[str, Any]:
         granted_tools = tuple(allowed_tools or ())
         hints = self._derive_research_hints(brief)
-        queries = query_overrides or self._build_queries(
+        queries = self._build_queries(
             brief=brief,
             task_key=task_key,
             current_section=current_sections.get(target_section, {}),
+            query_overrides=query_overrides,
         )
         search_results, search_calls = self._search_queries(queries, granted_tools=granted_tools, task_key=task_key)
         page_evidence, page_fetches = self._fetch_supporting_pages(search_results, granted_tools=granted_tools)
@@ -743,14 +801,26 @@ class ResearchWorker:
             "product_keywords": product_keywords,
         }
 
-    def _build_queries(self, *, brief: SupervisorBrief, task_key: str, current_section: dict[str, Any] | None = None) -> list[str]:
+    def _build_queries(
+        self,
+        *,
+        brief: SupervisorBrief,
+        task_key: str,
+        current_section: dict[str, Any] | None = None,
+        query_overrides: list[str] | None = None,
+    ) -> list[str]:
         """Resolve queries via the central query resolver.
 
         Delegates to ``resolve_queries()`` from ``src.research.query_resolver``.
         When ``LIQUISTO_QUERY_RESOLVER_VERIFY=1`` both the resolver and the
         legacy path are run and any divergence is logged for migration monitoring.
         """
-        resolved = resolve_queries(task_key, brief, current_section=current_section)
+        resolved = resolve_queries(
+            task_key,
+            brief,
+            current_section=current_section,
+            query_overrides=query_overrides,
+        )
         if is_verify_mode():
             import logging as _logging
             _log = _logging.getLogger(__name__)
@@ -1081,14 +1151,29 @@ class ResearchWorker:
             return False
         return os.getenv("LIQUISTO_DISABLE_LLM", "").strip().lower() not in {"1", "true", "yes"}
 
+    def close(self) -> None:
+        """Release the underlying httpx connection pool held by the OpenAI client."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+
+    def __enter__(self) -> ResearchWorker:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def _client_instance(self) -> OpenAI:
         if self._client is None:
-            self._client = OpenAI(
-                api_key=get_openai_api_key(),
-                timeout=get_openai_timeout_seconds(),
-                max_retries=get_openai_max_retries(),
-            )
+            self._client = self._new_client()
         return self._client
+
+    def _new_client(self) -> OpenAI:
+        return OpenAI(
+            api_key=get_openai_api_key(),
+            timeout=get_openai_timeout_seconds(),
+            max_retries=get_openai_max_retries(),
+        )
 
     def _llm_synthesis(self, evidence_pack: dict[str, Any], *, model_name: str | None = None) -> dict[str, Any]:
         config = get_llm_config(role=self.name, model=model_name)
@@ -1294,24 +1379,38 @@ class ResearchWorker:
                 system_parts.append(" ".join(ctx_lines))
 
         effective_model = model_name or str(config["structured_model"])
+        system_content = _bounded_llm_content(
+            " ".join(system_parts),
+            limit=_MAX_LLM_SYSTEM_CONTENT_CHARS,
+        )
+        user_content = _bounded_llm_content(
+            strict_json_dumps(evidence_pack, ensure_ascii=False),
+            limit=_MAX_LLM_USER_CONTENT_CHARS,
+        )
         request_payload: dict[str, Any] = {
             "model": effective_model,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
                     "role": "system",
-                    "content": " ".join(system_parts),
+                    "content": system_content,
                 },
                 {
                     "role": "user",
-                    "content": strict_json_dumps(evidence_pack, ensure_ascii=False),
+                    "content": user_content,
                 },
             ],
         }
         request_payload.update(temperature_param(effective_model, config.get("temperature")))
-        response = self._client_instance().chat.completions.create(
-            **request_payload,
-        )
+        client = self._client if self._client is not None else self._new_client()
+        try:
+            response = client.chat.completions.create(
+                **request_payload,
+            )
+        finally:
+            client.close()
+            if self._client is client:
+                self._client = None
         raw_content = response.choices[0].message.content or "{}"
         try:
             payload = json.loads(raw_content)

@@ -163,12 +163,9 @@ def build_synthesis_selector(
     """Return a callable suitable for ``speaker_selection_method``.
 
     The synthesis selector is kept similar to the department selector in
-    spirit: guardrail-based, with the Lead (strategic analyst) driving the
-    internal flow.  A lightweight ``synthesis_step`` is retained only to
-    preserve the read-before-critique semantics (the analyst must read all
-    segments before the critic reviews).
+    spirit: guardrail-based.  The Lead drives the internal flow by explicitly
+    addressing Analyst, Critic, or Judge in messages.
     """
-    run_state.setdefault("synthesis_step", "start")
     run_state.setdefault("_consecutive_text_turns", {})
 
     name_to_role: dict[str, str] = {
@@ -187,7 +184,6 @@ def build_synthesis_selector(
         groupchat,
     ) -> ConversableAgent | str:
         last_role = name_to_role.get(last_speaker.name, "lead")
-        step = run_state.get("synthesis_step", "start")
 
         if not groupchat.messages:
             return role_to_agent["lead"]
@@ -202,9 +198,6 @@ def build_synthesis_selector(
 
         # GUARDRAIL 2: after executor → lead
         if last_role == "executor":
-            if step == "read":
-                # Analyst may still need to read more segments — return to analyst
-                return role_to_agent["analyst"]
             return role_to_agent["lead"]
 
         # GUARDRAIL 3: loop prevention
@@ -221,44 +214,16 @@ def build_synthesis_selector(
         if "TERMINATE" in last_content:
             return role_to_agent["lead"]
 
-        # State-aware routing for synthesis (reading phase must precede critique)
-        if step == "start":
-            run_state["synthesis_step"] = "read"
-            return role_to_agent["analyst"]
-
-        if step == "read" and last_role == "analyst":
-            if "read_report_segment" in last_content:
+        if last_role == "lead":
+            low = last_content.lower()
+            if analyst_name.lower() in low or "read_report_segment" in low:
                 return role_to_agent["analyst"]
-            run_state["synthesis_step"] = "critique"
-            return role_to_agent["critic"]
-
-        if step == "critique" and last_role == "critic":
-            run_state["synthesis_step"] = "decide"
-            return role_to_agent["lead"]
-
-        if step == "decide":
-            if "request_department_followup" in last_content or "back_request" in last_content.lower():
-                run_state["synthesis_step"] = "back_request"
-                return role_to_agent["lead"]
-            if "finalize_synthesis" in last_content or "TERMINATE" in last_content:
-                run_state["synthesis_step"] = "finalize"
-                return role_to_agent["lead"]
-            if "reject" in last_content.lower():
-                run_state["synthesis_step"] = "judge"
+            if critic_name.lower() in low or "review" in low or "critique" in low:
+                return role_to_agent["critic"]
+            if judge_name.lower() in low or "judge" in low or "reject" in low:
                 return role_to_agent["judge"]
-            run_state["synthesis_step"] = "finalize"
-            return role_to_agent["lead"]
-
-        if step == "back_request" and last_role == "lead":
-            run_state["synthesis_step"] = "read"
             return role_to_agent["analyst"]
 
-        if step == "judge" and last_role == "judge":
-            run_state["synthesis_step"] = "decide"
-            return role_to_agent["lead"]
-
-        # Safety fallback
-        run_state["synthesis_step"] = "decide"
         return role_to_agent["lead"]
 
     return _selector

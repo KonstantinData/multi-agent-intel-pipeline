@@ -15,20 +15,19 @@ import logging
 import pytest
 
 from src.memory.backfill import backfill_long_term_memory_from_runs
-from src.memory.short_term_store import ShortTermMemoryStore
-from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.consolidation import (
-    consolidate_role_patterns,
     MEMORY_ROLE_STATUS,
-    RETRIEVABLE_ROLES,
     RETRIEVABLE_ROLE_ORDER,
+    RETRIEVABLE_ROLES,
     ROLE_MEMORY_CATEGORIES,
-    _scrub_company_from_query,
     _is_process_safe_query,
+    _scrub_company_from_query,
     _to_structural_patterns,
+    consolidate_role_patterns,
 )
+from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
-
+from src.memory.short_term_store import ShortTermMemoryStore
 
 # ===========================================================================
 # ShortTermMemoryStore run brain
@@ -80,6 +79,46 @@ class TestConsolidationProcessSafety:
         q = "Mustermann GmbH financial distress signals"
         scrubbed = _scrub_company_from_query(q)
         assert "Mustermann GmbH" not in scrubbed
+
+    @pytest.mark.parametrize(
+        "company,domain",
+        [
+            ("Tesla", "tesla.com"),
+            ("Siemens", "siemens.com"),
+            ("ACME GmbH", "acme.de"),
+        ],
+    )
+    def test_context_scrub_removes_target_names_and_domains(self, company, domain):
+        patterns = consolidate_role_patterns(
+            run_context={
+                "intake": {"company_name": company, "web_domain": domain},
+                "short_term_memory": {
+                    "task_statuses": {"company_fundamentals": "accepted"},
+                    "worker_reports": [{
+                        "task_key": "company_fundamentals",
+                        "worker": "CompanyResearcher",
+                        "queries_used": [f"{company} annual report {domain} revenue"],
+                    }],
+                },
+            },
+            pipeline_data={"company_profile": {"company_name": company, "website": domain, "industry": "Manufacturing"}},
+            status="meeting_ready",
+            usable=True,
+        )
+        serialized = json.dumps(patterns, ensure_ascii=False).lower()
+        assert company.lower().split()[0] not in serialized
+        assert domain.lower() not in serialized
+        assert "{company}" in serialized or "{domain}" in serialized
+
+    def test_long_term_store_rejects_unscrubbed_case_specific_patterns(self, tmp_path):
+        store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        store.upsert_strategy({
+            "name": "unsafe",
+            "domain": "",
+            "structural_queries": ["Tesla annual report https://tesla.com"],
+            "score": 1.0,
+        })
+        assert store.load() == []
 
     def test_process_safe_query_accepted(self):
         assert _is_process_safe_query("manufacturing company inventory surplus signals")
@@ -405,7 +444,7 @@ class TestShortTermMemoryMerge:
 
         with pytest.raises(Exception) if False else _noop_context():
             # Should not raise, but should log a warning
-            with _capture_log(logging.getLogger()) as log_output:
+            with _capture_log(logging.getLogger()):
                 main.merge_from(ws)
 
         # Last-writer-wins
@@ -463,7 +502,8 @@ class TestShortTermMemoryMerge:
         assert {"action": "new"} in delta.next_actions
 
 
-import contextlib
+import contextlib  # noqa: E402
+
 
 @contextlib.contextmanager
 def _noop_context():
@@ -524,9 +564,8 @@ class TestRoleMemoryRegistry:
 
     def test_pipeline_runner_uses_canonical_registry(self):
         """pipeline_runner must import from consolidation, not maintain its own list."""
-        import inspect
-        from src import pipeline_runner
-        source = inspect.getsource(pipeline_runner.run_pipeline)
+        from pathlib import Path
+        source = Path("src/pipeline_runner.py").read_text(encoding="utf-8")
         # Must use the canonical registry for role retrieval
         assert "RETRIEVABLE_ROLE_ORDER" in source
         # Must NOT contain the old hand-maintained phantom roles in the retrieval block

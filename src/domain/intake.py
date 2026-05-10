@@ -15,6 +15,15 @@ class IntakeRequest:
     web_domain: str
     language: str = "de"
 
+    def __post_init__(self) -> None:
+        self.company_name = " ".join(str(self.company_name or "").split())
+        self.web_domain = str(self.web_domain or "").strip()
+        self.language = str(self.language or "de").strip() or "de"
+        if not self.company_name:
+            raise ValueError("Intake validation failed: company_name is required.")
+        if not self.web_domain:
+            raise ValueError("Intake validation failed: web_domain is required.")
+
 
 @dataclass(slots=True)
 class SupervisorBrief:
@@ -32,6 +41,8 @@ class SupervisorBrief:
     industry_hint: str = "n/v"
     observations: list[str] = field(default_factory=list)
     sources: list[dict[str, str]] = field(default_factory=list)
+    fetch_error_type: str = ""
+    fetch_error_message: str = ""
 
     @property
     def company_name(self) -> str:

@@ -1,8 +1,6 @@
 """Policies for what may enter long-term memory."""
 from __future__ import annotations
 
-from typing import Any
-
 from src.app.use_cases import SUCCESS_RUN_STATUS
 
 # Minimum readiness score to persist patterns.  Runs below this threshold

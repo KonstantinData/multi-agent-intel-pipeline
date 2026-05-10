@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
+import subprocess  # nosec B404 - required for controlled local startup smoke test process management
 import sys
 import time
 import urllib.request
@@ -53,7 +53,7 @@ def _popen_streamlit(port: int) -> subprocess.Popen:
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_kwargs["start_new_session"] = True
-    return subprocess.Popen(**popen_kwargs)
+    return subprocess.Popen(**popen_kwargs)  # nosec B603 - static trusted argv, shell is not used
 
 
 def main() -> int:
@@ -71,7 +71,7 @@ def main() -> int:
 
     step(2, 5, "Preflight checks")
     if not errors:
-        preflight = subprocess.run([PYTHON, "preflight.py"], capture_output=True, text=True)
+        preflight = subprocess.run([PYTHON, "preflight.py"], capture_output=True, text=True)  # nosec B603 - fixed local command
         if preflight.returncode != 0:
             print(preflight.stdout)
             if preflight.stderr:
@@ -115,7 +115,9 @@ def main() -> int:
     step(5, 5, "HTTP response check")
     if proc and not errors:
         try:
-            resp = urllib.request.urlopen(url, timeout=5)
+            if not url.startswith("http://localhost:"):
+                raise RuntimeError(f"Unexpected probe URL: {url}")
+            resp = urllib.request.urlopen(url, timeout=5)  # nosec B310 - URL is constrained to localhost http probe
             if resp.status == 200:
                 print(f"  PASS - HTTP {resp.status}")
             else:

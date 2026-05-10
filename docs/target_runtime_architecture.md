@@ -8,6 +8,7 @@ This compatibility file exists because several repo documents and checklists
 reference `docs/target_runtime_architecture.md` directly.
 
 Current canonical architecture includes:
+- explicit runtime phase order: domain departments -> first-round resolution -> optional auto-close -> synthesis -> readiness/final briefing -> report writer -> export
 - department-specific source/policy knowledge base (`knowledge/sources`, `knowledge/policies`)
 - runtime query strategy layer (`knowledge/query_strategies`) — single authority for task-level query construction, decoupled from source metadata
 - central query resolver (`src/research/query_resolver.py`) — placeholder expansion, validation, buyer-candidate expansion, verify mode

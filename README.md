@@ -18,10 +18,11 @@ python -m venv .venv
 # source .venv/bin/activate   # Unix
 
 # 2. Install dependencies
-pip install -r requirements.txt
+pip install -r requirements.lock
 
-# 3. Set OpenAI API key
-echo OPENAI_API_KEY=sk-... > .env
+# 3. Store OpenAI API key in the OS keyring
+#    Details: docs/Secrets-Management.md
+python -m keyring set liquisto-department-runtime OPENAI_API_KEY
 
 # 4. Validate environment
 python preflight.py
@@ -74,7 +75,7 @@ department-specific and checked at package finalization via Knowledge Base:
 ### Synthesis Plane
 
 - **Synthesis Department** — AG2 GroupChat that reads all approved department report segments, identifies cross-domain patterns, and builds the Liquisto opportunity assessment.
-- **Report Writer Runtime** — dedicated runtime node (`report_writer`) that assembles `report_package` from validated pipeline sections and emits `ReportWriter` telemetry events.
+- **Report Writer Runtime** — dedicated runtime node (`report_writer`) that assembles `report_package` after finalization from validated pipeline sections, final run status, meeting actions, and final briefing artifacts.
 - **Report rendering/export** — UI/export layer generates operator-facing PDF output (German + English) from the finalized run artifacts.
 
 ### Meeting-Readiness Layer
@@ -101,8 +102,9 @@ The runtime plans around **meeting questions**, not only departments.
 6. Bounded closure loop for publicly researchable meeting-critical gaps
 7. Synthesis Department builds the cross-domain interpretation
 8. Meeting-Readiness Gate evaluates finalization eligibility
-9. Final Briefing Composer produces meeting actions
-10. Artifacts exported to `artifacts/runs/<run_id>/` with phase-aware checkpoints
+9. Final Briefing Composer produces meeting actions and final briefing artifacts
+10. Report Writer assembles the final `report_package`
+11. Artifacts exported to `artifacts/runs/<run_id>/` with phase-aware checkpoints
 
 ### Dashboard pause/resume
 
@@ -113,7 +115,7 @@ The runtime plans around **meeting questions**, not only departments.
 ### Follow-up
 
 1. User enters `run_id` and a question in the UI
-2. System loads the historical run context (answer matrix + evidence packets as primary grounding)
+2. System loads the historical run context (run-brain task artifacts as primary grounding, then `pipeline_data`, then department packages)
 3. Supervisor routes the question to the correct department
 4. Answer is generated from stored run memory and persisted as a follow-up artifact
 
@@ -131,7 +133,7 @@ The runtime plans around **meeting questions**, not only departments.
 | [src/orchestration/resolution_controller.py](src/orchestration/resolution_controller.py) | 5-bucket resolution classification |
 | [src/orchestration/meeting_readiness.py](src/orchestration/meeting_readiness.py) | MeetingReadinessGate + FinalBriefingComposer |
 | [src/orchestration/runtime_guardrails.py](src/orchestration/runtime_guardrails.py) | Phase budgets, structured-output validation, deterministic ordering |
-| [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, answer-matrix-grounded follow-up |
+| [src/orchestration/follow_up.py](src/orchestration/follow_up.py) | Run loading, routing, run-brain-grounded follow-up |
 | [src/orchestration/contracts.py](src/orchestration/contracts.py) | Typed runtime contracts: TaskArtifact, TaskReviewArtifact, TaskDecisionArtifact, DepartmentRunState |
 | [src/orchestration/speaker_selector.py](src/orchestration/speaker_selector.py) | Guardrail-only speaker selectors |
 | [src/orchestration/department_knowledge.py](src/orchestration/department_knowledge.py) | Department KB loading + policy-gate evaluation (acceptance-time) |
@@ -160,7 +162,7 @@ Each run writes to `artifacts/runs/<run_id>/`:
 | `pipeline_data.json` | Structured research output |
 | `run_context.json` | Supervisor brief, answer matrix, question registry, resolution state, department packages, department run states |
 | `memory_snapshot.json` | Short-term memory: evidence packets, gap candidates, meeting actions, resolution plans |
-| `checkpoints/*.json` | Phase-aware checkpoints (after_first_pass, after_closure, after_finalization) |
+| `checkpoints/*.json` | Phase-aware checkpoints (after_first_pass, after_closure, after_synthesis, after_finalization) |
 | `follow_up_history.json` | Follow-up Q&A (when applicable) |
 
 ## Success-Path Semantics
@@ -174,12 +176,16 @@ A successful run does **not** contain:
 - generic `open_questions` block
 - unresolved publicly researchable meeting-critical questions
 
+## Security
+
+Security architecture, threat model, agent permissions, CI/CD gates, and data classification are documented in the [Security Hub](docs/en/security/README.md).
+
 ## Configuration
 
-- **API key**: set `OPENAI_API_KEY` in `.env` or as environment variable
-- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env or `.env`)
+- **Secrets management**: API-key lookup, OS-keyring setup, no-`.env` API-key rule, and logging requirements are documented in [docs/Secrets-Management.md](docs/Secrets-Management.md).
+- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env first, then local `.env` fallback)
 - **Role env key format**: preferred snake-case (for example `OPENAI_MODEL_COMPANY_RESEARCHER`), legacy compact keys (for example `OPENAI_MODEL_COMPANYRESEARCHER`) are still supported
-- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env or `.env`)
+- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env first, then local `.env` fallback)
 - **OpenAI request controls**: `LIQUISTO_OPENAI_TIMEOUT_SECONDS`, `LIQUISTO_OPENAI_MAX_RETRIES`
 - **Runtime cost calculation**: `estimated_cost_usd` in `run_meta.json` is computed from
   tracked LLM token usage plus `web_search_preview` call fees
@@ -204,3 +210,42 @@ A successful run does **not** contain:
 python preflight.py   # environment, packages, project files, API key, import chain, port
 pytest                # unit tests (400+ tests covering behavior, negative paths, golden traces, query parity, query consistency)
 ```
+
+Dependency policy:
+
+- `requirements.txt` defines the direct dependency constraints.
+- `requirements.lock` is the reproducible, transitive install/audit/SBOM input
+  used by CI.
+- Regenerate the lockfile after dependency changes with:
+
+```bash
+uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock
+```
+
+### Local pre-commit checks
+
+```bash
+pip install pre-commit
+pre-commit install     # runs Ruff + Bandit automatically on every git commit
+```
+
+Manual single-file check:
+
+```bash
+ruff check src/pipeline_runner.py --fix
+mypy src/pipeline_runner.py
+bandit src/pipeline_runner.py
+```
+
+## Release Artifact
+
+The release artifact is an OCI image published to GitHub Container Registry:
+
+```bash
+docker build --platform linux/amd64 -t liquisto-department-runtime:local .
+```
+
+Release/tag workflows publish `ghcr.io/<owner>/<repo>` and bind both SLSA Build
+L2 provenance and the CycloneDX SBOM to the image digest with GitHub artifact
+attestations. Consumers should pull by digest and verify attestations with
+`gh attestation verify` before deployment.
