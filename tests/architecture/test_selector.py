@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from src.orchestration.speaker_selector import build_department_selector
+from src.orchestration.speaker_selector import build_department_selector, build_synthesis_selector
 
 
 class TestSelectorGuardrails:
@@ -88,8 +88,9 @@ class TestSelectorGuardrails:
 
     def test_selector_has_no_workflow_step(self):
         """Selector must not reference workflow_step in department selector code."""
-        import src.orchestration.speaker_selector as sel_mod
         import inspect
+
+        import src.orchestration.speaker_selector as sel_mod
         source = inspect.getsource(sel_mod)
         lines = source.split("\n")
         in_dept_selector = False
@@ -121,3 +122,65 @@ class TestSelectorGuardrails:
         gc = self._fake_gc([{"name": "Critic", "content": "The research looks weak."}])
         result = selector(agents["Critic"], gc)
         assert result.name == "Lead"
+
+
+class TestSynthesisSelectorGuardrails:
+    def _make_selector(self):
+        run_state: dict = {}
+        agents = {name: MagicMock(name=name) for name in
+                  ["SynthesisLead", "SynthesisAnalyst", "SynthesisCritic", "SynthesisJudge", "SynthesisExecutor"]}
+        for name, agent in agents.items():
+            agent.name = name
+        selector = build_synthesis_selector(
+            run_state=run_state,
+            agent_map=agents,
+            lead_name="SynthesisLead",
+            analyst_name="SynthesisAnalyst",
+            critic_name="SynthesisCritic",
+            judge_name="SynthesisJudge",
+            executor_name="SynthesisExecutor",
+        )
+        return selector, agents, run_state
+
+    def _fake_gc(self, messages):
+        gc = MagicMock()
+        gc.messages = messages
+        return gc
+
+    def test_synthesis_selector_has_no_synthesis_step_state_machine(self):
+        import inspect
+
+        import src.orchestration.speaker_selector as sel_mod
+
+        source = inspect.getsource(sel_mod.build_synthesis_selector)
+        executable_lines = [
+            line for line in source.splitlines()
+            if not line.strip().startswith("#")
+            and not line.strip().startswith('"""')
+            and not line.strip().startswith("'''")
+        ]
+        assert not any("synthesis_step" in line for line in executable_lines)
+
+    def test_synthesis_selector_routes_lead_addressed_agents(self):
+        selector, agents, _ = self._make_selector()
+
+        gc = self._fake_gc([{"name": "SynthesisLead", "content": "SynthesisAnalyst, read_report_segment for CompanyDepartment"}])
+        assert selector(agents["SynthesisLead"], gc).name == "SynthesisAnalyst"
+
+        gc = self._fake_gc([{"name": "SynthesisLead", "content": "SynthesisCritic, critique the integrated view"}])
+        assert selector(agents["SynthesisLead"], gc).name == "SynthesisCritic"
+
+        gc = self._fake_gc([{"name": "SynthesisLead", "content": "SynthesisJudge, judge this rejection"}])
+        assert selector(agents["SynthesisLead"], gc).name == "SynthesisJudge"
+
+    def test_synthesis_selector_guardrails(self):
+        selector, agents, _ = self._make_selector()
+
+        gc = self._fake_gc([{"name": "SynthesisAnalyst", "tool_calls": [{"function": "read_report_segment"}]}])
+        assert selector(agents["SynthesisAnalyst"], gc).name == "SynthesisExecutor"
+
+        gc = self._fake_gc([{"name": "SynthesisExecutor", "content": "tool result"}])
+        assert selector(agents["SynthesisExecutor"], gc).name == "SynthesisLead"
+
+        gc = self._fake_gc([{"name": "SynthesisCritic", "content": "Needs work"}])
+        assert selector(agents["SynthesisCritic"], gc).name == "SynthesisLead"

@@ -24,14 +24,12 @@ class-aware three-outcome decision without re-reading the payload.
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from src.app.use_cases import get_task_validation_rules
 from src.config import get_role_model_selection
 from src.orchestration.tool_policy import resolve_allowed_tools
 from src.utils import dedup_safe as _dedup_safe
-
 
 # ---------------------------------------------------------------------------
 # Generic check evaluators

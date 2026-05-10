@@ -15,14 +15,19 @@ from pypdf import PdfReader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.exporters.pdf_report import generate_pdf
 from src.agents.worker import ResearchWorker
 from src.config import get_model_pricing, get_role_model_selection, summarize_worker_report_costs
-from src.orchestration.task_router import build_initial_assignments
+from src.domain.intake import SupervisorBrief
+from src.exporters.pdf_report import generate_pdf
 from src.memory.policies import should_store_strategy
 from src.orchestration.synthesis import assess_research_readiness, build_synthesis_context
+from src.orchestration.task_router import build_initial_assignments
 from src.pipeline_runner import _extract_pipeline_data, run_pipeline
-from src.domain.intake import SupervisorBrief
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
 
 
 def test_negative_placeholder_signals_are_not_treated_as_positive():
@@ -45,14 +50,14 @@ def test_negative_placeholder_signals_are_not_treated_as_positive():
         memory_snapshot={"sources": [], "next_actions": []},
     )
 
-    assert synthesis["recommended_engagement_paths"] == ["further_validation_required"]
-    assert all(item["relevance"] == "unclear" for item in synthesis["liquisto_service_relevance"])
+    require(bool(synthesis["recommended_engagement_paths"] == ["further_validation_required"]), 'synthesis["recommended_engagement_paths"] == ["further_validation_required"]')
+    require(bool(all(item["relevance"] == "unclear" for item in synthesis["liquisto_service_relevance"])), 'all(item["relevance"] == "unclear" for item in synthesis["liquisto_service_relevance"])')
 
 
 def test_should_store_strategy_only_for_usable_completed_runs():
-    assert should_store_strategy(status="completed", usable=True) is True
-    assert should_store_strategy(status="completed_but_not_usable", usable=False) is False
-    assert should_store_strategy(status="failed", usable=False) is False
+    require(bool(should_store_strategy(status="completed", usable=True) is True), 'should_store_strategy(status="completed", usable=True) is True')
+    require(bool(should_store_strategy(status="completed_but_not_usable", usable=False) is False), 'should_store_strategy(status="completed_but_not_usable", usable=False) is False')
+    require(bool(should_store_strategy(status="failed", usable=False) is False), 'should_store_strategy(status="failed", usable=False) is False')
 
 
 def test_extract_pipeline_data_reads_structured_messages():
@@ -74,8 +79,8 @@ def test_extract_pipeline_data_reads_structured_messages():
 
     data = _extract_pipeline_data(messages)
 
-    assert data["company_profile"]["company_name"] == "ACME"
-    assert data["synthesis"]["target_company"] == "ACME"
+    require(bool(data["company_profile"]["company_name"] == "ACME"), 'data["company_profile"]["company_name"] == "ACME"')
+    require(bool(data["synthesis"]["target_company"] == "ACME"), 'data["synthesis"]["target_company"] == "ACME"')
 
 
 def test_standard_backlog_contains_liquisto_scope_tasks():
@@ -96,26 +101,26 @@ def test_standard_backlog_contains_liquisto_scope_tasks():
     assignments = build_initial_assignments(brief)
     task_keys = [item.task_key for item in assignments]
 
-    assert len(assignments) >= 10
-    assert "product_asset_scope" in task_keys
-    assert "repurposing_circularity" in task_keys
-    assert "analytics_operational_improvement" in task_keys
-    assert "liquisto_opportunity_assessment" in task_keys
-    assert "negotiation_relevance" in task_keys
+    require(bool(len(assignments) >= 10), 'len(assignments) >= 10')
+    require(bool("product_asset_scope" in task_keys), '"product_asset_scope" in task_keys')
+    require(bool("repurposing_circularity" in task_keys), '"repurposing_circularity" in task_keys')
+    require(bool("analytics_operational_improvement" in task_keys), '"analytics_operational_improvement" in task_keys')
+    require(bool("liquisto_opportunity_assessment" in task_keys), '"liquisto_opportunity_assessment" in task_keys')
+    require(bool("negotiation_relevance" in task_keys), '"negotiation_relevance" in task_keys')
 
     first = assignments[0]
-    assert first.model_name
-    assert first.allowed_tools
+    require(bool(first.model_name), 'first.model_name')
+    require(bool(first.allowed_tools), 'first.allowed_tools')
 
 
 def test_role_model_selection_is_explicit():
     supervisor_model, supervisor_structured = get_role_model_selection("Supervisor")
     worker_model, worker_structured = get_role_model_selection("CompanyResearcher")
 
-    assert supervisor_model == "gpt-4.1"
-    assert supervisor_structured == "gpt-4.1"
-    assert worker_model == "gpt-4.1-mini"
-    assert worker_structured == "gpt-4.1-mini"
+    require(bool(supervisor_model == "gpt-4.1"), 'supervisor_model == "gpt-4.1"')
+    require(bool(supervisor_structured == "gpt-4.1"), 'supervisor_structured == "gpt-4.1"')
+    require(bool(worker_model == "gpt-4.1-mini"), 'worker_model == "gpt-4.1-mini"')
+    require(bool(worker_structured == "gpt-4.1-mini"), 'worker_structured == "gpt-4.1-mini"')
 
 
 def test_cost_summary_uses_model_pricing():
@@ -133,9 +138,9 @@ def test_cost_summary_uses_model_pricing():
         ]
     )
 
-    assert get_model_pricing("gpt-4.1-mini") == {"input": 0.40, "output": 1.60}
-    assert usage["total"]["total_cost"] > 0
-    assert "gpt-4.1-mini" in usage["total"]["models"]
+    require(bool(get_model_pricing("gpt-4.1-mini") == {"input": 0.40, "output": 1.60}), 'get_model_pricing("gpt-4.1-mini") == {"input": 0.40, "output": 1.60}')
+    require(bool(usage["total"]["total_cost"] > 0), 'usage["total"]["total_cost"] > 0')
+    require(bool("gpt-4.1-mini" in usage["total"]["models"]), '"gpt-4.1-mini" in usage["total"]["models"]')
 
 
 def test_worker_normalizes_nested_llm_section_payload():
@@ -144,7 +149,7 @@ def test_worker_normalizes_nested_llm_section_payload():
 
     normalized = worker._normalize_payload_updates("company_profile", payload_updates)
 
-    assert normalized == {"company_name": "ACME", "industry": "Automation"}
+    require(bool(normalized == {"company_name": "ACME", "industry": "Automation"}), 'normalized == {"company_name": "ACME", "industry": "Automation"}')
 
 
 def test_worker_sanitizes_rich_llm_list_payloads():
@@ -159,10 +164,16 @@ def test_worker_sanitizes_rich_llm_list_payloads():
         },
     )
 
-    assert payload["product_asset_scope"] == [
-        "Control Units | High",
-        "Actuators",
-    ]
+    require(
+        bool(
+            payload["product_asset_scope"]
+            == [
+                "Control Units | High",
+                "Actuators",
+            ]
+        ),
+        'payload["product_asset_scope"] == ["Control Units | High", "Actuators"]',
+    )
 
 
 def test_worker_falls_back_when_llm_payload_breaks_schema(monkeypatch):
@@ -206,8 +217,8 @@ def test_worker_falls_back_when_llm_payload_breaks_schema(monkeypatch):
         current_sections={},
     )
 
-    assert report["payload"]["company_name"] == "ACME GmbH"
-    assert report["open_questions"]
+    require(bool(report["payload"]["company_name"] == "ACME GmbH"), 'report["payload"]["company_name"] == "ACME GmbH"')
+    require(bool(report["open_questions"]), 'report["open_questions"]')
 
 
 def test_assess_research_readiness_requires_multiple_sections():
@@ -219,8 +230,8 @@ def test_assess_research_readiness_requires_multiple_sections():
         quality_review={"evidence_health": "medium"},
     )
 
-    assert readiness["usable"] is True
-    assert readiness["score"] >= 70
+    require(bool(readiness["usable"] is True), 'readiness["usable"] is True')
+    require(bool(readiness["score"] >= 70), 'readiness["score"] >= 70')
 
 
 def test_run_pipeline_returns_supervisor_centric_artifacts(monkeypatch):
@@ -255,21 +266,26 @@ def test_run_pipeline_returns_supervisor_centric_artifacts(monkeypatch):
 
     result = run_pipeline(company_name="ACME GmbH", web_domain="acme.example")
 
-    assert result["status"] in {"completed", "completed_but_not_usable"}
-    assert result["pipeline_data"]["company_profile"]["company_name"] == "ACME GmbH"
-    assert "CrossDomainStrategicAnalyst" in [item["assignee"] for item in result["run_context"]["active_tasks"]]
-    assert result["pipeline_data"]["synthesis"]["target_company"] == "ACME GmbH"
-    assert result["budget"]["elapsed_seconds"] >= 0
-    assert len(result["run_context"]["active_tasks"]) >= 10
-    assert any(item.get("task_key") == "liquisto_opportunity_assessment" for item in result["run_context"]["active_tasks"])
-    assert any(
-        item.get("allowed_tools")
-        for item in result["run_context"]["active_tasks"]
-        if item.get("assignee") == "CompanyDepartment"
+    require(bool(result["status"] in {"completed", "completed_but_not_usable"}), 'result["status"] in {"completed", "completed_but_not_usable"}')
+    require(bool(result["pipeline_data"]["company_profile"]["company_name"] == "ACME GmbH"), 'result["pipeline_data"]["company_profile"]["company_name"] == "ACME GmbH"')
+    require(bool("CrossDomainStrategicAnalyst" in [item["assignee"] for item in result["run_context"]["active_tasks"]]), '"CrossDomainStrategicAnalyst" in [item["assignee"] for item in result["run_context"]["active_tasks"]]')
+    require(bool(result["pipeline_data"]["synthesis"]["target_company"] == "ACME GmbH"), 'result["pipeline_data"]["synthesis"]["target_company"] == "ACME GmbH"')
+    require(bool(result["budget"]["elapsed_seconds"] >= 0), 'result["budget"]["elapsed_seconds"] >= 0')
+    require(bool(len(result["run_context"]["active_tasks"]) >= 10), 'len(result["run_context"]["active_tasks"]) >= 10')
+    require(bool(any(item.get("task_key") == "liquisto_opportunity_assessment" for item in result["run_context"]["active_tasks"])), 'any(item.get("task_key") == "liquisto_opportunity_assessment" for item in result["run_context"]["active_tasks"])')
+    require(
+        bool(
+            any(
+                item.get("allowed_tools")
+                for item in result["run_context"]["active_tasks"]
+                if item.get("assignee") == "CompanyDepartment"
+            )
+        ),
+        'any(item.get("allowed_tools") for item in result["run_context"]["active_tasks"] if item.get("assignee") == "CompanyDepartment")',
     )
-    assert any(item.get("model_name") for item in result["run_context"]["active_tasks"])
-    assert result["usage"]["total"]["total_cost"] >= 0
-    assert Path(result["run_dir"]).exists()
+    require(bool(any(item.get("model_name") for item in result["run_context"]["active_tasks"])), 'any(item.get("model_name") for item in result["run_context"]["active_tasks"])')
+    require(bool(result["usage"]["total"]["total_cost"] >= 0), 'result["usage"]["total"]["total_cost"] >= 0')
+    require(bool(Path(result["run_dir"]).exists()), 'Path(result["run_dir"]).exists()')
 
 
 def test_generate_pdf_focuses_on_briefing_not_run_process():
@@ -321,11 +337,11 @@ def test_generate_pdf_focuses_on_briefing_not_run_process():
     pdf_bytes = generate_pdf(payload, lang="de")
     text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
 
-    assert "Management-Übersicht" in text
-    assert "Primäre Empfehlung" in text
-    assert "Zielunternehmen-Kontakte" in text
-    assert "Executive Dashboard" not in text
-    assert "Open Questions & Validation Plan" not in text
-    assert "Evidenz-Anhang" not in text
-    assert "Runtime-Events" not in text
-    assert "GroupChat-Runden" not in text
+    require(bool("Management-Übersicht" in text), '"Management-Übersicht" in text')
+    require(bool("Primäre Empfehlung" in text), '"Primäre Empfehlung" in text')
+    require(bool("Zielunternehmen-Kontakte" in text), '"Zielunternehmen-Kontakte" in text')
+    require(bool("Executive Dashboard" not in text), '"Executive Dashboard" not in text')
+    require(bool("Open Questions & Validation Plan" not in text), '"Open Questions & Validation Plan" not in text')
+    require(bool("Evidenz-Anhang" not in text), '"Evidenz-Anhang" not in text')
+    require(bool("Runtime-Events" not in text), '"Runtime-Events" not in text')
+    require(bool("GroupChat-Runden" not in text), '"GroupChat-Runden" not in text')

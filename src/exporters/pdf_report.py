@@ -10,18 +10,31 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from src.app.use_cases import sanitize_success_unresolved
-from src.models.visualization import ChartSpec, DashboardBundle, DashboardSection, InsightCallout, TableBlock
-from src.utils import strict_json_dumps
-
 from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Image,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
+from src.app.use_cases import sanitize_success_unresolved
+from src.exporters.report_utils import select_composed_report
+from src.models.visualization import (
+    ChartSpec,
+    DashboardSection,
+    InsightCallout,
+    TableBlock,
+)
+from src.utils import strict_json_dumps
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -128,25 +141,7 @@ def _is_missing_text(value: Any) -> bool:
 
 
 def _select_composed_report(report_package: Any, lang: str) -> dict[str, Any]:
-    if not isinstance(report_package, dict):
-        return {}
-    composed = report_package.get("composed_report")
-    if not isinstance(composed, dict):
-        return {}
-    validation = report_package.get("composition_validation")
-    validation_by_lang = validation if isinstance(validation, dict) else {}
-    preferred = composed.get(lang)
-    if isinstance(preferred, dict) and preferred:
-        return preferred
-    for candidate in ("en", "de"):
-        draft = composed.get(candidate)
-        if not isinstance(draft, dict) or not draft:
-            continue
-        checks = validation_by_lang.get(candidate)
-        if isinstance(checks, dict) and checks.get("passed") is False:
-            continue
-        return draft
-    return {}
+    return select_composed_report(report_package, lang)
 
 
 def _display_domain(value: str) -> str:
@@ -935,14 +930,14 @@ def _pdf_donut_drawing(chart: ChartSpec) -> Drawing | None:
     x_cursor = 0.0
     bar_h = 10
     bar_y = 4
-    for label, val in zip(labels, values):
+    for label, val in zip(labels, values, strict=False):
         seg_w = (val / total) * (w - 20 * mm)
         color = _colors_map.get(label, BRAND_TEAL)
         d.add(Rect(x_cursor, bar_y, seg_w, bar_h, fillColor=color, strokeColor=None))
         x_cursor += seg_w
     # Legend below
     x_legend = 0.0
-    for label, val in zip(labels, values):
+    for label, val in zip(labels, values, strict=False):
         color = _colors_map.get(label, BRAND_TEAL)
         d.add(Rect(x_legend, bar_y + bar_h + 4, 6, 6, fillColor=color, strokeColor=None))
         d.add(String(x_legend + 8, bar_y + bar_h + 4, f"{label}: {val}",
@@ -965,7 +960,7 @@ def _pdf_bar_drawing(chart: ChartSpec) -> Drawing | None:
     d = Drawing(w, h)
     bar_max_w = 100 * mm
     palette = [BRAND_BLUE, BRAND_AMBER, BRAND_TEAL, BRAND_MID]
-    for i, (label, val) in enumerate(zip(chart.labels, values)):
+    for i, (label, val) in enumerate(zip(chart.labels, values, strict=False)):
         y = h - (i + 1) * (bar_h + gap)
         seg_w = (val / max_val) * bar_max_w if max_val else 0
         d.add(Rect(40 * mm, y, seg_w, bar_h, fillColor=palette[i % len(palette)], strokeColor=None, radius=2))
@@ -990,7 +985,7 @@ def _pdf_treemap_drawing(chart: ChartSpec) -> Drawing | None:
     x_cursor = 0.0
     rect_h = 18
     rect_y = 8
-    for i, (label, val) in enumerate(zip(labels, values)):
+    for i, (label, val) in enumerate(zip(labels, values, strict=False)):
         seg_w = max((val / total) * w, 8)  # min visible width
         color = _palette[i % len(_palette)]
         d.add(Rect(x_cursor, rect_y, seg_w - 1, rect_h, fillColor=color, strokeColor=WHITE, strokeWidth=1, radius=2))
@@ -2174,10 +2169,13 @@ def _bullet_col(title: str, items: list[str], styles: dict[str, ParagraphStyle],
 # ── buyer landscape ───────────────────────────────────────────────────────────
 
 def _relevance_color(label: str) -> colors.Color:
-    l = (label or "").strip().lower()
-    if l in {"high", "hoch"}:    return BRAND_GREEN
-    if l in {"medium", "mittel"}: return BRAND_BLUE
-    if l in {"low", "niedrig"}:   return BRAND_AMBER
+    lbl = (label or "").strip().lower()
+    if lbl in {"high", "hoch"}:
+        return BRAND_GREEN
+    if lbl in {"medium", "mittel"}:
+        return BRAND_BLUE
+    if lbl in {"low", "niedrig"}:
+        return BRAND_AMBER
     return TEXT_MUTED
 
 
@@ -2359,8 +2357,8 @@ _ENGLISH_MARKERS = {
     "paths", "next", "step", "steps", "report", "preparation", "commercial", "support",
     "fit", "demand", "supply", "chain", "procurement",
     "prepare", "close", "validate", "send", "request", "open", "quantified", "impact",
-    "first", "response", "leadership", "ownership", "visibility", "gap",
-    "criticality", "decision", "ownership", "partner", "outreach",
+    "first", "response", "leadership", "ownership", "gap",
+    "criticality", "decision", "outreach",
 }
 
 
@@ -2423,6 +2421,7 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
         return payload
     try:
         from openai import OpenAI
+
         from src.config.settings import get_openai_api_key, get_translation_model, temperature_param
 
         api_key = get_openai_api_key()
@@ -2482,7 +2481,7 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
                     **temperature_param(translation_model, 0),
                 )
                 translated: dict[str, str] = json.loads(resp.choices[0].message.content)
-            except Exception:
+            except Exception:  # nosec B112 - skip failed chunk translation and continue remaining chunks
                 continue
             for token in chunk_tokens:
                 if token in translated:
@@ -2519,6 +2518,7 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
     data = copy.deepcopy(pipeline_data)
     try:
         from openai import OpenAI  # local import — only needed here
+
         from src.config.settings import get_openai_api_key
 
         api_key = get_openai_api_key()

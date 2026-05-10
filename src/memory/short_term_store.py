@@ -206,7 +206,7 @@ class ShortTermMemoryStore:
     def record_follow_up(self, answer: dict[str, Any]) -> None:
         self.follow_up_sessions.append(answer)
 
-    def create_working_set(self) -> "ShortTermMemoryStore":
+    def create_working_set(self) -> ShortTermMemoryStore:
         """F5: Create an isolated working-set store seeded with a read-only snapshot.
 
         The working set starts with a frozen copy of the current state so
@@ -231,7 +231,7 @@ class ShortTermMemoryStore:
         ws.section_outputs = {k: dict(v) for k, v in self.section_outputs.items()}
         return ws
 
-    def delta_from(self, baseline: "ShortTermMemoryStore") -> "ShortTermMemoryStore":
+    def delta_from(self, baseline: ShortTermMemoryStore) -> ShortTermMemoryStore:
         """F5: Extract only the new writes relative to a baseline snapshot.
 
         Returns a new store containing only the data that was added after
@@ -262,24 +262,24 @@ class ShortTermMemoryStore:
         for k, v in self.task_outputs.items():
             if k not in baseline.task_outputs:
                 delta.task_outputs[k] = v
-        for k, v in self.task_statuses.items():
+        for k, v in self.task_statuses.items():  # type: ignore[assignment]
             if k not in baseline.task_statuses or v != baseline.task_statuses.get(k):
-                delta.task_statuses[k] = v
+                delta.task_statuses[k] = v  # type: ignore[assignment]
         for k, v in self.section_outputs.items():
             if k not in baseline.section_outputs:
                 delta.section_outputs[k] = v
-        for k, v in self.critic_approvals.items():
+        for k, v in self.critic_approvals.items():  # type: ignore[assignment]
             if k not in baseline.critic_approvals:
-                delta.critic_approvals[k] = v
+                delta.critic_approvals[k] = v  # type: ignore[assignment]
         for k, v in self.critic_reviews.items():
             if k not in baseline.critic_reviews:
                 delta.critic_reviews[k] = v
-        for k, v in self.accepted_points.items():
+        for k, v in self.accepted_points.items():  # type: ignore[assignment]
             if k not in baseline.accepted_points:
-                delta.accepted_points[k] = v
-        for k, v in self.open_points.items():
+                delta.accepted_points[k] = v  # type: ignore[assignment]
+        for k, v in self.open_points.items():  # type: ignore[assignment]
             if k not in baseline.open_points:
-                delta.open_points[k] = v
+                delta.open_points[k] = v  # type: ignore[assignment]
         delta.revision_history = {k: v for k, v in self.revision_history.items() if k not in baseline.revision_history}
         delta.department_packages = dict(self.department_packages)
         delta.department_conversations = dict(self.department_conversations)
@@ -290,7 +290,7 @@ class ShortTermMemoryStore:
             delta.usage_totals[k] = self.usage_totals.get(k, 0) - baseline.usage_totals.get(k, 0)
         return delta
 
-    def merge_from(self, other: "ShortTermMemoryStore") -> None:
+    def merge_from(self, other: ShortTermMemoryStore) -> None:
         """F5: Merge an isolated working-set store into this store.
 
         Used after parallel department runs to consolidate results
@@ -318,10 +318,27 @@ class ShortTermMemoryStore:
         if other.final_briefing is not None:
             self.final_briefing = other.final_briefing
         self.meeting_readiness_assessment = other.meeting_readiness_assessment
+        # task_statuses: pending is an intermediate worker state and must not
+        # overwrite a terminal Supervisor/Lead status during parallel merge.
+        for key, value in other.task_statuses.items():
+            current = self.task_statuses.get(key)
+            if current is None or current == value:
+                self.task_statuses[key] = value
+                continue
+            if value == "pending" and current != "pending":
+                continue
+            if current == "pending" and value != "pending":
+                self.task_statuses[key] = value
+                continue
+            logging.warning(
+                "merge_from: unexpected key conflict in task_statuses: %s (last-writer-wins)",
+                {key},
+            )
+            self.task_statuses[key] = value
+
         # Dicts: update with disjointness assertion for task-keyed fields
         _DISJOINT_DICTS = [
             ("task_outputs", self.task_outputs, other.task_outputs),
-            ("task_statuses", self.task_statuses, other.task_statuses),
             ("critic_approvals", self.critic_approvals, other.critic_approvals),
             ("critic_reviews", self.critic_reviews, other.critic_reviews),
             ("accepted_points", self.accepted_points, other.accepted_points),
@@ -332,24 +349,28 @@ class ShortTermMemoryStore:
             ("department_workspaces", self.department_workspaces, other.department_workspaces),
         ]
         for name, target, source in _DISJOINT_DICTS:
-            conflicts = set(target.keys()) & set(source.keys())
+            conflicts = {
+                key
+                for key in set(target.keys()) & set(source.keys())  # type: ignore[attr-defined]
+                if target.get(key) != source.get(key)  # type: ignore[attr-defined]
+            }
             if conflicts:
                 logging.warning(
                     "merge_from: unexpected key conflict in %s: %s (last-writer-wins)",
                     name, conflicts,
                 )
-            target.update(source)
+            target.update(source)  # type: ignore[attr-defined]
         # section_outputs: may overlap (same section from different tasks) — last-writer-wins is acceptable
         self.section_outputs.update(other.section_outputs)
         # revision_history: merge per task_key
         for k, v in other.revision_history.items():
             self.revision_history.setdefault(k, []).extend(v)
         # Usage totals: additive
-        for k, v in other.usage_totals.items():
+        for k, v in other.usage_totals.items():  # type: ignore[assignment]
             if k in self.usage_totals:
-                self.usage_totals[k] += int(v or 0)
+                self.usage_totals[k] += int(v or 0)  # type: ignore[arg-type]
             else:
-                self.usage_totals[k] = int(v or 0)
+                self.usage_totals[k] = int(v or 0)  # type: ignore[arg-type]
 
     def snapshot(self) -> dict[str, Any]:
         _seen_urls: set[str] = set()
@@ -397,7 +418,7 @@ class ShortTermMemoryStore:
 
 
     @classmethod
-    def from_snapshot(cls, payload: dict[str, Any]) -> "ShortTermMemoryStore":
+    def from_snapshot(cls, payload: dict[str, Any]) -> ShortTermMemoryStore:
         data = dict(payload or {})
         legacy_open_questions = list(data.get("open_questions", []))
         gap_payload = data.get("gap_candidates")

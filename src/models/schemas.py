@@ -12,13 +12,11 @@ from src.models.meeting_ready import (
     GapCandidate,
     MeetingReadinessAssessment,
 )
+from src.orchestration.contracts import TaskStatus
 
 # ---------------------------------------------------------------------------
 # Canonical vocabulary — single source of truth for status/confidence/mode
 # ---------------------------------------------------------------------------
-
-# Task lifecycle status (set by router for skipped, by Judge for others)
-TaskStatus = Literal["accepted", "degraded", "skipped", "rejected", "pending"]
 
 # Evidence confidence level (applies to packages and synthesis)
 ConfidenceLevel = Literal["high", "medium", "low"]
@@ -355,8 +353,7 @@ class ValidationErrorRecord(BaseModel):
 class DepartmentTaskResult(BaseModel):
     task_key: str = "n/v"
     label: str = "n/v"
-    # Valid values: accepted | degraded | skipped | rejected | pending
-    status: str = "pending"
+    status: TaskStatus = "pending"
     accepted_points: list[str] = Field(default_factory=list)
     open_points: list[str] = Field(default_factory=list)
     summary: str = "n/v"

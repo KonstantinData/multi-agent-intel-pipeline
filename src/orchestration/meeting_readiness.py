@@ -9,9 +9,9 @@ from __future__ import annotations
 from typing import Any
 
 from src.models.meeting_ready import (
-    MinimumPackageStatus,
     MeetingAction,
     MeetingReadinessAssessment,
+    MinimumPackageStatus,
     ReadinessBlocker,
 )
 
@@ -149,7 +149,7 @@ class MeetingReadinessGate:
                     reason_text = str(parsed.reason).strip()
                     if reason_text and reason_text not in blocked_reasons:
                         blocked_reasons.append(reason_text)
-            except Exception:
+            except Exception:  # nosec B112 - ignore malformed blocker entries from model output
                 continue
 
         minimum_package_payload = dict(minimum_package or {})

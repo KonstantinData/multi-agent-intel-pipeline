@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any, TypedDict
+from typing import TypedDict
 
 from src.app.use_cases import build_standard_scope
 from src.config import get_role_model_selection
@@ -75,6 +75,8 @@ class SupervisorAgent:
                     "summary": str(research["summary"]),
                 }
             ],
+            fetch_error_type=str(snapshot.get("error_type", "")),
+            fetch_error_message=str(snapshot.get("error_message", "")),
         )
         message_payload = {
             "section": "supervisor_brief",
@@ -143,6 +145,17 @@ class SupervisorAgent:
         rejected_tasks = sum(1 for t in completed_tasks if t.get("status") == "rejected")
         all_rejected = rejected_tasks == len(completed_tasks) and len(completed_tasks) > 0
 
+        # Policy gate: all hard-severity blockers → rejected regardless of content
+        all_hard_blockers = (
+            not policy_gate_passed
+            and policy_gate_blockers > 0
+            and all(
+                item.get("severity") == "hard"
+                for item in policy_gate.get("blockers", [])
+                if isinstance(item, dict)
+            )
+        )
+
         # Admission decision: explicit three-outcome gate
         if (
             has_payload
@@ -154,6 +167,11 @@ class SupervisorAgent:
         ):
             decision = "accepted"
             reason = f"{department} package accepted for synthesis ({accepted_tasks}/{len(completed_tasks)} tasks accepted)."
+        elif all_hard_blockers:
+            decision = "rejected"
+            reason = (
+                f"{department} package rejected — all {policy_gate_blockers} policy gate blocker(s) are hard severity."
+            )
         elif has_payload and substantive and not all_rejected:
             decision = "accepted_with_gaps"
             if not policy_gate_passed:

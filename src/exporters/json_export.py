@@ -3,17 +3,78 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+import re
+import tempfile
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from src.app.use_cases import (
     DISCOVERY_READY_RUN_STATUS,
     SUCCESS_RUN_STATUS,
     sanitize_success_unresolved,
 )
+from src.orchestration.run_paths import (
+    RUNS_DIR,
+    InvalidRunIdError,
+    resolve_path_within_runs_root,
+    validate_run_id,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SafeRunPath:
+    """Resolved path constrained to RUNS_DIR."""
+
+    path: Path
+
+
+def _ensure_within_runs_dir(path: str | Path, runs_root: Path | None = None) -> SafeRunPath:
+    """Resolve and enforce that ``path`` is a relative artifact path contained in the trusted runs root."""
+    effective_root = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
+    try:
+        resolved = resolve_path_within_runs_root(path, runs_root=effective_root)
+    except InvalidRunIdError as exc:
+        if Path(path).is_absolute():
+            raise ValueError("Refusing to write outside runs directory.") from exc
+        raise ValueError("Invalid relative artifact path.") from exc
+    return SafeRunPath(path=resolved)
+
+
+def atomic_write_json(target: SafeRunPath, payload: Any, runs_root: Path | None = None) -> None:
+    """Write JSON atomically via a same-directory tempfile and replace; expects sanitized path only."""
+    safe_parent = target.path.parent
+    safe_parent.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", target.path.name).strip("._-") or "artifact"
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        prefix=f".{safe_name}.",
+        suffix=".tmp",
+        delete=False,
+        dir=str(safe_parent),
+    ) as handle:
+        handle.write(encoded)
+        handle.flush()
+        temp_name = handle.name
+        # Path-injection hardening and static-analysis clarity for temp file containment.
+        temp_path = Path(temp_name).resolve(strict=False)
+        if temp_path.parent != safe_parent.resolve(strict=False):
+            raise ValueError("Temporary file escaped the target directory.")
+    runs_root_resolved = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
+    # Explicit containment before replace — breaks taint chain for static analysis.
+    try:
+        target.path.relative_to(runs_root_resolved)
+        temp_path.relative_to(runs_root_resolved)
+    except ValueError as exc:
+        raise ValueError("Refusing to write outside runs directory.") from exc
+    temp_path.replace(target.path)
 
 
 def _sanitize_pipeline_data_for_status(
@@ -73,12 +134,17 @@ def export_run(
     budget: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> None:
-    path = Path(run_dir)
-    path.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).isoformat()
+    safe_run_id = validate_run_id(run_id)
+    requested_run_dir = Path(run_dir).resolve(strict=False)
+    if requested_run_dir.name != safe_run_id:
+        raise ValueError("run_dir must end with run_id.")
+    runs_root = requested_run_dir.parent
+    safe_run_dir = _ensure_within_runs_dir(safe_run_id, runs_root)
+    safe_run_dir.path.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).isoformat()
 
     run_meta = {
-        "run_id": run_id,
+        "run_id": safe_run_id,
         "timestamp": timestamp,
         "company_name": company_name,
         "web_domain": web_domain,
@@ -92,59 +158,85 @@ def export_run(
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
 
-    (path / "run_meta.json").write_text(json.dumps(run_meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    (path / "chat_history.json").write_text(json.dumps(chat_history, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_meta.json", runs_root), run_meta, runs_root)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json", runs_root), chat_history, runs_root)
     sanitized_pipeline_data = _sanitize_pipeline_data_for_status(
         status=status,
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
-    (path / "pipeline_data.json").write_text(
-        json.dumps(sanitized_pipeline_data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    (path / "run_context.json").write_text(json.dumps(run_context, indent=2, ensure_ascii=False), encoding="utf-8")
-    (path / "memory_snapshot.json").write_text(
-        json.dumps(run_context.get("short_term_memory", {}), indent=2, ensure_ascii=False),
-        encoding="utf-8",
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/pipeline_data.json", runs_root), sanitized_pipeline_data, runs_root)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_context.json", runs_root), run_context, runs_root)
+    atomic_write_json(
+        _ensure_within_runs_dir(f"{safe_run_id}/memory_snapshot.json", runs_root),
+        run_context.get("short_term_memory", {}),
+        runs_root,
     )
     if sanitized_pipeline_data:
         try:
             from src.exporters.pdf_report import generate_pdf
 
             for lang in ("de", "en"):
-                file_name = f"liquisto_briefing_{run_id}_{lang.upper()}.pdf"
+                file_name = f"liquisto_briefing_{safe_run_id}_{lang.upper()}.pdf"
                 pdf_payload = dict(sanitized_pipeline_data)
-                pdf_payload.setdefault("run_id", run_id)
+                pdf_payload.setdefault("run_id", safe_run_id)
                 export_binary_artifact(
-                    run_dir=path,
+                    run_dir=safe_run_dir,
                     relative_path=f"reports/{file_name}",
                     content=generate_pdf(pdf_payload, lang=lang),
                 )
         except Exception as exc:  # pragma: no cover - non-fatal export hardening
-            logger.warning("pdf export failed for run %s: %s", run_id, exc)
+            logger.warning("pdf export failed for run %s: %s", safe_run_id, exc)
 
 
-def export_follow_up(run_dir: str | Path, follow_up_answer: dict[str, Any]) -> None:
-    path = Path(run_dir)
-    path.mkdir(parents=True, exist_ok=True)
-    target = path / "follow_up_history.json"
-    history: list[dict[str, Any]] = []
-    if target.exists():
-        history = json.loads(target.read_text(encoding="utf-8"))
-    history.append(follow_up_answer)
-    target.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+def export_follow_up(run_id: str, follow_up_answer: dict[str, Any], *, runs_root: Path | None = None) -> None:
+    """Append follow-up answer history; expects sanitized path only."""
+    effective_root: Path = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
+    safe_run_id = validate_run_id(run_id)
+    safe_run_dir = _ensure_within_runs_dir(safe_run_id, effective_root)
+    safe_run_dir.path.mkdir(parents=True, exist_ok=True)
+    safe_target = _ensure_within_runs_dir(f"{safe_run_id}/follow_up_history.json", effective_root)
+    safe_lock_path = _ensure_within_runs_dir(f"{safe_run_id}/follow_up_history.json.lock", effective_root)
+    lock = FileLock(str(safe_lock_path.path))
+    with lock:
+        history: list[dict[str, Any]] = []
+        if safe_target.path.exists():
+            history = json.loads(safe_target.path.read_text(encoding="utf-8"))
+        history.append(follow_up_answer)
+        atomic_write_json(safe_target, history, effective_root)
+
+
+def _sanitize_relative_artifact_path(relative_path: str) -> Path:
+    """Return a safe relative artifact path made of basename-like segments only."""
+    parts: list[str] = []
+    for raw_part in Path(str(relative_path or "")).parts:
+        part = str(raw_part).strip()
+        if not part or part in {".", ".."}:
+            continue
+        if part in {"/", "\\"}:
+            continue
+        safe_part = re.sub(r"[^A-Za-z0-9._-]", "_", part).strip("._-")
+        if safe_part:
+            parts.append(safe_part)
+    if not parts:
+        raise ValueError("Invalid artifact relative path.")
+    return Path(*parts)
 
 
 def export_binary_artifact(
     *,
-    run_dir: str | Path,
+    run_dir: str | Path | SafeRunPath,
     relative_path: str,
     content: bytes,
 ) -> Path:
-    """Persist a generated binary export under the run artifact directory."""
-    path = Path(run_dir)
-    target = path / relative_path
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content)
-    return target
+    """Persist a generated binary export under the run artifact directory; expects sanitized path only."""
+    base_dir = run_dir.path if isinstance(run_dir, SafeRunPath) else Path(run_dir).resolve(strict=False)
+    safe_relative_path = _sanitize_relative_artifact_path(relative_path)
+    target_path = (base_dir / safe_relative_path).resolve(strict=False)
+    try:
+        target_path.relative_to(base_dir)
+    except ValueError as exc:
+        raise ValueError("Artifact path escapes run directory.") from exc
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_bytes(content)
+    return target_path

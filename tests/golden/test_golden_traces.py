@@ -16,7 +16,7 @@ BASELINE_DIR = GOLDEN_DIR / "runs" / "baseline_run_20260329"
 # Contract shape regression: run_meta.json
 # ---------------------------------------------------------------------------
 
-def test_golden_run_meta_has_required_keys():
+def test_golden_run_meta_has_required_keys() -> None:
     meta = json.loads((BASELINE_DIR / "run_meta.json").read_text(encoding="utf-8"))
     assert "run_id" in meta
     assert "status" in meta
@@ -26,7 +26,7 @@ def test_golden_run_meta_has_required_keys():
     }
 
 
-def test_golden_run_meta_unresolved_only_allowed_classes():
+def test_golden_run_meta_unresolved_only_allowed_classes() -> None:
     meta = json.loads((BASELINE_DIR / "run_meta.json").read_text(encoding="utf-8"))
     unresolved = meta.get("unresolved", {})
     allowed = {"customer_confirmation_items", "optional_depth_not_selected"}
@@ -38,7 +38,7 @@ def test_golden_run_meta_unresolved_only_allowed_classes():
 # Contract shape regression: run_context.json
 # ---------------------------------------------------------------------------
 
-def test_golden_run_context_has_answer_matrix():
+def test_golden_run_context_has_answer_matrix() -> None:
     ctx = json.loads((BASELINE_DIR / "run_context.json").read_text(encoding="utf-8"))
     assert "answer_matrix" in ctx
     matrix = ctx["answer_matrix"]
@@ -48,7 +48,7 @@ def test_golden_run_context_has_answer_matrix():
         assert "status" in entry
 
 
-def test_golden_run_context_has_resolution_state():
+def test_golden_run_context_has_resolution_state() -> None:
     ctx = json.loads((BASELINE_DIR / "run_context.json").read_text(encoding="utf-8"))
     assert "resolution_state" in ctx
     rs = ctx["resolution_state"]
@@ -57,7 +57,7 @@ def test_golden_run_context_has_resolution_state():
     assert "bucket" in rs["first_round_resolution"]
 
 
-def test_golden_run_context_answer_matrix_statuses_are_canonical():
+def test_golden_run_context_answer_matrix_statuses_are_canonical() -> None:
     ctx = json.loads((BASELINE_DIR / "run_context.json").read_text(encoding="utf-8"))
     canonical = {"answered", "partially_answered", "blocked", "pending"}
     for qid, entry in ctx.get("answer_matrix", {}).items():
@@ -70,7 +70,7 @@ def test_golden_run_context_answer_matrix_statuses_are_canonical():
 # Contract shape regression: pipeline_data.json
 # ---------------------------------------------------------------------------
 
-def test_golden_pipeline_data_has_all_sections():
+def test_golden_pipeline_data_has_all_sections() -> None:
     pd = json.loads((BASELINE_DIR / "pipeline_data.json").read_text(encoding="utf-8"))
     required = {
         "company_profile", "industry_analysis", "market_network",
@@ -81,14 +81,14 @@ def test_golden_pipeline_data_has_all_sections():
         assert section in pd, f"Missing section in golden pipeline_data: {section}"
 
 
-def test_golden_pipeline_data_synthesis_has_generation_mode():
+def test_golden_pipeline_data_synthesis_has_generation_mode() -> None:
     pd = json.loads((BASELINE_DIR / "pipeline_data.json").read_text(encoding="utf-8"))
     synthesis = pd.get("synthesis", {})
     assert "generation_mode" in synthesis
     assert synthesis["generation_mode"] in {"normal", "fallback", "blocked"}
 
 
-def test_golden_pipeline_data_readiness_has_usable():
+def test_golden_pipeline_data_readiness_has_usable() -> None:
     pd = json.loads((BASELINE_DIR / "pipeline_data.json").read_text(encoding="utf-8"))
     readiness = pd.get("research_readiness", {})
     assert "usable" in readiness
@@ -99,7 +99,7 @@ def test_golden_pipeline_data_readiness_has_usable():
 # Quality reference regression
 # ---------------------------------------------------------------------------
 
-def test_golden_answer_matrix_reference_covers_key_questions():
+def test_golden_answer_matrix_reference_covers_key_questions() -> None:
     ref = json.loads(
         (GOLDEN_DIR / "quality_reference" / "answer_matrix_reference.json")
         .read_text(encoding="utf-8")
@@ -108,7 +108,7 @@ def test_golden_answer_matrix_reference_covers_key_questions():
     assert ref["q_company_fundamentals"] == "answered"
 
 
-def test_golden_resolution_buckets_reference_has_all_buckets():
+def test_golden_resolution_buckets_reference_has_all_buckets() -> None:
     ref = json.loads(
         (GOLDEN_DIR / "quality_reference" / "resolution_buckets_reference.json")
         .read_text(encoding="utf-8")

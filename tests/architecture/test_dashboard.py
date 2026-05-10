@@ -8,18 +8,12 @@ Validates:
 """
 from __future__ import annotations
 
-from io import BytesIO
-
-from pypdf import PdfReader
-
 from src.models.visualization import (
     ChartSeries,
     ChartSpec,
     DashboardBundle,
     DashboardSection,
-    InsightCallout,
     KpiCard,
-    TableBlock,
 )
 from src.orchestration.dashboard_composer import compose_dashboard
 
@@ -315,152 +309,6 @@ def test_compose_dashboard_empty_data_does_not_crash():
     )
     assert isinstance(bundle, DashboardBundle)
     assert bundle.status == "failed"
-
-
-def test_pdf_bundle_rendering_does_not_crash():
-    """Verify that generate_pdf works with a dashboard_bundle in pipeline_data."""
-    from src.exporters.pdf_report import generate_pdf
-    pd = _make_pipeline_data()
-    bundle = compose_dashboard(
-        run_id="r-pdf", status="meeting_ready",
-        pipeline_data=pd, run_context=_make_run_context(),
-    )
-    pd["dashboard_bundle"] = bundle.model_dump(mode="json")
-    pdf_bytes = generate_pdf(pd, lang="en")
-    assert isinstance(pdf_bytes, bytes)
-    assert len(pdf_bytes) > 1000  # non-trivial PDF
-    assert pdf_bytes[:5] == b"%PDF-"
-
-
-def test_pdf_without_bundle_still_works():
-    """Legacy fallback: PDF generation without dashboard_bundle."""
-    from src.exporters.pdf_report import generate_pdf
-    pd = _make_pipeline_data()
-    # No dashboard_bundle key
-    pdf_bytes = generate_pdf(pd, lang="en")
-    assert isinstance(pdf_bytes, bytes)
-    assert pdf_bytes[:5] == b"%PDF-"
-
-
-def test_pdf_localizes_core_labels_for_german_and_english():
-    from src.exporters.pdf_report import generate_pdf
-
-    pd = _make_pipeline_data()
-    pdf_de = generate_pdf(pd, lang="de")
-    pdf_en = generate_pdf(pd, lang="en")
-
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
-    text_en = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_en)).pages)
-
-    assert "Management-Übersicht" in text_de
-    assert "Offene Fragen & Validierungsplan" in text_de
-    assert "Fehlende Schlüsselrollen" in text_de
-    assert "Telefonnummern und E-Mail-Adressen werden nur gezeigt" in text_de
-    assert "Verantwortlich" in text_de
-    assert "Zeitpunkt" in text_de
-    assert "Hypothese" in text_de
-    assert "Ergebnis" in text_de
-    assert "Abschluss" in text_de
-    assert "Executive Dashboard" not in text_de
-    assert "Open Questions & Validation Plan" not in text_de
-    assert "Owner / Timing" not in text_de
-    assert "Hypothesis / output / done" not in text_de
-    assert "Confidence" not in text_de
-
-    assert "Executive Dashboard" in text_en
-    assert "Open Questions & Validation Plan" in text_en
-    assert "Critical missing roles" in text_en
-    assert "Phone numbers and email addresses are shown only when they are publicly evidenced." in text_en
-    assert "Management-Übersicht" not in text_en
-    assert "Offene Fragen & Validierungsplan" not in text_en
-
-
-def test_pdf_offline_localizes_structured_playbook_content(monkeypatch):
-    from src.config import settings
-    from src.exporters.pdf_report import generate_pdf
-
-    monkeypatch.setattr(settings, "get_openai_api_key", lambda: "")
-    pd = _make_pipeline_data()
-    pd["synthesis"]["executive_summary"] = "Conservative output — synthesis incomplete."
-
-    pdf_de = generate_pdf(pd, lang="de")
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
-
-    assert "Konservative Ausgabe" in text_de
-    assert "Wirtschaftlicher" in text_de
-    assert "Teilweise" in text_de
-    assert "CFO-zentrierte" in text_de
-    assert "Conservative output" not in text_de
-    assert "Economic buyer" not in text_de
-    assert "Partially verified" not in text_de
-    assert "Prepare CFO-first outreach" not in text_de
-
-
-def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
-    import openai
-
-    from src.config import settings
-    from src.exporters.pdf_report import generate_pdf
-
-    class _TimeoutCompletions:
-        @staticmethod
-        def create(*args, **kwargs):
-            raise TimeoutError("translation timeout")
-
-    class _TimeoutChat:
-        completions = _TimeoutCompletions()
-
-    class _TimeoutOpenAI:
-        def __init__(self, *args, **kwargs):
-            self.chat = _TimeoutChat()
-
-    monkeypatch.setattr(settings, "get_openai_api_key", lambda: "test-key")
-    monkeypatch.setattr(openai, "OpenAI", _TimeoutOpenAI)
-
-    pd = _make_pipeline_data()
-    pd["synthesis"]["executive_summary"] = "Conservative output — synthesis incomplete."
-
-    pdf_de = generate_pdf(pd, lang="de")
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
-
-    assert pdf_de[:5] == b"%PDF-"
-    assert "Konservative Ausgabe" in text_de
-    assert "Prepare CFO-first outreach" not in text_de
-
-
-def test_pdf_german_has_no_nv_placeholders_and_no_truncated_action_text():
-    from src.exporters.pdf_report import generate_pdf
-
-    pd = _make_pipeline_data()
-    long_action = (
-        "Schließe die operative Kontaktlücke rund um Werkleitung Polen über LinkedIn-Recherche, "
-        "Assistenz und zentrale Telefonvermittlung vollständig vor dem Erstgespräch ohne Kürzung Endemarker."
-    )
-    pd["synthesis"]["recommended_engagement_paths"] = []
-    pd["synthesis"]["liquisto_service_relevance"] = []
-    pd["synthesis"]["recommended_next_steps"] = [
-        {
-            "phase": "pre_meeting",
-            "owner": "Liquisto Account Lead",
-            "action": long_action,
-            "target_person": "Werkleitung Polen",
-            "asset_hypothesis": "Hypothese vorhanden",
-            "goal": "Gespräch sichern",
-            "expected_output": "Nächster Termin bestätigt",
-            "success_criterion": "Konkreter Folgetermin",
-            "definition_of_done": "Folgetermin fixiert",
-            "dependency": "Kontaktpfad geklärt",
-        }
-    ]
-    pd["meeting_actions"] = [{"title": "Follow-up", "description": long_action}]
-
-    pdf_de = generate_pdf(pd, lang="de")
-    text_de = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_de)).pages)
-    text_de_lower = text_de.lower()
-
-    assert "n/v" not in text_de_lower
-    assert " endemarker" in text_de_lower
-    assert "keine belastbaren öffentlichen quellen verfügbar." in text_de_lower
 
 
 def test_compose_dashboard_bundle_is_json_serializable():

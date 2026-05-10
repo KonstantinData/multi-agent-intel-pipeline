@@ -177,8 +177,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 1.0,
-                "search_patterns_de": ["<firma> unternehmensregister jahresabschluss", "<firma> bilanz unternehmensregister", "<firma> inventar anlagevermögen unternehmensregister"],
-                "search_patterns_en": ["<company> annual filing german commercial register", "<company> balance sheet register filing"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -189,8 +187,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.95,
-                "search_patterns_de": ["<firma> bundesanzeiger jahresabschluss", "<firma> inventar abschreibung bundesanzeiger", "<firma> vorräte warenbestand bundesanzeiger"],
-                "search_patterns_en": ["<company> federal gazette annual filing", "<company> inventory positions germany"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -201,8 +197,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.85,
-                "search_patterns_de": ["<firma> opencorporates handelsregister international", "<firma> firmenprofil ausland register"],
-                "search_patterns_en": ["<company> opencorporates company filing", "<company> corporate registry international"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -213,8 +207,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.9,
-                "search_patterns_de": ["northdata <firma> finanzlage umsatz mitarbeiter", "northdata <firma> geschäftsführung jahresabschluss", "northdata <firma> warenklassifikation branche"],
-                "search_patterns_en": ["northdata <company> company profile financials", "northdata <company> management annual report"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -225,8 +217,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "indicative",
                 "confidence_weight": 0.7,
-                "search_patterns_de": ["bmwk <branche> branchenbericht lage konjunktur", "bmwk <branche> umsatz beschäftigung sektoranalyse", "bmwk <branche> strukturbericht wettbewerbsfähigkeit"],
-                "search_patterns_en": ["bmwk <industry> sector report germany", "bmwk <industry> market analysis competitiveness"],
                 "fallback_label": "keine freien Quellen",
             },
         ],
@@ -243,8 +233,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.95,
-                "search_patterns_de": ["destatis <branche> produktion auftragseingang index", "destatis <branche> erzeugerpreisindex preisdruck", "destatis <branche> kapazitätsauslastung überkapazität"],
-                "search_patterns_en": ["destatis <industry> output order intake index germany", "destatis <industry> producer price supply pressure"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -255,8 +243,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.9,
-                "search_patterns_de": ["eurostat <branche> eu produktion nachfragerückgang", "eurostat <branche> kapazitätsauslastung europa rückgang"],
-                "search_patterns_en": ["eurostat <industry> demand decline growth EU", "eurostat <industry> overcapacity utilisation rate"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -267,8 +253,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.8,
-                "search_patterns_de": ["ifo <branche> geschäftsklima konjunktur lage", "ifo <branche> auftragseingang erwartungen nachfrage", "ifo <branche> überkapazitäten preiserwartungen rückgang"],
-                "search_patterns_en": ["ifo <industry> business climate survey germany", "ifo <industry> demand outlook capacity utilisation", "ifo <industry> order intake expectations decline growth"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -279,8 +263,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "indicative",
                 "confidence_weight": 0.55,
-                "search_patterns_de": ["<produktkategorie> nachfrage rückgang überkapazität", "<produktkategorie> gebraucht ersatzteile restbestand", "<firma> bestand lager überschuss"],
-                "search_patterns_en": ["<product category> demand decline growth trend", "<product category> surplus aftermarket used equipment", "<company> overcapacity inventory surplus"],
                 "fallback_label": "keine freien Quellen",
             },
         ],
@@ -297,8 +279,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.85,
-                "search_patterns_de": ["<buyer> pressemitteilung restposten ankauf lager", "<buyer> unternehmensnachricht inventar übernahme", "<buyer> akquisition gebrauchtanlage asset deal"],
-                "search_patterns_en": ["<buyer> press release inventory acquisition surplus", "<buyer> corporate announcement asset purchase deal", "<buyer> used equipment acquisition redeployment"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -309,8 +289,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "indicative",
                 "confidence_weight": 0.65,
-                "search_patterns_de": ["<branche> händler restposten gebrauchtmaschinen ankauf", "<branche> aftermarket partner wiederverwendung redeployment", "<branche> liquidation sekundärmarkt surplus"],
-                "search_patterns_en": ["<industry> aftermarket distributor used equipment resale", "<industry> secondary market buyers redeployment channels", "<industry> liquidation surplus disposal"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -321,8 +299,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "indicative",
                 "confidence_weight": 0.6,
-                "search_patterns_de": ["surplex <anlagenkategorie> auktion gebraucht ankauf", "surplex <branche> maschinenauktion restbestand", "<anlagenkategorie> industrieauktion wiederverkauf redeployment"],
-                "search_patterns_en": ["surplex <asset category> industrial auction used", "surplex <industry> machinery surplus sale", "<asset category> auction aftermarket redeployment secondary"],
                 "fallback_label": "keine freien Quellen",
             },
         ],
@@ -339,8 +315,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "hard",
                 "confidence_weight": 0.9,
-                "search_patterns_de": ["handelsregister <firma> geschäftsführer vorstand", "handelsregister <firma> prokuristen leitungsorgane", "<firma> hr-nummer geschäftsführer amtsgericht"],
-                "search_patterns_en": ["<company> german commercial register managing director", "<company> handelsregister board officers germany"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -351,8 +325,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "indicative",
                 "confidence_weight": 0.7,
-                "search_patterns_de": ["site:linkedin.com <firma> geschäftsführer CEO vorstand", "site:linkedin.com <firma> leiter einkauf procurement", "site:linkedin.com <firma> cfo finanzvorstand controlling", "site:linkedin.com <firma> operations leiter werk supply chain", "site:linkedin.com <firma> aftermarket service leiter", "site:linkedin.com <firma> bereichsleiter sparte divisional"],
-                "search_patterns_en": ["site:linkedin.com <company> managing director CEO board", "site:linkedin.com <company> head procurement CFO finance", "site:linkedin.com <company> operations director plant manager", "site:linkedin.com <company> aftermarket service lead", "site:linkedin.com <company> divisional business unit head"],
                 "fallback_label": "keine freien Quellen",
             },
             {
@@ -363,8 +335,6 @@ _DEFAULT_SOURCE_PROFILES: dict[str, dict[str, Any]] = {
                 "free_access": "public",
                 "evidence_type": "indicative",
                 "confidence_weight": 0.6,
-                "search_patterns_de": ["wlw <firma> ansprechpartner kontakt einkauf", "wlw <branche> lieferant geschäftsführer kontakt", "<firma> messe sprecher branchenveranstaltung kontakt", "<firma> pressemitteilung ansprechpartner verantwortlich"],
-                "search_patterns_en": ["wlw <company> contact person procurement trade", "<company> trade show speaker contact", "<company> press contact spokesperson"],
                 "fallback_label": "keine freien Quellen",
             },
         ],
@@ -378,28 +348,40 @@ def _slug_for_department(department: str) -> str:
     return _DEPARTMENT_TO_SLUG[department]
 
 
-def _read_json_payload(path: Path) -> dict[str, Any]:
+def _read_json_payload(path: Path, *, strict: bool = False, department: str = "") -> dict[str, Any]:
     if not path.exists():
+        if strict:
+            raise FileNotFoundError(f"KB file not found for {department or 'unknown department'}: {path}")
         return {}
     try:
         raw = path.read_text(encoding="utf-8").strip()
-    except OSError:
+    except OSError as exc:
+        if strict:
+            raise OSError(f"Cannot read KB file for {department or 'unknown department'}: {path}: {exc}") from exc
         return {}
     if not raw:
+        if strict:
+            raise ValueError(f"KB file is empty for {department or 'unknown department'}: {path}")
         return {}
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
+        if strict:
+            raise ValueError(f"Cannot parse KB file for {department or 'unknown department'}: {path}: {exc}") from exc
         logger.warning("Could not parse KB payload %s: %s", path, exc)
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        if strict:
+            raise ValueError(f"KB file must contain a JSON object for {department or 'unknown department'}: {path}")
+        return {}
+    return parsed
 
 
 @lru_cache(maxsize=8)
 def load_department_policy(department: str) -> DepartmentPolicy:
     slug = _slug_for_department(department)
     path = ROOT / "knowledge" / "policies" / f"{slug}.yaml"
-    raw_payload = _read_json_payload(path)
+    raw_payload = _read_json_payload(path, strict=_STRICT_PROFILE_LOADING, department=department)
     if not raw_payload:
         if _STRICT_PROFILE_LOADING:
             raise RuntimeError(
@@ -417,7 +399,7 @@ def load_department_policy(department: str) -> DepartmentPolicy:
 def load_department_source_profile(department: str) -> dict[str, Any]:
     slug = _slug_for_department(department)
     path = ROOT / "knowledge" / "sources" / f"{slug}.yaml"
-    raw_payload = _read_json_payload(path)
+    raw_payload = _read_json_payload(path, strict=_STRICT_PROFILE_LOADING, department=department)
     if not raw_payload:
         if _STRICT_PROFILE_LOADING:
             raise RuntimeError(

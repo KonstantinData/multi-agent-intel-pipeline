@@ -7,13 +7,13 @@ Thin entry point that delegates all orchestration to the DepartmentLeadAgent.
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from src.agents.lead import DepartmentLeadAgent
 from src.domain.intake import SupervisorBrief
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.orchestration.task_router import Assignment
-
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 

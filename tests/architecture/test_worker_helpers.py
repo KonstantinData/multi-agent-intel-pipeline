@@ -7,18 +7,17 @@ from __future__ import annotations
 
 from src.agents._helpers import (
     assess_contact_coverage,
-    coerce_to_string,
-    coerce_contact_records,
     build_memory_context,
+    coerce_contact_records,
+    coerce_to_string,
     extract_financial_deep_dive,
     extract_transaction_events,
     normalize_payload_updates,
     parse_contact_from_title,
     prioritize_contact_records,
-    sanitize_for_section,
     salvage_valid_fields,
+    sanitize_for_section,
 )
-
 
 # ---------------------------------------------------------------------------
 # coerce_to_string

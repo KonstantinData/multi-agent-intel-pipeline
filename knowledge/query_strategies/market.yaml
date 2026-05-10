@@ -7,7 +7,16 @@
         "{industry} market outlook growth decline overcapacity",
         "\"{company}\" market share competitive position",
         "{industry} demand forecast supply pressure {company}"
-      ]
+      ],
+      "query_variants": {
+        "method_refinement": {
+          "queries": [
+            "{industry} industry report demand supply capacity",
+            "{industry} market outlook overcapacity price pressure",
+            "\"{company}\" market report demand outlook"
+          ]
+        }
+      }
     }
   }
 }

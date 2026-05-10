@@ -29,7 +29,8 @@ from src.app.use_cases import build_standard_backlog
 from src.config import summarize_runtime_models
 from src.exporters.pdf_report import generate_pdf
 from src.orchestration.follow_up import answer_follow_up, load_run_artifact
-from src.pipeline_runner import AGENT_META, PIPELINE_STEPS, run_pipeline
+from src.app.pipeline_metadata import AGENT_META, PIPELINE_STEPS
+from src.pipeline_runner import run_pipeline
 ```
 
 ### 1.4 Externe Abhängigkeiten
@@ -478,7 +479,7 @@ st.caption(L["page_subtitle"])
 }
 ```
 
-### 4.3 AGENT_META (aus pipeline_runner.py)
+### 4.3 AGENT_META (aus pipeline_metadata.py)
 ```python
 {
     "Supervisor": {"icon": "🧭", "color": "#0f4c81", "summary": "..."},
@@ -492,7 +493,7 @@ st.caption(L["page_subtitle"])
 }
 ```
 
-### 4.4 PIPELINE_STEPS (aus pipeline_runner.py)
+### 4.4 PIPELINE_STEPS (aus pipeline_metadata.py)
 ```python
 [
     ("Supervisor", "Intake + Routing"),

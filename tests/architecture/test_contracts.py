@@ -11,18 +11,22 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
+from src.models.schemas import DepartmentPackage
 from src.orchestration.contracts import (
+    DEPENDENCY_SATISFYING_OUTCOMES,
+    NON_TERMINAL_OUTCOMES,
+    OUTCOME_TO_TASK_STATUS,
+    TASK_LIFECYCLE_STATUSES,
+    TERMINAL_OUTCOMES,
     ContractViolation,
     DepartmentRunState,
-    DEPENDENCY_SATISFYING_OUTCOMES,
     TaskArtifact,
     TaskDecisionArtifact,
     TaskReviewArtifact,
-    TERMINAL_OUTCOMES,
-    NON_TERMINAL_OUTCOMES,
-    OUTCOME_TO_TASK_STATUS,
 )
-
 
 # ===========================================================================
 # TaskArtifact
@@ -181,6 +185,22 @@ class TestTaskDecisionArtifact:
         assert OUTCOME_TO_TASK_STATUS["accepted"] == "accepted"
         assert OUTCOME_TO_TASK_STATUS["accepted_with_gaps"] == "degraded"
         assert OUTCOME_TO_TASK_STATUS["closed_unresolved"] == "degraded"
+
+    @pytest.mark.parametrize("status", sorted(TASK_LIFECYCLE_STATUSES))
+    def test_department_package_accepts_canonical_task_statuses(self, status):
+        package = DepartmentPackage.model_validate({
+            "department": "TestDepartment",
+            "completed_tasks": [{"task_key": "t1", "status": status}],
+        })
+        assert package.completed_tasks[0].status == status
+
+    @pytest.mark.parametrize("status", ["rejected", "unknown"])
+    def test_department_package_rejects_non_lifecycle_task_statuses(self, status):
+        with pytest.raises(ValidationError):
+            DepartmentPackage.model_validate({
+                "department": "TestDepartment",
+                "completed_tasks": [{"task_key": "t1", "status": status}],
+            })
 
 
 # ===========================================================================
@@ -467,7 +487,9 @@ class TestContractViolation:
 
 class TestSchemaValidationHelper:
     def test_valid_payload_produces_no_violations(self):
-        from src.agents.lead import _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema(
             "CompanyFundamentals",
             {"company_name": "ACME", "website": "acme.de", "industry": "Mfg"},
@@ -475,18 +497,24 @@ class TestSchemaValidationHelper:
         assert violations == []
 
     def test_empty_schema_key_produces_no_violations(self):
-        from src.agents.lead import _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema("", {"anything": "ok"})
         assert violations == []
 
     def test_unknown_schema_key_produces_no_violations(self):
-        from src.agents.lead import _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema("NonExistent", {"x": 1})
         assert violations == []
 
     def test_empty_payload_against_schema_with_defaults_passes(self):
         """Pydantic models with all-default fields accept empty dicts."""
-        from src.agents.lead import _validate_payload_against_task_schema
+        from src.orchestration.contract_validation import (
+            validate_payload_against_task_schema as _validate_payload_against_task_schema,
+        )
         violations = _validate_payload_against_task_schema("CompanyFundamentals", {})
         # CompanyFundamentals has all defaults, so empty dict validates fine
         assert violations == []

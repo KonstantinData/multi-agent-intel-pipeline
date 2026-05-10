@@ -13,13 +13,9 @@ Requires AG2/autogen — auto-skipped if not installed.
 """
 from __future__ import annotations
 
-import json
-import os
-import sys
-from pathlib import Path
+import inspect
 from typing import Any
 from unittest.mock import MagicMock, patch
-import inspect
 
 import pytest
 
@@ -31,9 +27,8 @@ def _set_dummy_api_key(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", _DUMMY_KEY)
 
 
-from src.domain.intake import SupervisorBrief
-from src.orchestration.task_router import Assignment
-
+from src.domain.intake import SupervisorBrief  # noqa: E402
+from src.orchestration.task_router import Assignment  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -138,6 +133,76 @@ def _simulate_department_chat(lead_agent, brief, assignments, supervisor):
 # ---------------------------------------------------------------------------
 
 class TestDepartmentGroupChatRun:
+    def test_lead_system_prompt_escapes_untrusted_runtime_text(self):
+        from src.agents.lead import DepartmentLeadAgent
+
+        lead = DepartmentLeadAgent.__new__(DepartmentLeadAgent)
+        lead.name = 'Lead<script>alert("x")</script>\x00'
+        lead.department = 'CompanyDepartment<img src=x onerror=alert("x")>'
+        lead.researcher_name = 'Researcher"><svg onload=alert(1)>'
+        lead.critic_name = "Critic<script>alert(2)</script>"
+        lead.judge_name = "Judge<img src=x onerror=alert(3)>"
+        lead.coding_name = "Coder<script>alert(4)</script>"
+
+        assignment = Assignment(
+            task_key='company_fundamentals<script>alert("task")</script>',
+            assignee="CompanyDepartment",
+            target_section="company_profile",
+            label='Company <img src=x onerror=alert("label")>',
+            objective="Build verified fundamentals.",
+            model_name="gpt-4.1-mini",
+            allowed_tools=("search",),
+        )
+        investigation_plan = {
+            "task_sequence": [
+                {"lead_guidance": 'Use <script>alert("guidance")</script> primary sources.'}
+            ],
+            "domain_hypothesis": 'Hypothesis <img src=x onerror=alert("hyp")>',
+            "classification_frame": 'Frame <script>alert("frame")</script>',
+            "source_priority": ['owned<script>alert("source")</script>'],
+            "recommended_sources": [
+                {"name": 'Registry <img src=x onerror=alert("source")>', "priority": "primary"}
+            ],
+            "policy_required_fields": ['company_name<script>alert("field")</script>'],
+        }
+
+        prompt = lead._lead_system_prompt(investigation_plan, [assignment])
+
+        assert "<script" not in prompt.lower()
+        assert "<img" not in prompt.lower()
+        assert "<svg" not in prompt.lower()
+        assert "\x00" not in prompt
+        assert "&lt;script&gt;" in prompt
+        assert "&lt;img" in prompt
+
+    def test_all_role_system_prompts_escape_untrusted_agent_names(self):
+        from src.agents.lead import DepartmentLeadAgent
+
+        lead = DepartmentLeadAgent.__new__(DepartmentLeadAgent)
+        lead.name = 'Lead<script>alert("x")</script>'
+        lead.department = 'CompanyDepartment<img src=x onerror=alert("x")>'
+        lead.researcher_name = 'Researcher"><svg onload=alert(1)>'
+        lead.critic_name = "Critic<script>alert(2)</script>"
+        lead.judge_name = "Judge<img src=x onerror=alert(3)>"
+        lead.coding_name = "Coder<script>alert(4)</script>"
+
+        prompts = [
+            lead._researcher_system_prompt(),
+            lead._critic_system_prompt(),
+            lead._judge_system_prompt(),
+            lead._followup_lead_system_prompt(
+                'Question <script>alert("q")</script>',
+                'Context <img src=x onerror=alert("c")>',
+            ),
+            lead._coding_system_prompt(),
+        ]
+
+        combined = "\n".join(prompts).lower()
+        assert "<script" not in combined
+        assert "<img" not in combined
+        assert "<svg" not in combined
+        assert "&lt;script&gt;" in combined
+
     def test_company_department_produces_valid_package(self):
         from src.agents.lead import DepartmentLeadAgent
         brief = _make_brief()
@@ -293,7 +358,6 @@ class TestSynthesisDepartmentRun:
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
             synthesis, messages = agent.run(
                 brief=brief, department_packages=packages,
-                supervisor=_make_supervisor(), departments={},
                 synthesis_context={
                     "target_company": "TestCo GmbH",
                     "liquisto_service_relevance": [{"service_area": "excess_inventory", "relevance": "medium", "reasoning": "test"}],
@@ -321,12 +385,52 @@ class TestSynthesisDepartmentRun:
         with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
             synthesis, _ = agent.run(
                 brief=brief, department_packages=_make_department_packages(),
-                supervisor=_make_supervisor(), departments={},
                 synthesis_context={"target_company": "TestCo GmbH", "confidence": "low"},
             )
         assert synthesis["generation_mode"] == "fallback"
         assert synthesis["target_company"] == "TestCo GmbH"
         assert synthesis["confidence"] == "low"
+
+    def test_synthesis_run_has_no_supervisor_param(self):
+        from src.agents.synthesis_department import SynthesisDepartmentAgent
+        from src.orchestration.synthesis_runtime import SynthesisRuntime
+
+        assert "supervisor" not in inspect.signature(SynthesisDepartmentAgent.run).parameters
+        assert "supervisor" not in inspect.signature(SynthesisRuntime.run).parameters
+
+    def test_synthesis_exports_back_requests_without_supervisor_reference(self):
+        from src.agents.synthesis_department import SynthesisDepartmentAgent
+
+        agent = SynthesisDepartmentAgent()
+        brief = _make_brief()
+
+        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
+            tools: dict[str, Any] = {}
+            for ag in manager.groupchat.agents:
+                for tool_name, tool_fn in getattr(ag, "_function_map", {}).items():
+                    tools[tool_name] = tool_fn
+            tools["request_department_followup"](
+                department="CompanyDepartment",
+                request_type="clarify",
+                subject="inventory signal",
+                context="Synthesis needs stronger evidence.",
+            )
+            tools["finalize_synthesis"](
+                opportunity_assessment="Inventory monetization remains plausible.",
+                negotiation_relevance="Validate urgency before pricing.",
+                executive_summary="TestCo has a plausible but still validation-dependent opportunity.",
+            )
+
+        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
+            synthesis, _ = agent.run(
+                brief=brief,
+                department_packages=_make_department_packages(),
+                synthesis_context={"target_company": "TestCo GmbH"},
+            )
+
+        assert synthesis["back_requests_issued"] == 1
+        assert synthesis["back_requests"][0]["department"] == "CompanyDepartment"
+        assert synthesis["back_requests"][0]["subject"] == "inventory signal"
 
 
 # ---------------------------------------------------------------------------
@@ -398,8 +502,9 @@ class TestNoSupervisorInDepartmentLoop:
         assert "supervisor" not in sig.parameters
 
     def test_lead_has_no_request_supervisor_revision_tool(self):
-        import src.agents.lead as lead_mod
         import re
+
+        import src.agents.lead as lead_mod
         source = inspect.getsource(lead_mod)
         code_lines = [
             ln for ln in source.split("\n")
