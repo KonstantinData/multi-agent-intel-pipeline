@@ -288,6 +288,39 @@ Lead calls: finalize_package(summary) → TERMINATE
 `MAX_TASK_RETRIES` is configurable via env var `LIQUISTO_MAX_TASK_RETRIES`
 (default: 3).
 
+**Observed calibration note**: In practice, the Lead's LLM judgment determines
+whether to consume retries or escalate directly to the Judge. For
+information-scarce domains or when the Critic's rejection signal is strong,
+the Lead may escalate to the Judge on the first attempt without issuing a
+retry — even when `attempts < MAX_TASK_RETRIES`. This means the retry path
+via CodingSpecialist is available but not guaranteed to activate.
+Zero strategy changes (`strategy_changes: []`) with concurrent Judge
+escalations is a valid runtime state, not an error.
+
+### Two-layer admission model
+
+Department quality is evaluated at two independent levels:
+
+1. **Internal gate (deterministic)** — Lead or Judge issues a
+   `TaskDecisionArtifact` with outcome `accepted`, `accepted_with_gaps`, or
+   `closed_unresolved`. This is based on the stored artifact history and the
+   department-specific KB policy rules.
+
+2. **Supervisor admission gate (LLM-based)** — After `finalize_package`,
+   the Supervisor evaluates the full `DepartmentPackage` and assigns
+   `accepted`, `accepted_with_gaps`, or `rejected`.
+
+These two gates are **independent**. A package whose individual tasks were
+all Judge-accepted can still receive a Supervisor-level `rejected` if the
+package as a whole does not meet the Supervisor's cross-task coherence and
+evidence-coverage expectations. This divergence routes the run to
+`BLOCKING_FAILURE` via the ResolutionController even when no individual task
+failed.
+
+Implication: the two gates must be calibrated together. An overly strict
+Supervisor admission gate relative to the internal Judge thresholds will
+produce `BLOCKING_FAILURE` on runs where substantive evidence was collected.
+
 ### Supervisor boundary (CHG-03)
 
 The Supervisor does **not** pass itself into department runs.
@@ -310,6 +343,43 @@ in this priority order per task:
 
 The finalized `DepartmentRunState` is persisted to
 `ShortTermMemoryStore.department_run_states` after every finalization.
+
+## Observability and Cost Tracking
+
+### What is tracked
+
+- **Department timings**: wall-clock seconds per department, stored in
+  `run_meta.json` and `resolution_state.budget_tracker`.
+- **Researcher token usage**: tracked per `worker_report` in
+  `ShortTermMemoryStore`. Aggregated in `usage_totals` and surfaced in
+  `run_meta.json` under `usage.agents.<role>`.
+- **Web search call cost**: counted and priced separately via
+  `estimate_web_search_preview_call_cost_usd()`.
+- **Phase token budgets**: `PhaseBudgetTracker` tracks first_pass, closure,
+  and optional_depth token consumption against configured caps.
+- **Phase checkpoints**: `after_supervisor_brief`, `after_first_pass`,
+  `after_closure`, `after_synthesis`, `after_finalization` are written to
+  `checkpoints/` for crash recovery and failure diagnostics.
+- **Run-level structured trace**: `current_phase`, `last_checkpoint`,
+  and failure context are persisted in `resolution_state`.
+
+### Known tracking gap
+
+`worker_reports` records only **Researcher** LLM calls (via `run_research`
+tool). Lead, Critic, Judge, and CodingSpecialist LLM calls are **not**
+captured in per-agent usage tracking. The `estimated_cost_usd` in
+`run_meta.json` therefore reflects Researcher token cost plus web search
+cost only. Lead/Critic/Judge token usage — which is significant when many
+Judge escalations occur — is invisible to the cost model.
+
+Target (2026): all `ConversableAgent` LLM calls must be tracked per role,
+contributing to a complete per-run cost breakdown.
+
+### What is not yet tracked
+
+- Distributed traces (no OpenTelemetry span/trace IDs)
+- Per-turn AG2 GroupChat latency
+- Metric emission for external monitoring (Prometheus/Grafana)
 
 ## Memory Model
 
@@ -350,6 +420,16 @@ legal suffixes (`GmbH`, `AG`, etc.) are replaced with `{domain}` / `{company}`.
 The `domain` field is always set to `""` — the store never holds a customer
 domain name.
 
+**Current implementation**: flat JSON file (`artifacts/memory/long_term_memory.json`)
+with in-process filter-based retrieval. Pattern consolidation runs only on
+`completed` / `meeting_ready` runs — `discovery_ready` runs do not
+contribute patterns.
+
+**Known limitation**: flat-file retrieval does not support semantic
+similarity search. Pattern relevance degrades as the store grows beyond
+~200 patterns. Target (2026): replace with an embedding-indexed vector store
+(e.g. `pgvector`, `ChromaDB`) for semantic retrieval at scale.
+
 ## Follow-Up Mode (CHG-08)
 
 Follow-up mode starts from a stored `run_id`.
@@ -369,6 +449,24 @@ Flow:
 Follow-up answering is grounded in the rehydrated run brain. If additional
 research is needed, `DepartmentRuntime.run_followup()` initiates a new
 mini-session with the stored context.
+
+### Follow-up routing
+
+**Current implementation**: keyword-based routing against the lowercased
+question text. Questions containing terms like "contact", "market",
+"buyer" are routed to the corresponding department; unmatched questions
+default to `CompanyDepartment`. Routing happens in `run_bounded_follow_up()`
+and `answer_follow_up()` in `src/orchestration/follow_up.py`.
+
+**Known limitation**: keyword matching is brittle. A question like
+"Who is the right contact for a restructuring discussion?" routes to
+`CompanyDepartment` because no contact keyword matches — despite being
+a clear `ContactDepartment` question.
+
+**Target (2026)**: route via embedding similarity of the question against
+the `MEETING_QUESTION_REGISTRY` entries, or a lightweight classifier LLM
+call. This would make routing robust to phrasing variation and cross-domain
+questions.
 
 ## Required Output Artifacts
 
@@ -474,3 +572,100 @@ compatibility but are not the authoritative action model.
 | Global one-size-fits-all completion semantics | Department-specific KB policy gates at acceptance time |
 | Shallow follow-up heuristics | Run brain rehydration from `department_run_states` (CHG-08) |
 | Unguarded company facts in long-term memory | Scrubbed structural patterns only (CHG-09) |
+| Monolithic `run_pipeline()` function | Phase-decomposed runner with typed dataclasses per phase |
+| Inline `OPENAI_API_KEY` in deploy script | Secret forwarded as SSH session env var; no literal in script |
+
+## Architecture Gap Analysis — 2026 State-of-the-Art Targets
+
+This section documents the delta between the current implementation and
+2026 best-practice standards for production multi-agent AI pipelines.
+Items are ordered by impact.
+
+### GAP-01 · Complete LLM cost tracking across all roles
+
+**Current**: Only Researcher LLM calls are tracked in `worker_reports`.
+Lead, Critic, Judge, and CodingSpecialist token usage is not captured.
+Cost figures in `run_meta.json` understate true LLM cost — especially on
+runs with many Judge escalations.
+
+**Target**: Instrument all `ConversableAgent` LLM calls. Emit a usage
+record per role per call. Aggregate into a complete per-run cost breakdown
+by role.
+
+### GAP-02 · Distributed tracing (OpenTelemetry)
+
+**Current**: Phase checkpoints and `logging.info/warning` provide local
+observability. No trace/span IDs, no metric emission, no integration with
+external monitoring (Prometheus, Grafana).
+
+**Target**: Instrument the pipeline with OpenTelemetry spans at phase,
+department, and tool-call level. Emit metrics (department duration,
+token cost, resolution bucket frequency) to a time-series backend.
+This is a prerequisite for production SLA monitoring on Hetzner.
+
+### GAP-03 · Vector store for Long-Term Process Memory
+
+**Current**: `long_term_memory.json` is a flat JSON file with filter-based
+retrieval. Does not scale beyond ~200 patterns and cannot retrieve by
+semantic similarity.
+
+**Target**: Replace with an embedding-indexed store (e.g. `pgvector` on
+the Hetzner Postgres instance, or `ChromaDB`). Use embedding similarity
+for pattern retrieval at run start. This becomes relevant once the system
+has processed 50+ distinct runs.
+
+### GAP-04 · LLM/embedding-based follow-up routing
+
+**Current**: Keyword matching on lowercased question text.
+Phrasing variation and cross-domain questions route incorrectly.
+
+**Target**: Embed the question and compute cosine similarity against the
+`MEETING_QUESTION_REGISTRY` embeddings, or issue a single lightweight
+classifier LLM call with the 5 department descriptions as candidates.
+Latency cost: < 200 ms. Accuracy improvement: significant.
+
+### GAP-05 · Systematic evaluation framework
+
+**Current**: `tests/golden/` covers structural regressions. No systematic
+measurement of research quality, evidence completeness, or synthesis
+accuracy across runs.
+
+**Target**: Build a run-level eval pipeline that scores each run against
+a rubric (e.g. question coverage rate, evidence-to-gap ratio, Supervisor
+admission rate per department). Run evals after every release. Use results
+to calibrate Critic thresholds and Supervisor admission prompts.
+
+### GAP-06 · Turn-level AG2 GroupChat streaming
+
+**Current**: `on_message` hook fires at phase boundaries (department
+assigned, department reviewed, synthesis reviewed). Within a GroupChat,
+the UI receives no updates until the department returns its full package.
+
+**Target**: Stream AG2 GroupChat turns via `on_message` at each
+Lead/Researcher/Critic/Judge turn. Requires hooking into AG2's
+`process_message` callback or equivalent. Reduces perceived latency
+significantly for runs lasting 5–20 minutes.
+
+### GAP-07 · Adaptive department execution
+
+**Current**: All departments always execute all assigned tasks. No
+shortcut path for well-documented companies where primary data is
+immediately available.
+
+**Target**: After Supervisor brief, evaluate a readiness pre-check
+(e.g. public annual report present, company in LTM with high-confidence
+prior run). If pre-check passes, reduce task scope for Company Department.
+Estimated impact: 30–50% runtime reduction for well-known targets.
+
+### GAP-08 · Gate calibration alignment
+
+**Current**: The internal Judge gate (deterministic, rule-based) and the
+Supervisor admission gate (LLM-based) are calibrated independently.
+Divergence produces `BLOCKING_FAILURE` on runs where evidence was
+collected but did not satisfy the Supervisor's cross-task coherence check.
+
+**Target**: Define explicit calibration tests that run both gates against
+synthetic department packages. Ensure that a Judge-accepted package at
+`accepted_with_gaps` confidence meets the Supervisor admission threshold
+for `accepted_with_gaps`. Gate prompts and KB policy thresholds must be
+jointly reviewed when either is changed.
