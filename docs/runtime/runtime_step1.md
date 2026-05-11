@@ -18,6 +18,8 @@ Matrix. Erst danach startet die Supervisor-gesteuerte Department-Ausfuehrung.
 Step 1 endet unmittelbar vor diesem Aufruf:
 
 ```python
+first_pass = _run_first_pass(state, brief=supervisor.brief, on_message=on_message)
+# _run_first_pass ruft intern auf:
 run_supervisor_loop(
     brief=brief,
     run_context=state.run_context,
@@ -171,8 +173,22 @@ run_context = RunContext(
 )
 ```
 
-Der Runner markiert die Phase als `initialized` und schreibt
-Long-Term-Memory-Metadaten in `run_context.resolution_state`.
+Direkt danach markiert der Runner die aktuelle Phase und schreibt den
+Backfill-Status in den Resolution State:
+
+```python
+_record_phase(run_context, "initialized")
+run_context.resolution_state["long_term_memory"] = {
+    "backfill_enabled": backfill_enabled,
+    "backfilled_patterns": backfilled_patterns,
+}
+```
+
+`_record_phase()` setzt `resolution_state["current_phase"]` und stellt
+damit sicher, dass ein etwaiger Fehler spaeter dem richtigen Pipeline-Schritt
+zugeordnet werden kann. Der `long_term_memory`-Eintrag dokumentiert, ob
+der optionale Backfill ausgefuehrt wurde und wie viele Patterns dabei
+konsolidiert wurden.
 
 Zu diesem Zeitpunkt existiert der Run Brain als leere, aber strukturierte
 Arbeitsflaeche. Department-Artefakte, Packages, Meeting Readiness und Report
