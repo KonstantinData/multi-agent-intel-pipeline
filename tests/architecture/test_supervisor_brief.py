@@ -7,6 +7,7 @@ No AG2 dependency — fully exercisable in `tests/architecture/`.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 import pytest
 
@@ -377,7 +378,14 @@ def test_build_intake_brief_flags_final_url_domain_mismatch(
     assert message["status"] == "ready_for_department_routing"
     missing = {item["supports_field"]: item["reason"] for item in brief.missing_evidence}
     assert "normalized_domain" in missing
-    assert "other-example.com" in missing["normalized_domain"]
+    reason = missing["normalized_domain"]
+    hostnames = {
+        parsed.hostname
+        for token in reason.split()
+        for parsed in (urlparse(token.strip(".,;:()[]{}<>\"'")),)
+        if parsed.hostname
+    }
+    assert "other-example.com" in hostnames
 
 
 def test_supervisor_brief_message_contract_validator_accepts_valid_message() -> None:
