@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess  # nosec B404 - required for fixed local `git ls-files` call
+# Required for deterministic repo-local `git ls-files` check.
+import subprocess  # nosec
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _tracked_files() -> list[str]:
     # Fixed argv, no shell, and repo-local cwd make this invocation deterministic.
-    result = subprocess.run(  # nosec B603,B607
+    result = subprocess.run(  # nosec
         ["git", "ls-files"],
         cwd=ROOT,
         check=True,
