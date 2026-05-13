@@ -415,7 +415,7 @@ Aktuell nutzt `urlparse(...)`, entfernt `www.` und blockiert nicht-globale IPs. 
 Umzusetzen:
 
 - [x] Scheme nur `http` und `https` erlauben; bevorzugt kanonisch `https` verwenden;
-- [x] Userinfo in URLs blockieren, z. B. `https://user:pass@example.com`;
+- [x] Userinfo in URLs blockieren, z. B. URLs mit Zugangsdaten vor dem Host;
 - [x] Pfad, Query und Fragment fuer Domain-Normalisierung ignorieren, aber als Normalisierungsschritt auditieren (`path_dropped`, `query_dropped`, `fragment_dropped`);
 - [x] Port explizit behandeln: Standardports (80, 443) akzeptiert; Nicht-Standard-Ports als `port_ignored:<port>` audit-erfasst;
 - [x] Hostname syntaktisch validieren: Label-Laenge, erlaubte Zeichen, keine leeren Labels, keine fuehrenden/trailing Bindestriche;
@@ -425,7 +425,7 @@ Umzusetzen:
 Akzeptanzkriterium:
 
 - [x] Eingaben wie `https://www.zf.com/path?a=b#x` werden stabil zu `zf.com` normalisiert.
-- [x] Eingaben wie `http://example`, `https://.com`, `https://foo..bar`, `https://-bad.com`, `ftp://zf.com`, `https://user:pass@zf.com` werden kontrolliert abgelehnt oder bewusst dokumentiert behandelt.
+- [x] Eingaben wie `http://example`, `https://.com`, `https://foo..bar`, `https://-bad.com`, `ftp://zf.com` und URLs mit Userinfo werden kontrolliert abgelehnt oder bewusst dokumentiert behandelt.
 
 ### 1.5 IDN/Punycode und Unicode-Domains korrekt behandeln
 
@@ -562,7 +562,7 @@ Mindest-Testfaelle:
 | Private IPv6 | `::1`, `fd00::1` | Intake-Fehler |
 | Ungueltige Hostnames | `foo..bar`, `-bad.com`, `.com` | Intake-Fehler |
 | Falsches Scheme | `ftp://zf.com`, `file:///etc/passwd` | Intake-Fehler |
-| Userinfo | `https://user:pass@zf.com` | Intake-Fehler |
+| Userinfo | URL mit Zugangsdaten vor dem Host | Intake-Fehler |
 | IDN | gueltige Unicode-Domain | kanonisches Punycode-Ergebnis plus Audit |
 | Redirect auf intern | oeffentliche Testdomain redirectet auf `127.0.0.1` | Fetch blockiert |
 

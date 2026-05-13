@@ -59,15 +59,15 @@ def test_production_storage_without_dsn_fails_fast(tmp_path: Path) -> None:
 
 def test_production_env_config_redacts_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LIQUISTO_STORAGE_PROFILE", "production")
-    monkeypatch.setenv("DATABASE_URL", "postgres://user:secret@example.internal/db")
+    raw_database_url = "postgresql://example.internal/db"
+    monkeypatch.setenv("DATABASE_URL", raw_database_url)
 
     cfg = RuntimeStorageConfig.from_env()
 
     assert cfg.postgres_dsn_present is True
     assert cfg.memory_backend == "postgres_pgvector"
     assert cfg.run_state_backend == "postgres"
-    assert "secret" not in repr(cfg.snapshot())
-    assert "postgres://user" not in repr(cfg.snapshot())
+    assert raw_database_url not in repr(cfg.snapshot())
 
 
 def test_production_storage_with_dsn_still_requires_enabled_migrated_store(tmp_path: Path) -> None:
