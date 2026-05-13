@@ -1,5 +1,5 @@
 """Generate runtime_architecture.drawio from scratch with clean non-overlapping layout."""
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "drawio" / "runtime_architecture.drawio"
@@ -689,7 +689,7 @@ xml = f"""<mxfile host="65bd71144e">
 
 # Validate
 try:
-    ET.fromstring(xml)
+    ET.fromstring(xml)  # nosec B314
     print("XML valid ✓")
 except ET.ParseError as e:
     print(f"XML ERROR: {e}")

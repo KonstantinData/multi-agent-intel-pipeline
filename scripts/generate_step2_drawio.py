@@ -1,5 +1,5 @@
 """Generate docs/drawio/runtime_step2.drawio."""
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "drawio" / "runtime_step2.drawio"
@@ -154,7 +154,7 @@ xml = f"""<mxfile host=\"65bd71144e\">
   </diagram>
 </mxfile>"""
 
-root = ET.fromstring(xml)
+root = ET.fromstring(xml)  # nosec B314
 ids = {cell.attrib["id"] for cell in root.iter("mxCell") if "id" in cell.attrib}
 for cell in root.iter("mxCell"):
     if cell.attrib.get("edge") == "1":
