@@ -384,8 +384,12 @@ def test_build_intake_brief_flags_final_url_domain_mismatch(
         for token in reason.split()
         if token.startswith(("http://", "https://"))
     ]
-    parsed_hostnames = [urlparse(token).hostname for token in url_tokens]
-    assert "other-example.com" in parsed_hostnames
+    parsed_hostnames = [
+        hostname.rstrip(".").lower()
+        for token in url_tokens
+        if (hostname := urlparse(token).hostname)
+    ]
+    assert any(hostname == "other-example.com" for hostname in parsed_hostnames)
 
 
 def test_supervisor_brief_message_contract_validator_accepts_valid_message() -> None:
