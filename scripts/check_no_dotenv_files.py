@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 - required for fixed local `git ls-files` call
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tracked_files() -> list[str]:
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603,B607 - fixed argv, no shell, repo-local command
         ["git", "ls-files"],
         cwd=ROOT,
         check=True,
