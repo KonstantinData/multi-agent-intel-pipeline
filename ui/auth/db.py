@@ -139,10 +139,33 @@ def update_user(actor_email: str, user_id: int, **fields: object) -> None:
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return
-    sets = ", ".join(f"{k} = ?" for k in updates)
-    vals = list(updates.values()) + [user_id]
+
     with _db() as conn:
-        conn.execute(f"UPDATE users SET {sets} WHERE id = ?", vals)  # noqa: S608
+        conn.execute(
+            """UPDATE users SET
+               first_name = CASE WHEN ? THEN ? ELSE first_name END,
+               last_name = CASE WHEN ? THEN ? ELSE last_name END,
+               company = CASE WHEN ? THEN ? ELSE company END,
+               role = CASE WHEN ? THEN ? ELSE role END,
+               mobile = CASE WHEN ? THEN ? ELSE mobile END,
+               language = CASE WHEN ? THEN ? ELSE language END,
+               is_admin = CASE WHEN ? THEN ? ELSE is_admin END,
+               is_active = CASE WHEN ? THEN ? ELSE is_active END,
+               password_hash = CASE WHEN ? THEN ? ELSE password_hash END
+               WHERE id = ?""",
+            (
+                "first_name" in updates, updates.get("first_name"),
+                "last_name" in updates, updates.get("last_name"),
+                "company" in updates, updates.get("company"),
+                "role" in updates, updates.get("role"),
+                "mobile" in updates, updates.get("mobile"),
+                "language" in updates, updates.get("language"),
+                "is_admin" in updates, updates.get("is_admin"),
+                "is_active" in updates, updates.get("is_active"),
+                "password_hash" in updates, updates.get("password_hash"),
+                user_id,
+            ),
+        )
         _write_audit(conn, actor_email, "update_user", str(user_id),
                      str(sorted(updates.keys())))
 
