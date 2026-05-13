@@ -243,6 +243,24 @@ When working on tests:
 
 ---
 
+## Git and publishing model
+
+The remote `main` branch is protected.
+
+When committing or publishing work:
+- do not push directly to `main`
+- use a PR branch, preferably `codex/<short-description>`
+- ensure commits are GPG-signed before pushing
+- use the repo-local signing key `3EB5B5E8705BDA15`
+- on Windows, Git may need `gpg.program` set to
+  `C:/Program Files/Git/usr/bin/gpg.exe`
+- open a pull request against `main` instead of updating `main` directly
+
+If local `main` is ahead with unsigned commits, create a PR branch from
+`origin/main` and cherry-pick the commits with signing enabled.
+
+---
+
 ## Key file map
 
 | File | Purpose |
