@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, NamedTuple
 
@@ -19,6 +20,7 @@ from src.orchestration.meeting_questions import (
     matrix_status_for_task_status,
 )
 from src.orchestration.resolution_controller import ResolutionController
+from src.orchestration.step1_handoff import RUNTIME_EVENT_SCHEMA_VERSION
 from src.orchestration.task_router import (
     build_department_assignments,
     build_initial_assignments,
@@ -158,8 +160,25 @@ def emit_message(
     agent: str,
     content: str,
     message_type: str = "agent_message",
+    run_id: str = "",
+    sequence: int = 0,
+    phase: str = "",
+    content_type: str = "application/json",
 ) -> dict[str, Any]:
-    event = {"agent": agent, "content": content, "type": message_type}
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    event_sequence = int(sequence or 0)
+    event = {
+        "event_id": f"{run_id or 'runtime'}:{event_sequence:06d}:{phase or message_type}",
+        "run_id": run_id,
+        "sequence": event_sequence,
+        "timestamp": timestamp,
+        "agent": agent,
+        "content": content,
+        "content_type": content_type,
+        "phase": phase,
+        "schema_version": RUNTIME_EVENT_SCHEMA_VERSION,
+        "type": message_type,
+    }
     if on_message:
         on_message(event)
     return event

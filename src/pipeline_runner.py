@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -25,19 +24,24 @@ from src.config import (
     get_search_model,
     summarize_worker_report_costs,
 )
-from src.domain.intake import IntakeRequest, SupervisorBrief
+from src.domain.intake import IntakeRequest, IntakeValidationError, SupervisorBrief
 from src.exporters.json_export import export_run
-from src.memory.backfill import backfill_long_term_memory_from_runs
 from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_patterns
-from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
-from src.memory.retrieval import retrieve_strategies
+from src.memory.retrieval import (
+    DEFAULT_GENERAL_RETRIEVAL_LIMIT,
+    DEFAULT_ROLE_RETRIEVAL_LIMIT,
+    RetrievalContext,
+    retrieve_strategy_batch,
+)
 from src.models.meeting_ready import FinalBriefing, MeetingAction, ResolutionPlan
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.dashboard_composer import compose_dashboard
 from src.orchestration.envelope import resolve_admission
+from src.orchestration.factory_logging import log_factory_event
 from src.orchestration.follow_up import run_bounded_follow_up
+from src.orchestration.intake_logging import log_intake_event
 from src.orchestration.meeting_questions import (
     build_initial_answer_matrix,
     build_question_registry,
@@ -46,7 +50,20 @@ from src.orchestration.meeting_questions import (
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
 from src.orchestration.run_context import RunContext
 from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
+from src.orchestration.runtime_agents import (
+    RuntimeAgentFactoryError,
+    RuntimeAgents,
+)
 from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
+from src.orchestration.step1_handoff import (
+    STEP1_BLOCKED,
+    STEP1_HANDOFF_SCHEMA_VERSION,
+    CheckpointInfo,
+    build_step1_handoff,
+    handoff_allows_department_routing,
+    stable_json_hash,
+)
+from src.orchestration.supervisor_logging import log_supervisor_brief_event
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
     assess_research_readiness,
@@ -59,11 +76,13 @@ from src.orchestration.synthesis import (
     harmonize_synthesis_output,
 )
 from src.orchestration.task_router import build_synthesis_assignments
-from src.research.normalize import normalize_domain
+from src.research.normalize import IntakeErrorCode, NormalizedDomainResult, normalize_domain_result
+from src.research.ssrf_guard import SSRFBlockedError, resolve_and_validate_host
+from src.storage.contracts import StorageHealthcheckError
+from src.storage.runtime_stores import create_runtime_stores
 
 ROOT = Path(__file__).resolve().parent.parent
 LONG_TERM_MEMORY_PATH = ROOT / "artifacts" / "memory" / "long_term_memory.json"
-BACKFILL_LONG_TERM_MEMORY_ENV = "LIQUISTO_BACKFILL_LONG_TERM_MEMORY"
 
 
 @dataclass(slots=True)
@@ -72,18 +91,20 @@ class InitialRunState:
     run_id: str
     run_dir: Path
     intake: IntakeRequest
-    agents: dict[str, Any]
-    memory_store: FileLongTermMemoryStore
+    agents: RuntimeAgents
+    memory_store: Any
     run_context: RunContext
     messages: list[dict[str, Any]]
     budget_tracker: PhaseBudgetTracker
     normalized_domain: str
+    normalized_domain_result: NormalizedDomainResult
 
 
 @dataclass(slots=True)
 class SupervisorBriefResult:
     brief: SupervisorBrief
     supervisor_message: dict[str, Any]
+    step1_handoff: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -121,15 +142,32 @@ class FinalizationResult:
     department_packages: dict[str, Any]
 
 
-def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> None:
+def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> dict[str, Any]:
     """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
     run_context.resolution_state["last_checkpoint"] = phase
     cp_dir = run_dir / "checkpoints"
     cp_dir.mkdir(parents=True, exist_ok=True)
-    payload = {"phase": phase, "status": run_context.status, **run_context.snapshot()}
-    (cp_dir / f"{phase}.json").write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8",
+    payload = {
+        "schema_version": STEP1_HANDOFF_SCHEMA_VERSION,
+        "phase": phase,
+        "status": run_context.status,
+        **run_context.snapshot(),
+    }
+    content_hash = stable_json_hash(payload)
+    payload["checkpoint_hash"] = content_hash
+    path = cp_dir / f"{phase}.json"
+    tmp_path = cp_dir / f"{phase}.json.tmp"
+    tmp_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8",
     )
+    tmp_path.replace(path)
+    return CheckpointInfo(
+        checkpoint_id=phase,
+        phase=phase,
+        path=str(path),
+        content_hash=content_hash,
+        written=True,
+    ).as_dict()
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -144,10 +182,6 @@ def _record_phase(run_context: RunContext, phase: str) -> None:
     run_context.resolution_state["current_phase"] = phase
 
 
-def _long_term_backfill_enabled() -> bool:
-    """Keep run-path backfill explicit; use maintenance/startup jobs by default."""
-    return os.getenv(BACKFILL_LONG_TERM_MEMORY_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
-
 
 def _failed_intake_result(
     *,
@@ -157,8 +191,63 @@ def _failed_intake_result(
     web_domain: str,
     start_time: float,
     error: str,
+    error_code: str = "",
+    error_detail: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     elapsed_seconds = round(perf_counter() - start_time, 3)
+    resolution_state: dict[str, Any] = {
+        "current_phase": "intake_validation",
+        "intake_validation": {
+            "status": "failed",
+            "error_code": error_code,
+            "rejection_reason": (error_detail or {}).get("rejection_reason", error),
+            "original_value": (error_detail or {}).get("original_value", web_domain),
+            "field": (error_detail or {}).get("field", "web_domain"),
+        },
+    }
+    result: dict[str, Any] = {
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "messages": [],
+        "pipeline_data": empty_pipeline_data(),
+        "run_context": {
+            "intake": {"company_name": company_name, "web_domain": web_domain},
+            "resolution_state": resolution_state,
+        },
+        "usage": {},
+        "budget": {"elapsed_seconds": elapsed_seconds, "failed_phase": "intake_validation"},
+        "status": "failed",
+        "error": error,
+        "failed_phase": "intake_validation",
+    }
+    if error_code:
+        result["error_code"] = error_code
+    if error_detail:
+        result["error_detail"] = error_detail
+    return result
+
+
+def _failed_factory_result(
+    *,
+    run_id: str,
+    run_dir: Path,
+    company_name: str,
+    web_domain: str,
+    start_time: float,
+    error: str,
+    error_code: str,
+    errors: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Failure result for `RuntimeAgentFactoryError` — distinct from intake errors."""
+    elapsed_seconds = round(perf_counter() - start_time, 3)
+    resolution_state: dict[str, Any] = {
+        "current_phase": "runtime_agent_factory",
+        "runtime_agents": {
+            "status": "failed",
+            "error_code": error_code,
+            "errors": list(errors),
+        },
+    }
     return {
         "run_id": run_id,
         "run_dir": str(run_dir),
@@ -166,13 +255,68 @@ def _failed_intake_result(
         "pipeline_data": empty_pipeline_data(),
         "run_context": {
             "intake": {"company_name": company_name, "web_domain": web_domain},
-            "resolution_state": {"current_phase": "intake_validation"},
+            "resolution_state": resolution_state,
         },
         "usage": {},
-        "budget": {"elapsed_seconds": elapsed_seconds, "failed_phase": "intake_validation"},
+        "budget": {
+            "elapsed_seconds": elapsed_seconds,
+            "failed_phase": "runtime_agent_factory",
+        },
         "status": "failed",
         "error": error,
-        "failed_phase": "intake_validation",
+        "failed_phase": "runtime_agent_factory",
+        "error_code": error_code,
+        "error_detail": {
+            "phase": "runtime_agent_factory",
+            "errors": list(errors),
+        },
+    }
+
+
+def _failed_storage_result(
+    *,
+    run_id: str,
+    run_dir: Path,
+    company_name: str,
+    web_domain: str,
+    start_time: float,
+    error: str,
+    error_code: str,
+    component: str,
+) -> dict[str, Any]:
+    """Failure result for Phase-2 storage profile/configuration errors."""
+    elapsed_seconds = round(perf_counter() - start_time, 3)
+    resolution_state: dict[str, Any] = {
+        "current_phase": "storage_init",
+        "storage": {
+            "status": "failed",
+            "component": component,
+            "error_code": error_code,
+            "message": error,
+        },
+    }
+    return {
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "messages": [],
+        "pipeline_data": empty_pipeline_data(),
+        "run_context": {
+            "intake": {"company_name": company_name, "web_domain": web_domain},
+            "resolution_state": resolution_state,
+        },
+        "usage": {},
+        "budget": {
+            "elapsed_seconds": elapsed_seconds,
+            "failed_phase": "storage_init",
+        },
+        "status": "failed",
+        "error": error,
+        "failed_phase": "storage_init",
+        "error_code": error_code,
+        "error_detail": {
+            "phase": "storage_init",
+            "component": component,
+        },
     }
 
 
@@ -184,50 +328,131 @@ def _initialize_run(
     company_name: str,
     web_domain: str,
 ) -> InitialRunState:
-    # Validate and normalize intake before creating runtime side effects.
+    phase_durations_ms: dict[str, int] = {}
+
+    # Phase: intake_validation — IntakeRequest + domain normalization +
+    # DNS-level SSRF pre-flight. All failure paths raise IntakeValidationError
+    # so run_pipeline() can surface a stable error_code without re-normalizing.
+    t0 = perf_counter()
     intake = IntakeRequest(company_name=company_name, web_domain=web_domain)
-    normalized_domain = normalize_domain(intake.web_domain)
+    normalization = normalize_domain_result(intake.web_domain)
+    if not normalization.is_valid:
+        raise IntakeValidationError(
+            field="web_domain",
+            code=normalization.rejection_code,
+            reason=normalization.rejection_reason,
+        )
+    # DNS pre-flight: catches "evil.example.com" → 192.168.x.x even though the
+    # string-level canonical_domain looks public.
+    try:
+        resolved_ips = resolve_and_validate_host(normalization.canonical_domain)
+    except SSRFBlockedError as exc:
+        # Map ssrf_guard codes onto IntakeErrorCode for a consistent contract.
+        mapped_code = (
+            IntakeErrorCode.DNS_RESOLUTION_FAILED
+            if exc.code == "dns_resolution_failed"
+            else IntakeErrorCode.BLOCKED_PRIVATE_HOST
+        )
+        raise IntakeValidationError(
+            field="web_domain",
+            code=mapped_code,
+            reason=exc.reason,
+        ) from exc
+    normalized_domain = normalization.canonical_domain
+    t1 = perf_counter()
+    phase_durations_ms["intake_validation"] = int((t1 - t0) * 1000)
 
-    # Runtime agents include the Supervisor, domain departments, synthesis, and report writer.
+    # Phase: agent_factory — Supervisor, departments, synthesis, report writer.
+    # Raises RuntimeAgentFactoryError on missing role / missing method /
+    # constructor crash; caught in run_pipeline() and mapped to a structured
+    # failed_phase="runtime_agent_factory" run result.
     agents = create_runtime_agents()
-
-    memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
-    backfill_enabled = _long_term_backfill_enabled()
-    backfilled_patterns = (
-        backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=RUNS_DIR)
-        if backfill_enabled
-        else 0
+    t2 = perf_counter()
+    phase_durations_ms["agent_factory"] = int((t2 - t1) * 1000)
+    log_factory_event(
+        run_id=run_id,
+        status="ok",
+        duration_ms=phase_durations_ms["agent_factory"],
+        factory_version=agents.config.factory_version,
+        role_count=3 + len(agents.departments),  # supervisor + synthesis + report_writer + N depts
     )
+
+    # Phase: memory_retrieval — explicit storage boundary + general process-pattern retrieval.
+    stores = create_runtime_stores(
+        runs_root=RUNS_DIR,
+        long_term_memory_path=LONG_TERM_MEMORY_PATH,
+    )
+    stores.healthcheck_required()
+    memory_store = stores.long_term_memory
     run_context = RunContext(
         run_id=run_id,
         intake={
             "company_name": intake.company_name,
             "web_domain": intake.web_domain,
             "normalized_domain": normalized_domain,
+            "canonical_url": normalization.canonical_url,
             "language": intake.language,
+            "normalization_steps": list(normalization.normalization_steps),
+            "resolved_ips": list(resolved_ips),
+            "unicode_risk_flags": list(normalization.unicode_risk_flags),
+            "registrable_domain": normalization.registrable_domain,
+            "public_suffix": normalization.public_suffix,
         },
     )
     _record_phase(run_context, "initialized")
-    run_context.resolution_state["long_term_memory"] = {
-        "backfill_enabled": backfill_enabled,
-        "backfilled_patterns": backfilled_patterns,
-    }
-
-    # Long-term memory retrieval is process-pattern only; run facts stay in short-term memory.
-    run_context.retrieved_strategies = retrieve_strategies(
-        memory_store,
-        domain=normalized_domain,
-        limit=5,
+    run_context.resolution_state["storage"] = stores.snapshot()
+    initial_retrieval_context = RetrievalContext(
+        run_id=run_id,
+        company_name=intake.company_name,
+        normalized_domain=normalized_domain,
+        language=intake.language,
+        phase="memory_retrieval",
+        target_scope="run_start",
     )
-    run_context.retrieved_role_strategies = {
-        role: retrieve_strategies(
-            memory_store,
-            domain=normalized_domain,
-            role=role,
-            limit=3,
-        )
-        for role in RETRIEVABLE_ROLE_ORDER
+    initial_retrieval = retrieve_strategy_batch(
+        memory_store,
+        context=initial_retrieval_context,
+        limit=DEFAULT_GENERAL_RETRIEVAL_LIMIT,
+    )
+    run_context.retrieved_strategies = initial_retrieval.patterns
+    run_context.retrieved_role_strategies = {}
+    run_context.resolution_state["memory_retrieval"] = {
+        "initial": initial_retrieval.snapshot,
+        "final_source": "initial",
     }
+    t3 = perf_counter()
+    phase_durations_ms["memory_retrieval"] = int((t3 - t2) * 1000)
+
+    run_context.resolution_state["phase_durations_ms"] = phase_durations_ms
+    # Composition snapshot — non-sensitive: roles, runtime types, department
+    # names, cache strategy, factory version. No secrets, no prompts.
+    run_context.resolution_state["runtime_agents"] = agents.snapshot()
+    # Persist a structured intake_validation summary for UI, observability, and audit.
+    run_context.resolution_state["intake_validation"] = {
+        "status": "ok",
+        "error_code": "",
+        "rejection_reason": "",
+        "canonical_domain": normalization.canonical_domain,
+        "canonical_url": normalization.canonical_url,
+        "registrable_domain": normalization.registrable_domain,
+        "public_suffix": normalization.public_suffix,
+        "original_hostname": normalization.original_hostname,
+        "normalization_steps": list(normalization.normalization_steps),
+        "unicode_risk_flags": list(normalization.unicode_risk_flags),
+        "resolved_ips": list(resolved_ips),
+        "duration_ms": phase_durations_ms["intake_validation"],
+    }
+    log_intake_event(
+        run_id=run_id,
+        status="ok",
+        duration_ms=phase_durations_ms["intake_validation"],
+        canonical_domain=normalization.canonical_domain,
+        registrable_domain=normalization.registrable_domain,
+        extra={
+            "unicode_risk_flags": list(normalization.unicode_risk_flags),
+            "resolved_ips_count": len(resolved_ips),
+        },
+    )
 
     return InitialRunState(
         start_time=start_time,
@@ -240,6 +465,7 @@ def _initialize_run(
         messages=[],
         budget_tracker=PhaseBudgetTracker(),
         normalized_domain=normalized_domain,
+        normalized_domain_result=normalization,
     )
 
 
@@ -509,19 +735,216 @@ def resume_pipeline(
 
 def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) -> SupervisorBriefResult:
     _record_phase(state.run_context, "supervisor_brief")
-    brief, supervisor_message = state.agents["supervisor"].build_intake_brief(state.intake)
+    t0 = perf_counter()
+    supervisor_agent = state.agents["supervisor"]
+    domain_arg: str | NormalizedDomainResult = (
+        state.normalized_domain_result
+        if supervisor_agent.__class__.__module__ == "src.agents.supervisor"
+        else state.normalized_domain
+    )
+    brief, supervisor_message = supervisor_agent.build_intake_brief(
+        state.intake,
+        normalized_domain=domain_arg,
+    )
     state.run_context.supervisor_brief = supervisor_message["payload"]
     state.run_context.question_registry = build_question_registry()
     state.run_context.answer_matrix = build_initial_answer_matrix()
-    state.messages.append(
-        emit_message(
-            on_message,
-            agent="Supervisor",
-            content=json.dumps(supervisor_message, ensure_ascii=False),
-        )
+
+    # Contextual refresh: keep the early generic snapshot for audit, then use
+    # the industry hint and question registry before department routing starts.
+    question_ids = tuple(state.run_context.question_registry.keys())
+    brief_retrieval_context = RetrievalContext(
+        run_id=state.run_id,
+        company_name=state.intake.company_name,
+        normalized_domain=state.normalized_domain,
+        language=state.intake.language,
+        industry_hint=brief.industry_hint,
+        phase="supervisor_brief",
+        target_scope="brief_context",
+        question_ids=question_ids,
     )
-    _write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
-    return SupervisorBriefResult(brief=brief, supervisor_message=supervisor_message)
+    brief_retrieval = retrieve_strategy_batch(
+        state.memory_store,
+        context=brief_retrieval_context,
+        limit=DEFAULT_GENERAL_RETRIEVAL_LIMIT,
+    )
+    if brief_retrieval.patterns:
+        state.run_context.retrieved_strategies = brief_retrieval.patterns
+        final_source = "brief_context"
+    else:
+        final_source = "initial"
+
+    role_batches = {
+        role: retrieve_strategy_batch(
+            state.memory_store,
+            context=brief_retrieval_context.role_context(
+                role,
+                department=role.removesuffix("Lead")
+                .removesuffix("Researcher")
+                .removesuffix("Critic")
+                .removesuffix("Judge")
+                .removesuffix("CodingSpecialist"),
+            ),
+            limit=DEFAULT_ROLE_RETRIEVAL_LIMIT,
+        )
+        for role in RETRIEVABLE_ROLE_ORDER
+    }
+    state.run_context.retrieved_role_strategies = {
+        role: batch.patterns for role, batch in role_batches.items()
+    }
+    memory_retrieval_state = state.run_context.resolution_state.setdefault("memory_retrieval", {})
+    memory_retrieval_state["brief_context"] = brief_retrieval.snapshot
+    memory_retrieval_state["roles"] = {
+        role: batch.snapshot for role, batch in role_batches.items()
+    }
+    memory_retrieval_state["final_source"] = final_source
+    memory_retrieval_state["role_count"] = len(role_batches)
+    duration_ms = int((perf_counter() - t0) * 1000)
+    state.run_context.resolution_state.setdefault("phase_durations_ms", {})[
+        "supervisor_brief"
+    ] = duration_ms
+
+    # ── Punkt 5.8: persist non-sensitive supervisor_brief diagnose ──
+    fetch_audit = getattr(brief, "fetch_audit", {}) or {}
+    fetch_status = "reachable" if brief.website_reachable else (
+        fetch_audit.get("error_type") or "unreachable"
+    )
+    state.run_context.resolution_state["supervisor_brief"] = {
+        "schema_version": getattr(brief, "schema_version", ""),
+        "briefing_readiness": getattr(brief, "briefing_readiness", "ready"),
+        "identity_confidence": brief.name_confidence,
+        "identity_confidence_reason": getattr(brief, "name_confidence_reason", ""),
+        "industry_confidence": getattr(brief, "industry_confidence", "unknown"),
+        "industry_confidence_reason": getattr(brief, "industry_confidence_reason", ""),
+        "identity_conflict": getattr(brief, "identity_conflict", False),
+        "routing_gaps": list(getattr(brief, "routing_gaps", []) or []),
+        "evidence_item_count": len(getattr(brief, "evidence_items", []) or []),
+        "missing_evidence_fields": [
+            item.get("supports_field", "")
+            for item in (getattr(brief, "missing_evidence", []) or [])
+        ],
+        "fetch_status": fetch_status,
+        "fetch_http_status": int(fetch_audit.get("http_status", 0) or 0),
+        "fetch_final_url": fetch_audit.get("final_url", ""),
+        "fetch_content_language": fetch_audit.get("content_language", ""),
+        "duration_ms": duration_ms,
+    }
+    intake_research = supervisor_message.get("payload", {}).get("intake_research", {})
+    if intake_research:
+        state.run_context.resolution_state["intake_research"] = {
+            "schema_version": intake_research.get("schema_version", ""),
+            "warnings": intake_research.get("warnings", []),
+            "errors": intake_research.get("errors", []),
+            "timings_ms": intake_research.get("timings_ms", {}),
+            "snapshot": intake_research.get("snapshot", {}),
+            "identity": intake_research.get("identity", {}),
+            "industry": intake_research.get("industry", {}),
+            "duration_ms": duration_ms,
+        }
+
+    # ── Punkt 5.11: structured supervisor briefing event ──
+    routing_gaps_tuple = tuple(getattr(brief, "routing_gaps", []) or [])
+    readiness = getattr(brief, "briefing_readiness", "ready")
+    log_status = "ok" if readiness == "ready" else (
+        "blocked" if str(readiness).startswith("blocked_") else "degraded"
+    )
+    log_supervisor_brief_event(
+        run_id=state.run_id,
+        status=log_status,
+        duration_ms=duration_ms,
+        briefing_readiness=str(readiness),
+        identity_confidence=brief.name_confidence,
+        industry_confidence=getattr(brief, "industry_confidence", "unknown"),
+        fetch_status=fetch_status,
+        evidence_item_count=len(getattr(brief, "evidence_items", []) or []),
+        routing_gaps=routing_gaps_tuple,
+    )
+
+    first_event = emit_message(
+        on_message,
+        agent="Supervisor",
+        content=json.dumps(supervisor_message, ensure_ascii=False, default=str),
+        run_id=state.run_id,
+        sequence=len(state.messages) + 1,
+        phase="supervisor_brief",
+        content_type="application/json",
+    )
+    state.messages.append(first_event)
+    checkpoint_info: dict[str, Any]
+    try:
+        checkpoint_info = _write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
+    except Exception as exc:
+        checkpoint_info = CheckpointInfo(
+            checkpoint_id="after_supervisor_brief",
+            phase="after_supervisor_brief",
+            written=False,
+            error_code="checkpoint_write_failed",
+            error_message=str(exc)[:300],
+        ).as_dict()
+    handoff = build_step1_handoff(
+        run_context=state.run_context,
+        supervisor_message=supervisor_message,
+        first_event=first_event,
+        checkpoint=checkpoint_info,
+        runtime_agents_snapshot=state.agents.snapshot(),
+        budget_snapshot={
+            "phase_durations_ms": dict(
+                state.run_context.resolution_state.get("phase_durations_ms", {})
+            ),
+            "budget_tracker": state.budget_tracker.snapshot()
+            if hasattr(state.budget_tracker, "snapshot")
+            else {},
+        },
+    )
+    state.run_context.resolution_state["step1_handoff"] = handoff.as_dict()
+    if handoff_allows_department_routing(handoff):
+        try:
+            checkpoint_info = _write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
+            handoff = build_step1_handoff(
+                run_context=state.run_context,
+                supervisor_message=supervisor_message,
+                first_event=first_event,
+                checkpoint=checkpoint_info,
+                runtime_agents_snapshot=state.agents.snapshot(),
+                budget_snapshot={
+                    "phase_durations_ms": dict(
+                        state.run_context.resolution_state.get("phase_durations_ms", {})
+                    ),
+                    "budget_tracker": state.budget_tracker.snapshot()
+                    if hasattr(state.budget_tracker, "snapshot")
+                    else {},
+                },
+            )
+            state.run_context.resolution_state["step1_handoff"] = handoff.as_dict()
+        except Exception as exc:
+            checkpoint_info = CheckpointInfo(
+                checkpoint_id="after_supervisor_brief",
+                phase="after_supervisor_brief",
+                written=False,
+                error_code="checkpoint_write_failed",
+                error_message=str(exc)[:300],
+            ).as_dict()
+            handoff = build_step1_handoff(
+                run_context=state.run_context,
+                supervisor_message=supervisor_message,
+                first_event=first_event,
+                checkpoint=checkpoint_info,
+                runtime_agents_snapshot=state.agents.snapshot(),
+                budget_snapshot={
+                    "phase_durations_ms": dict(
+                        state.run_context.resolution_state.get("phase_durations_ms", {})
+                    ),
+                },
+            )
+            state.run_context.resolution_state["step1_handoff"] = handoff.as_dict()
+    if not handoff_allows_department_routing(handoff):
+        _record_phase(state.run_context, "step1_handoff")
+        state.run_context.status = "blocked"
+    return SupervisorBriefResult(
+        brief=brief,
+        supervisor_message=supervisor_message,
+        step1_handoff=state.run_context.resolution_state.get("step1_handoff", {}),
+    )
 
 
 def _run_first_pass(
@@ -1220,7 +1643,70 @@ def run_pipeline(
             company_name=company_name,
             web_domain=web_domain,
         )
+    except IntakeValidationError as exc:
+        # Structured per-field intake failures (company_name or web_domain
+        # required / too long / placeholder) raised by IntakeRequest.
+        original_value = company_name if exc.field == "company_name" else web_domain
+        log_intake_event(
+            run_id=run_id,
+            status="failed",
+            error_code=exc.code,
+            rejection_reason=exc.reason,
+        )
+        return _failed_intake_result(
+            run_id=run_id,
+            run_dir=run_dir,
+            company_name=company_name,
+            web_domain=web_domain,
+            start_time=start_time,
+            error=exc.reason,
+            error_code=exc.code,
+            error_detail={
+                "field": exc.field,
+                "original_value": original_value,
+                "rejection_code": exc.code,
+                "rejection_reason": exc.reason,
+            },
+        )
+    except RuntimeAgentFactoryError as exc:
+        # Composition error — distinct phase, distinct failure code.
+        log_factory_event(
+            run_id=run_id,
+            status="failed",
+            error_code=exc.code,
+            errors=exc.errors,
+        )
+        return _failed_factory_result(
+            run_id=run_id,
+            run_dir=run_dir,
+            company_name=company_name,
+            web_domain=web_domain,
+            start_time=start_time,
+            error=exc.reason,
+            error_code=exc.code,
+            errors=exc.errors,
+        )
+    except StorageHealthcheckError as exc:
+        return _failed_storage_result(
+            run_id=run_id,
+            run_dir=run_dir,
+            company_name=company_name,
+            web_domain=web_domain,
+            start_time=start_time,
+            error=str(exc),
+            error_code=exc.error_code,
+            component=exc.component,
+        )
     except ValueError as exc:
+        # Defensive fallback: unexpected ValueError that did not come through
+        # the IntakeValidationError contract. Should not happen in practice;
+        # if it does, surface it without a fabricated error_code.
+        log_intake_event(
+            run_id=run_id,
+            status="failed",
+            error_code="",
+            rejection_reason=str(exc),
+        )
         return _failed_intake_result(
             run_id=run_id,
             run_dir=run_dir,
@@ -1248,6 +1734,22 @@ def run_pipeline(
 
     try:
         supervisor = _build_supervisor_brief(state, on_message=on_message)
+        handoff_snapshot = state.run_context.resolution_state.get("step1_handoff", {})
+        if not handoff_allows_department_routing(handoff_snapshot):
+            return _pipeline_error_result(
+                run_id=run_id,
+                run_dir=run_dir,
+                messages=state.messages,
+                run_context=state.run_context,
+                start_time=start_time,
+                error="Step-1 handoff validation failed.",
+                failed_phase="step1_handoff",
+                error_code="step1_handoff_invalid",
+                error_detail={
+                    "validation_errors": handoff_snapshot.get("validation_errors", []),
+                    "readiness": handoff_snapshot.get("readiness", STEP1_BLOCKED),
+                },
+            )
         first_pass = _run_first_pass(state, brief=supervisor.brief, on_message=on_message)
         _run_auto_close_if_required(state, first_pass=first_pass, on_message=on_message)
         synthesis_phase = _run_synthesis_phase(

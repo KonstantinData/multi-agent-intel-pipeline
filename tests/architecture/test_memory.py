@@ -27,6 +27,12 @@ from src.memory.consolidation import (
 )
 from src.memory.long_term_store import FileLongTermMemoryStore
 from src.memory.policies import should_store_strategy
+from src.memory.retrieval import (
+    DEFAULT_ROLE_RETRIEVAL_LIMIT,
+    ROLE_PATTERN_SCOPES,
+    RetrievalContext,
+    retrieve_strategy_batch,
+)
 from src.memory.short_term_store import ShortTermMemoryStore
 
 # ===========================================================================
@@ -570,3 +576,157 @@ class TestRoleMemoryRegistry:
         assert "RETRIEVABLE_ROLE_ORDER" in source
         # Must NOT contain the old hand-maintained phantom roles in the retrieval block
         assert '"CrossDomainStrategicAnalyst"' not in source
+
+
+# ===========================================================================
+# Point 4 — Contextual retrieval contract
+# ===========================================================================
+
+class TestContextualRetrieval:
+    def test_retrieval_context_marks_company_and_domain_non_persistable(self):
+        context = RetrievalContext(
+            run_id="20260512T000000Z",
+            company_name="Example AG",
+            normalized_domain="example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+        )
+
+        snapshot = context.snapshot()
+
+        assert snapshot["pattern_scope"] == ROLE_PATTERN_SCOPES["CompanyResearcher"]
+        assert "company_name" in snapshot["non_persistable_context_fields"]
+        assert "normalized_domain" in snapshot["non_persistable_context_fields"]
+        assert "Example AG" not in repr(context.query_summary())
+        assert "example.com" not in repr(context.query_summary())
+
+    def test_role_scope_filter_returns_only_matching_role_patterns(self, tmp_path):
+        store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        store.upsert_strategy({
+            "name": "company-research",
+            "role": "CompanyResearcher",
+            "pattern_scope": "researcher_strategy",
+            "industry_hint": "Manufacturing",
+            "structural_queries": ["manufacturer inventory surplus signals"],
+            "score": 1.0,
+        })
+        store.upsert_strategy({
+            "name": "company-critic",
+            "role": "CompanyCritic",
+            "pattern_scope": "critic_heuristics",
+            "industry_hint": "Manufacturing",
+            "common_defect_classes": ["missing primary source"],
+            "score": 1.0,
+        })
+        context = RetrievalContext(
+            run_id="run",
+            normalized_domain="example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+            target_scope="researcher_strategy",
+        )
+
+        batch = retrieve_strategy_batch(store, context=context, limit=DEFAULT_ROLE_RETRIEVAL_LIMIT)
+
+        assert [item["role"] for item in batch.patterns] == ["CompanyResearcher"]
+        assert batch.snapshot["result_count"] == 1
+        assert batch.snapshot["rejected_count"] == 0
+
+    def test_domain_does_not_increase_ranking_score(self, tmp_path):
+        store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        base_pattern = {
+            "name": "manufacturing-pattern",
+            "role": "CompanyResearcher",
+            "pattern_scope": "researcher_strategy",
+            "industry_hint": "Manufacturing",
+            "structural_queries": ["manufacturer inventory surplus signals"],
+            "score": 1.0,
+        }
+        store.upsert_strategy(base_pattern)
+
+        context_a = RetrievalContext(
+            run_id="run-a",
+            normalized_domain="example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+            target_scope="researcher_strategy",
+        )
+        context_b = RetrievalContext(
+            run_id="run-b",
+            normalized_domain="different-example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+            target_scope="researcher_strategy",
+        )
+
+        result_a = retrieve_strategy_batch(store, context=context_a, limit=1).patterns[0]
+        result_b = retrieve_strategy_batch(store, context=context_b, limit=1).patterns[0]
+
+        assert result_a["combined_score"] == result_b["combined_score"]
+        assert "example.com" not in repr(result_a["retrieval_query_summary"])
+
+    def test_policy_gate_rejects_unsafe_patterns_before_run_context(self, tmp_path):
+        store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        # Write directly to simulate legacy/externally migrated unsafe memory.
+        store.path.write_text(
+            json.dumps([
+                {
+                    "name": "unsafe-legacy",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "structural_queries": ["Tesla annual report https://tesla.com"],
+                    "score": 1.0,
+                }
+            ]),
+            encoding="utf-8",
+        )
+        context = RetrievalContext(
+            run_id="run",
+            normalized_domain="example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+            target_scope="researcher_strategy",
+        )
+
+        batch = retrieve_strategy_batch(store, context=context, limit=3)
+
+        assert batch.patterns == []
+        assert batch.snapshot["status"] == "degraded"
+        assert batch.snapshot["warning_code"] == "memory_policy_rejected_all"
+        assert batch.snapshot["rejections"][0]["rejection_code"] == "memory_policy_unsafe_pattern"
+
+    def test_contextual_retrieval_is_deterministic_for_equal_scores(self, tmp_path):
+        store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        store.path.write_text(
+            json.dumps([
+                {
+                    "name": "b-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "structural_queries": ["manufacturer inventory surplus signals"],
+                    "score": 1.0,
+                },
+                {
+                    "name": "a-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "structural_queries": ["manufacturer inventory surplus signals"],
+                    "score": 1.0,
+                },
+            ]),
+            encoding="utf-8",
+        )
+        context = RetrievalContext(
+            run_id="run",
+            normalized_domain="example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+            target_scope="researcher_strategy",
+        )
+
+        names = [item["name"] for item in retrieve_strategy_batch(store, context=context, limit=2).patterns]
+
+        assert names == ["a-pattern", "b-pattern"]

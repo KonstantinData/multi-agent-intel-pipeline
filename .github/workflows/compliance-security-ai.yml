@@ -359,7 +359,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependency-light test dependencies
-        run: python -m pip install pytest==8.4.2 pydantic==2.12.3 filelock==3.20.0 python-dotenv==1.2.1
+        run: python -m pip install pytest==8.4.2 pydantic==2.12.3 filelock==3.20.0 python-dotenv==1.2.1 idna==3.13 tldextract==5.3.0 ag2==0.12.3 openai==2.29.0
       - name: Collect architecture tests
         run: pytest -q tests/architecture --collect-only --junitxml=reports/architecture-collect.xml
       - name: Run architecture tests

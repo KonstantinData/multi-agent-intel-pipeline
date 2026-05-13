@@ -26,13 +26,19 @@ class DepartmentRuntime:
     ``agents["departments"][name].run(...)``.
     """
 
-    def __init__(self, department: str, *, search_cache: dict | None = None) -> None:
+    def __init__(self, department: str, *, search_cache: Any | None = None) -> None:
         self.department = department
         self.lead = DepartmentLeadAgent(department)
         if search_cache is not None:
-            # Separate namespaces within the shared cache to avoid collisions
-            self.lead.worker._search_cache = search_cache.setdefault("__search__", {})
-            self.lead.worker._page_cache = search_cache.setdefault("__pages__", {})
+            # Separate namespaces within the shared cache to avoid collisions.
+            # New RuntimeAgents pass a SearchCache with locked namespace objects;
+            # legacy callers may still pass a plain dict.
+            if hasattr(search_cache, "get_namespace"):
+                self.lead.worker._search_cache = search_cache.get_namespace("__search__")
+                self.lead.worker._page_cache = search_cache.get_namespace("__pages__")
+            else:
+                self.lead.worker._search_cache = search_cache.setdefault("__search__", {})
+                self.lead.worker._page_cache = search_cache.setdefault("__pages__", {})
 
     def run(
         self,

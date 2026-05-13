@@ -3,14 +3,42 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from typing import TypedDict
+from urllib.parse import urlparse
 
 from src.app.use_cases import build_standard_scope
 from src.config import get_role_model_selection
 from src.config.settings import MAX_TASK_RETRIES
+from src.domain.briefing import (
+    BRIEFING_REDIRECT_DOMAIN_MISMATCH,
+    BRIEFING_SCHEMA_VERSION,
+    SOURCE_TYPE_OWNED_WEBSITE,
+    BriefingFetchAudit,
+    EvidenceItem,
+    EvidenceSummary,
+    MissingEvidence,
+    SupervisorBriefMessage,
+    classify_briefing_readiness,
+    classify_identity_confidence,
+    classify_industry_confidence,
+    detect_identity_conflict,
+    iso_now,
+    validate_supervisor_brief_message,
+)
 from src.domain.intake import IntakeRequest, SupervisorBrief
 from src.orchestration.tool_policy import resolve_allowed_tools
-from src.research.extract import infer_industry
+from src.research.contracts import CompanyResearchResult, WebsiteSnapshot
+from src.research.extract import infer_industry_result
+from src.research.normalize import NormalizedDomainResult, normalize_domain_result
 from src.research.tools import build_company_research
+
+
+def _hostname(value: str) -> str:
+    host = (urlparse(str(value or "")).hostname or str(value or "")).lower()
+    return host.removeprefix("www.")
+
+
+def _as_mapping(value):  # noqa: ANN001
+    return value.as_dict() if hasattr(value, "as_dict") else value
 
 
 # F10: Typed return dicts for acceptance methods
@@ -41,49 +69,296 @@ class SupervisorAgent:
     def opening_message(self) -> str:
         return build_standard_scope()
 
-    def build_intake_brief(self, intake: IntakeRequest) -> tuple[SupervisorBrief, dict]:
-        research = build_company_research(intake.web_domain, intake.company_name)
-        snapshot = research["snapshot"]
-        industry_hint = infer_industry(
-            title=str(snapshot.get("title", "")),
-            description=str(snapshot.get("meta_description", "")),
-            text=str(research.get("summary", "")),
+    def build_intake_brief(
+        self,
+        intake: IntakeRequest,
+        normalized_domain: str | NormalizedDomainResult,
+    ) -> tuple[SupervisorBrief, dict]:
+        # `normalized_domain` is already the validated canonical hostname from
+        # `_initialize_run()` (TODO 5.1). We do NOT re-run normalization here.
+        domain_contract = (
+            normalized_domain
+            if isinstance(normalized_domain, NormalizedDomainResult)
+            else normalize_domain_result(normalized_domain)
         )
+        try:
+            research = build_company_research(
+                domain_contract,
+                intake.company_name,
+                language=intake.language,
+            )
+        except TypeError:
+            # Legacy tests/extensions may monkeypatch the old two-argument
+            # helper. Keep that path temporary and explicit while the runtime
+            # itself uses the typed domain contract.
+            research = build_company_research(domain_contract, intake.company_name)
+        snapshot = research.snapshot if isinstance(research, CompanyResearchResult) else research["snapshot"]
+        if isinstance(snapshot, dict):
+            snapshot = WebsiteSnapshot.from_mapping(snapshot)
+        snapshot_title = str(snapshot.get("title", ""))
+        snapshot_meta = str(snapshot.get("meta_description", ""))
+        snapshot_text = str(research.get("summary", ""))
+        homepage_url = str(research["homepage_url"])
+        website_reachable = bool(snapshot.get("reachable"))
+
+        # ── Identity confidence + conflict (TODO 5.4 + 5.2) ──
+        submitted_name = intake.company_name
+        verified_legal_name = str(research.get("verified_legal_name", ""))
+        identity_confidence, identity_reason = classify_identity_confidence(
+            website_reachable=website_reachable,
+            submitted_name=submitted_name,
+            homepage_title=snapshot_title,
+            verified_legal_name=verified_legal_name,
+        )
+        identity_conflict = detect_identity_conflict(
+            submitted_name=submitted_name,
+            homepage_title=snapshot_title,
+            confidence=identity_confidence,
+        )
+        # When homepage clearly names a different company, do NOT silently
+        # overwrite the submitted name — keep the brand visible but mark
+        # the brief with a conflict flag (MVP, TODO 5.2).
+        verified_company_name = str(
+            research.get("verified_company_name", submitted_name)
+        )
+
+        # ── Industry inference + confidence (TODO 5.4) ──
+        industry_result = (
+            research.industry
+            if isinstance(research, CompanyResearchResult)
+            else infer_industry_result(
+                title=snapshot_title,
+                description=snapshot_meta,
+                text=snapshot_text,
+            )
+        )
+        industry_hint = (
+            industry_result.industry_hint
+            if website_reachable
+            else "n/v"
+        )
+        industry_confidence, industry_reason = classify_industry_confidence(
+            industry_hint=industry_hint,
+            has_title_signal=bool(snapshot_title),
+            has_meta_signal=bool(snapshot_meta),
+        )
+
+        # ── Fetch audit (TODO 5.5) ──
+        fetch_audit = BriefingFetchAudit(
+            reachable=website_reachable,
+            final_url=str(snapshot.get("final_url", homepage_url) or homepage_url),
+            redirect_chain=tuple(snapshot.get("redirect_chain", ()) or ()),
+            http_status=int(snapshot.get("http_status", 0) or 0),
+            content_type=str(snapshot.get("content_type", "")),
+            content_length=int(snapshot.get("content_length", 0) or 0),
+            content_language=str(snapshot.get("content_language", "")),
+            fetched_at=str(snapshot.get("fetched_at", "")) or iso_now(),
+            error_type=str(snapshot.get("error_type", "")),
+            error_message=str(snapshot.get("error_message", "")),
+            blocked_reason=str(snapshot.get("blocked_reason", "")),
+        )
+        final_hostname = _hostname(fetch_audit.final_url)
+        expected_hostname = _hostname(normalized_domain)
+        website_domain_mismatch = bool(
+            website_reachable
+            and final_hostname
+            and expected_hostname
+            and final_hostname != expected_hostname
+        )
+
+        # ── Evidence contract (TODO 5.3) ──
+        evidence_items: list[EvidenceItem] = []
+        missing_evidence: list[MissingEvidence] = []
+        retrieved_at = fetch_audit.fetched_at
+        if website_reachable:
+            if snapshot_title:
+                evidence_items.append(EvidenceItem(
+                    source_type=SOURCE_TYPE_OWNED_WEBSITE,
+                    url=homepage_url,
+                    claim=snapshot_title[:280],
+                    supports_field="verified_company_name",
+                    retrieved_at=retrieved_at,
+                ))
+            else:
+                missing_evidence.append(MissingEvidence(
+                    supports_field="verified_company_name",
+                    reason="homepage reachable but page title empty",
+                ))
+            if snapshot_meta:
+                evidence_items.append(EvidenceItem(
+                    source_type=SOURCE_TYPE_OWNED_WEBSITE,
+                    url=homepage_url,
+                    claim=snapshot_meta[:280],
+                    supports_field="industry_hint",
+                    retrieved_at=retrieved_at,
+                ))
+            evidence_items.append(EvidenceItem(
+                source_type=SOURCE_TYPE_OWNED_WEBSITE,
+                url=homepage_url,
+                claim=f"homepage reachable at {fetch_audit.final_url or homepage_url}",
+                supports_field="website_reachable",
+                retrieved_at=retrieved_at,
+            ))
+            if website_domain_mismatch:
+                missing_evidence.append(MissingEvidence(
+                    supports_field="normalized_domain",
+                    reason=(
+                        "final homepage URL differs from validated canonical domain: "
+                        f"{fetch_audit.final_url or final_hostname} expected {expected_hostname}"
+                    ),
+                ))
+        else:
+            missing_evidence.append(MissingEvidence(
+                supports_field="website_reachable",
+                reason=f"homepage fetch failed: {fetch_audit.error_type or 'unknown'}",
+            ))
+            missing_evidence.append(MissingEvidence(
+                supports_field="verified_company_name",
+                reason="cannot verify name without reachable homepage",
+            ))
+            missing_evidence.append(MissingEvidence(
+                supports_field="industry_hint",
+                reason="cannot infer industry without homepage signal",
+            ))
+        # Legal name is always Phase-2 evidence — record gap honestly.
+        if not verified_legal_name:
+            missing_evidence.append(MissingEvidence(
+                supports_field="verified_legal_name",
+                reason="register lookup is Phase 2; legal name not available in MVP",
+            ))
+        if isinstance(research, CompanyResearchResult):
+            for issue in research.warnings:
+                if issue.code == "source_gap":
+                    missing_evidence.append(MissingEvidence(
+                        supports_field=f"identity_source:{issue.source_type}",
+                        reason=issue.message,
+                    ))
+            if research.snapshot.js_content_detected:
+                missing_evidence.append(MissingEvidence(
+                    supports_field="homepage_text",
+                    reason="static homepage fetch indicates JavaScript-rendered content; browser rendering is backlog",
+                ))
+
+        # ── Briefing readiness (TODO 5.6) ──
+        readiness, routing_gaps = classify_briefing_readiness(
+            website_reachable=website_reachable,
+            identity_conflict=identity_conflict,
+            identity_confidence=identity_confidence,
+            website_domain_mismatch=website_domain_mismatch,
+        )
+        if website_domain_mismatch and BRIEFING_REDIRECT_DOMAIN_MISMATCH not in routing_gaps:
+            routing_gaps = (*routing_gaps, BRIEFING_REDIRECT_DOMAIN_MISMATCH)
+
         brief = SupervisorBrief(
             submitted_company_name=intake.company_name,
             submitted_web_domain=intake.web_domain,
-            verified_company_name=str(research.get("verified_company_name", intake.company_name)),
-            verified_legal_name=str(research.get("verified_legal_name", "")),
-            name_confidence=str(research.get("name_confidence", "low")),
-            website_reachable=bool(snapshot.get("reachable")),
-            homepage_url=str(research["homepage_url"]),
-            page_title=str(snapshot.get("title", "")),
-            meta_description=str(snapshot.get("meta_description", "")),
-            raw_homepage_excerpt=str(research["summary"]),
+            verified_company_name=verified_company_name,
+            verified_legal_name=verified_legal_name,
+            name_confidence=str(identity_confidence),
+            website_reachable=website_reachable,
+            homepage_url=homepage_url,
+            page_title=snapshot_title,
+            meta_description=snapshot_meta,
+            raw_homepage_excerpt=snapshot_text,
             normalized_domain=str(research["normalized_domain"]),
             industry_hint=industry_hint,
             observations=[
-                "Website reachable." if snapshot.get("reachable") else "Website not reachable.",
-                f"Verified company name: {research.get('verified_company_name', intake.company_name)}.",
-                f"Name confidence: {research.get('name_confidence', 'low')}.",
+                "Website reachable." if website_reachable else "Website not reachable.",
+                f"Verified company name: {verified_company_name}.",
+                f"Identity confidence: {identity_confidence} ({identity_reason}).",
+                f"Industry confidence: {industry_confidence} ({industry_reason}).",
+                f"Briefing readiness: {readiness}.",
+                (
+                    f"Final URL host differs from canonical domain: {final_hostname}."
+                    if website_domain_mismatch else
+                    "Final URL host matches canonical domain or was unavailable."
+                ),
             ],
             sources=[
+                # Legacy `sources` shape kept for backward compatibility with
+                # consumers that haven't migrated to evidence_items yet.
                 {
-                    "title": str(snapshot.get("title") or research.get("verified_company_name") or intake.company_name),
-                    "url": str(research["homepage_url"]),
-                    "source_type": "owned",
-                    "summary": str(research["summary"]),
+                    "title": str(snapshot.get("title") or verified_company_name or intake.company_name),
+                    "url": homepage_url,
+                    "source_type": SOURCE_TYPE_OWNED_WEBSITE,
+                    "summary": snapshot_text,
                 }
             ],
-            fetch_error_type=str(snapshot.get("error_type", "")),
-            fetch_error_message=str(snapshot.get("error_message", "")),
+            fetch_error_type=fetch_audit.error_type,
+            fetch_error_message=fetch_audit.error_message,
+            schema_version=BRIEFING_SCHEMA_VERSION,
+            name_confidence_reason=identity_reason,
+            industry_confidence=str(industry_confidence),
+            industry_confidence_reason=industry_reason,
+            evidence_items=[asdict(item) for item in evidence_items],
+            missing_evidence=[asdict(item) for item in missing_evidence],
+            fetch_audit=asdict(fetch_audit),
+            # Research diagnostics are intentionally not raw HTML/text and are
+            # available through the versioned supervisor payload.
+            briefing_readiness=str(readiness),
+            routing_gaps=list(routing_gaps),
+            identity_conflict=identity_conflict,
         )
-        message_payload = {
-            "section": "supervisor_brief",
-            "payload": asdict(brief),
-            "status": "ready_for_department_routing",
-        }
-        return brief, message_payload
+
+        # ── Versioned supervisor_message (TODO 5.7) ──
+        message_status = (
+            "ready_for_department_routing"
+            if readiness.value in {"ready", "ready_with_identity_gaps", "ready_with_website_gaps"}
+            else "blocked_for_department_routing"
+        )
+        evidence_summary = EvidenceSummary(
+            item_count=len(evidence_items),
+            source_types=tuple(sorted({item.source_type for item in evidence_items})),
+            missing_fields=tuple(item.supports_field for item in missing_evidence),
+        )
+        payload = asdict(brief)
+        if isinstance(research, CompanyResearchResult):
+            payload["intake_research"] = {
+                "schema_version": research.schema_version,
+                "warnings": [issue.as_dict() for issue in research.warnings],
+                "errors": [issue.as_dict() for issue in research.errors],
+                "timings_ms": dict(research.timings_ms),
+                "snapshot": {
+                    "requested_url": research.snapshot.requested_url,
+                    "final_url": research.snapshot.final_url,
+                    "http_status": research.snapshot.http_status,
+                    "content_type": research.snapshot.content_type,
+                    "language": research.snapshot.language,
+                    "content_length": research.snapshot.content_length,
+                    "content_hash": research.snapshot.content_hash,
+                    "extraction_quality": research.snapshot.extraction_quality,
+                    "js_content_detected": research.snapshot.js_content_detected,
+                    "redirect_chain": list(research.snapshot.redirect_chain),
+                    "about_url": research.snapshot.about_url,
+                    "imprint_url": research.snapshot.imprint_url,
+                },
+                "identity": {
+                    "brand_name": research.identity.brand_name,
+                    "homepage_name_match": research.identity.homepage_name_match,
+                    "confidence_reason": research.identity.confidence_reason,
+                    "source_gaps": [
+                        issue.as_dict() for issue in research.identity.source_gaps
+                    ],
+                },
+                "industry": research.industry.as_dict(),
+            }
+
+        message_envelope = SupervisorBriefMessage(
+            schema_version=BRIEFING_SCHEMA_VERSION,
+            section="supervisor_brief",
+            status=message_status,
+            briefing_readiness=str(readiness),
+            identity_confidence=str(identity_confidence),
+            industry_confidence=str(industry_confidence),
+            routing_gaps=tuple(routing_gaps),
+            evidence_summary=evidence_summary,
+            payload=payload,
+        )
+        message = message_envelope.as_dict()
+        is_valid, errors = validate_supervisor_brief_message(message)
+        if not is_valid:
+            raise ValueError(f"invalid SupervisorBriefMessage: {', '.join(errors)}")
+        return brief, message
 
     def decide_revision(self, *, task_key: str, review: dict, attempt: int) -> dict[str, str | bool]:
         rejected_points = list(review.get("rejected_points", []))

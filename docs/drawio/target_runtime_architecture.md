@@ -22,6 +22,11 @@ The layer covers:
 
 - secret resolution: process/deployment secret first, OS keyring second;
   plaintext `.env` is not used for API keys;
+- Phase-2 production storage boundary: Hetzner runs the Python/AG2 runtime and
+  PostgreSQL/pgvector as the system of record; Cloudflare provides DNS, TLS,
+  WAF, DDoS protection, rate limiting, Access/Zero Trust, and Tunnel; Workers
+  are limited to thin gateway/status/webhook duties, not long-running
+  orchestration;
 - `preflight.py`: dependency, import-chain, query-strategy, credential
   availability, and Streamlit-port readiness checks before local UI startup;
 - CI and review gates: CODEOWNERS, secret scan, workflow hardening,
@@ -40,26 +45,29 @@ does not route department work and does not participate in AG2 GroupChat turns.
 The current initial-run order is:
 
 1. create `run_id`, run directory, runtime agents, and run context
-2. load process memory and role strategies
-3. build the Supervisor intake brief
+2. initialize the explicit storage boundary, health-check it, and load process
+   memory via the `LongTermMemoryStore` contract
+3. build the Supervisor intake brief and bounded intake-research result
 4. initialize `question_registry` and `answer_matrix`
-5. run the domain department round via `run_supervisor_loop()`
+5. build and validate the versioned `Step1Handoff`, including the first
+   runtime event and the `after_supervisor_brief` checkpoint
+6. run the domain department round via `run_supervisor_loop()`
    - Company + Market first pass can run in parallel
    - Buyer runs after the first pass
    - Contact runs after Buyer
-6. classify first-round resolution state
-7. write `after_first_pass` checkpoint
-8. run bounded auto-close only when `AUTO_CLOSE_REQUIRED`
-9. write `after_closure` checkpoint when closure ran
-10. run the Synthesis Department on admitted department packages
-11. write `after_synthesis` checkpoint
-12. build quality, readiness, playbook, and report-facing pipeline sections
-13. evaluate `MeetingReadinessGate`
-14. compose `meeting_actions` via `FinalBriefingComposer`
-15. sync finalization artifacts
-16. run `ReportWriterRuntime`
-17. persist budget telemetry and write `after_finalization` checkpoint
-18. export JSON/PDF artifacts and consolidate scrubbed process patterns
+7. classify first-round resolution state
+8. write `after_first_pass` checkpoint
+9. run bounded auto-close only when `AUTO_CLOSE_REQUIRED`
+10. write `after_closure` checkpoint when closure ran
+11. run the Synthesis Department on admitted department packages
+12. write `after_synthesis` checkpoint
+13. build quality, readiness, playbook, and report-facing pipeline sections
+14. evaluate `MeetingReadinessGate`
+15. compose `meeting_actions` via `FinalBriefingComposer`
+16. sync finalization artifacts
+17. run `ReportWriterRuntime`
+18. persist budget telemetry and write `after_finalization` checkpoint
+19. export JSON/PDF artifacts and consolidate scrubbed process patterns
 
 ## Top-Level Roles
 
@@ -288,6 +296,39 @@ Lead calls: finalize_package(summary) → TERMINATE
 `MAX_TASK_RETRIES` is configurable via env var `LIQUISTO_MAX_TASK_RETRIES`
 (default: 3).
 
+**Observed calibration note**: In practice, the Lead's LLM judgment determines
+whether to consume retries or escalate directly to the Judge. For
+information-scarce domains or when the Critic's rejection signal is strong,
+the Lead may escalate to the Judge on the first attempt without issuing a
+retry — even when `attempts < MAX_TASK_RETRIES`. This means the retry path
+via CodingSpecialist is available but not guaranteed to activate.
+Zero strategy changes (`strategy_changes: []`) with concurrent Judge
+escalations is a valid runtime state, not an error.
+
+### Two-layer admission model
+
+Department quality is evaluated at two independent levels:
+
+1. **Internal gate (deterministic)** — Lead or Judge issues a
+   `TaskDecisionArtifact` with outcome `accepted`, `accepted_with_gaps`, or
+   `closed_unresolved`. This is based on the stored artifact history and the
+   department-specific KB policy rules.
+
+2. **Supervisor admission gate (LLM-based)** — After `finalize_package`,
+   the Supervisor evaluates the full `DepartmentPackage` and assigns
+   `accepted`, `accepted_with_gaps`, or `rejected`.
+
+These two gates are **independent**. A package whose individual tasks were
+all Judge-accepted can still receive a Supervisor-level `rejected` if the
+package as a whole does not meet the Supervisor's cross-task coherence and
+evidence-coverage expectations. This divergence routes the run to
+`BLOCKING_FAILURE` via the ResolutionController even when no individual task
+failed.
+
+Implication: the two gates must be calibrated together. An overly strict
+Supervisor admission gate relative to the internal Judge thresholds will
+produce `BLOCKING_FAILURE` on runs where substantive evidence was collected.
+
 ### Supervisor boundary (CHG-03)
 
 The Supervisor does **not** pass itself into department runs.
@@ -310,6 +351,266 @@ in this priority order per task:
 
 The finalized `DepartmentRunState` is persisted to
 `ShortTermMemoryStore.department_run_states` after every finalization.
+
+## Observability and Cost Tracking
+
+### What is tracked
+
+- **Department timings**: wall-clock seconds per department, stored in
+  `run_meta.json` and `resolution_state.budget_tracker`.
+- **Researcher token usage**: tracked per `worker_report` in
+  `ShortTermMemoryStore`. Aggregated in `usage_totals` and surfaced in
+  `run_meta.json` under `usage.agents.<role>`.
+- **Web search call cost**: counted and priced separately via
+  `estimate_web_search_preview_call_cost_usd()`.
+- **Phase token budgets**: `PhaseBudgetTracker` tracks first_pass, closure,
+  and optional_depth token consumption against configured caps.
+- **Phase checkpoints**: `after_supervisor_brief`, `after_first_pass`,
+  `after_closure`, `after_synthesis`, `after_finalization` are written to
+  `checkpoints/` for crash recovery and failure diagnostics.
+- **Run-level structured trace**: `current_phase`, `last_checkpoint`,
+  and failure context are persisted in `resolution_state`.
+
+### Known tracking gap
+
+`worker_reports` records only **Researcher** LLM calls (via `run_research`
+tool). Lead, Critic, Judge, and CodingSpecialist LLM calls are **not**
+captured in per-agent usage tracking. The `estimated_cost_usd` in
+`run_meta.json` therefore reflects Researcher token cost plus web search
+cost only. Lead/Critic/Judge token usage — which is significant when many
+Judge escalations occur — is invisible to the cost model.
+
+Target (2026): all `ConversableAgent` LLM calls must be tracked per role,
+contributing to a complete per-run cost breakdown.
+
+## Phase-2 Storage Backbone Target
+
+The production runtime target replaces local-first recovery with a
+Hetzner/Postgres/pgvector backbone while keeping the local MVP runnable without
+Postgres.
+
+### Hetzner responsibilities
+
+- run the Python/AG2/AutoGen pipeline;
+- host PostgreSQL as the system of record for runs, checkpoints, runtime state,
+  artifact metadata, memory retrieval metadata, and scrubbed process memory;
+- enable `pgvector` for semantic long-term process-memory retrieval;
+- keep long-running orchestration on Hetzner, not Cloudflare Workers.
+
+### Cloudflare responsibilities
+
+- DNS, TLS, WAF, DDoS protection, rate limiting, Access/Zero Trust, and Tunnel;
+- optional R2 object storage for large report/export artifacts;
+- request correlation via edge request IDs;
+- no ownership of department orchestration or long-running AG2 execution.
+
+### Storage contracts
+
+`src/storage/contracts.py` defines the production boundary:
+
+- `LongTermMemoryStore`: `retrieve`, `upsert_strategy`, `healthcheck`;
+- `RunStateStore`: `create_run`, `write_checkpoint`, `healthcheck`;
+- `RuntimeStorageConfig`: non-secret profile/backend selection;
+- `RuntimeStores`: selected stores plus required healthcheck and redacted
+  snapshot.
+
+`src/storage/runtime_stores.py` currently implements:
+
+- `local_dev`: local file-backed process memory and local file exports;
+- `production`: fail-fast placeholders until a migrated Postgres/pgvector store
+  is enabled. Production never silently falls back to file memory.
+
+The schema target is `sql/20260512_phase2_storage.sql`. It defines `runs`,
+`run_checkpoints`, `run_events`, `run_artifacts`, `run_locks`,
+`memory_patterns`, `memory_retrieval_events`, and `memory_backfill_jobs`.
+Detailed alignment lives in `docs/runtime/phase2_storage_architecture.md`.
+
+## Contextual Process-Memory Retrieval Target
+
+Process-memory retrieval is context-aware and policy-gated. The code boundary
+lives in `src/memory/retrieval.py`.
+
+### Retrieval context
+
+`RetrievalContext` carries `run_id`, `company_name`, `normalized_domain`,
+`language`, `industry_hint`, `phase`, `target_scope`, `role`, `department`, and
+`question_ids`.
+
+`company_name` and `normalized_domain` are explicitly current-run context only:
+they may support scrubbing and diagnostics, but they must not be persisted into
+long-term memory and must not add retrieval score. The non-sensitive
+`retrieval_query_summary` excludes both fields.
+
+### Step-1 timing
+
+Retrieval is two-stage:
+
+1. `_initialize_run()` loads a minimal generic snapshot before the Supervisor
+   brief. This gives the runner process patterns for orchestration/gating even
+   when no industry hint exists yet.
+2. `_build_supervisor_brief()` refreshes retrieval after `brief.industry_hint`
+   and the question registry are available. Role-specific retrieval is final
+   before `run_supervisor_loop()` starts.
+
+The final role map is stored in `run_context.retrieved_role_strategies`.
+Non-sensitive audit snapshots live under
+`run_context.resolution_state["memory_retrieval"]`.
+
+### Role scopes and fallback
+
+Active role scopes are fixed:
+
+- Lead: `lead_delegation`
+- Researcher: `researcher_strategy`
+- Critic: `critic_heuristics`
+- Judge: `judge_principles`
+- Coding Specialist: `coding_methods`
+- Supervisor: `orchestration`
+
+The local MVP uses deterministic score/filter fallback. Production retrieval
+should combine hard filters (`role`, `pattern_scope`, `schema_version`, optional
+`industry_hint`), embedding similarity from pgvector, pattern score, freshness,
+and policy score.
+
+Fallback and warning codes are machine-readable, including
+`memory_retrieval_empty`, `memory_policy_rejected_all`, and
+`local_score_fallback_no_embedding`.
+
+### Policy gate
+
+Every retrieved pattern is checked before it enters the Run Brain. The gate
+rejects domains, URLs, e-mail addresses, contact/person fields, legal company
+names, concrete financial values, role mismatches, scope mismatches, and schema
+version mismatches. Rejections are counted and stored as non-sensitive audit
+metadata.
+
+## Evidence-Backed Supervisor Brief Target
+
+The Supervisor Brief is a versioned handoff contract, not just a loose homepage
+snapshot. The code boundary is `src/domain/briefing.py` plus
+`SupervisorAgent.build_intake_brief()`.
+
+### Identity and evidence contract
+
+`SupervisorBrief` carries:
+
+- submitted identity: caller-provided company name and domain;
+- validated identity context: canonical domain from intake normalization;
+- verified brand name from owned-website evidence;
+- `verified_legal_name` only when a legal source is available;
+- `EvidenceItem` entries for claims that support briefing fields;
+- `MissingEvidence` entries when expected evidence is absent or Phase-2-only;
+- `BriefingFetchAudit` for homepage reachability, final URL, redirect chain,
+  HTTP status, content type, content length, language, timestamp and error
+  fields.
+
+The MVP uses owned website evidence. Register, LinkedIn, Wikidata, and curated
+company data sources are Phase-2 evidence providers.
+
+### Intake research contract
+
+Step 1 has a bounded intake-research pipeline. It prepares identity and routing
+context; it does not perform Company/Market/Buyer/Contact Department research.
+
+The runtime path is:
+
+1. `pipeline_runner._initialize_run()` validates intake and produces
+   `NormalizedDomainResult`.
+2. `SupervisorAgent.build_intake_brief()` passes that validated contract to
+   `build_company_research()`.
+3. `build_company_research()` derives the homepage URL from
+   `NormalizedDomainResult.canonical_url`, fetches a guarded
+   `WebsiteSnapshot`, resolves homepage-based identity, summarizes bounded
+   visible text, infers an industry start signal and returns
+   `CompanyResearchResult`.
+
+The contract types live in `src/research/contracts.py`:
+
+- `WebsiteSnapshot`: requested/final URL, reachability, HTTP status,
+  content type, title/meta/OpenGraph/headings, language, redirect chain,
+  structured fetch error, content hash, content length, extraction quality,
+  JS-content signal and About/Impressum links. Raw HTML is not stored.
+- `IdentityResolutionResult`: submitted name, homepage-derived brand/company
+  name, empty MVP legal name, confidence reason, homepage match flag and
+  Phase-2 source gaps.
+- `IndustryInferenceResult`: industry hint, confidence, reason, evidence fields
+  and alternatives.
+- `CompanyResearchResult`: versioned envelope with snapshot, identity,
+  industry, summary, evidence, warnings, errors, source registry and substep
+  timings.
+
+Fetch safety boundaries:
+
+- DNS and redirect targets are validated against private, loopback, link-local,
+  reserved and otherwise non-global IPs.
+- The opener caps redirects and pins the initial connection to a validated IP.
+- Homepage fetch uses controlled User-Agent, Accept and Accept-Language headers,
+  bounded timeout, bounded response size and a content-type allowlist.
+- Timeouts, TLS failures, access denied/rate limited/bot-protection signals,
+  unsupported content types, weak extraction and JS-heavy pages become
+  machine-readable warnings/errors.
+
+`RunContext.resolution_state["intake_research"]` stores only non-sensitive
+diagnostics: schema version, timings, warnings/errors, snapshot audit data,
+identity diagnostics and industry diagnostics.
+
+### Confidence and readiness
+
+Identity confidence and industry confidence are separate:
+
+- identity: `high`, `medium`, `low`, `unverified`;
+- industry: `high`, `low`, `unknown`.
+
+Submitted name, homepage title, brand name, and legal name are kept distinct.
+When the homepage clearly names a different company, the brief records
+`identity_conflict` and can block department routing. If the final fetched URL
+lands on a different host than the canonical intake domain, the brief records
+`redirect_domain_mismatch` as a routing gap.
+
+`SupervisorBriefMessage` is versioned and validated. It exposes
+`schema_version`, `status`, `briefing_readiness`, confidence values,
+`routing_gaps`, and `evidence_summary` at the top level while keeping the
+legacy `section="supervisor_brief"` and `payload` fields.
+
+`RunContext.resolution_state["supervisor_brief"]` stores only non-sensitive
+diagnostics: evidence count, confidence classes, fetch status, readiness,
+routing gaps and duration. Homepage raw text remains bounded in the brief and
+is not copied into the diagnosis snapshot.
+
+## Step-1 Handoff Contract Target
+
+Step 1 ends with a versioned `Step1Handoff`, not a loose collection of seeded
+fields. The contract is built after the Supervisor Brief, question registry,
+answer matrix, first runtime event and `after_supervisor_brief` checkpoint are
+available.
+
+The local MVP contract contains:
+
+- `schema_version`, `run_id`, intake snapshot and validated supervisor brief;
+- versioned `supervisor_message`;
+- 12-question registry and matching initial answer matrix;
+- retrieved general and role strategies;
+- runtime-agent snapshot, storage snapshot and budget snapshot;
+- first runtime event with `event_id`, `run_id`, `sequence`, `timestamp`,
+  `schema_version`, `phase` and `content_type`;
+- checkpoint metadata with id, phase, path, hash and write status;
+- handoff readiness: `ready_for_department_routing`, `ready_with_gaps` or
+  `blocked_step1_handoff`;
+- validation errors with machine-readable codes.
+
+The gate validates Supervisor Brief message shape, registry/matrix key
+consistency, `TASK_TO_QUESTION_IDS`, runtime event shape and checkpoint write
+status. Step 2 may only start when the gate returns an allowed readiness.
+
+Production target: the local JSON checkpoint is an export/development artifact.
+Authoritative recovery belongs in the transactional Run State Store from the
+storage architecture, with checkpoint/event writes coupled to run phase updates.
+
+### What is not yet tracked
+
+- Distributed traces (no OpenTelemetry span/trace IDs)
+- Per-turn AG2 GroupChat latency
+- Metric emission for external monitoring (Prometheus/Grafana)
 
 ## Memory Model
 
@@ -350,6 +651,21 @@ legal suffixes (`GmbH`, `AG`, etc.) are replaced with `{domain}` / `{company}`.
 The `domain` field is always set to `""` — the store never holds a customer
 domain name.
 
+**Current local implementation**: flat JSON file
+(`artifacts/memory/long_term_memory.json`) behind the
+`LongTermMemoryStore` contract, used for local development and tests. Pattern
+consolidation runs only on `completed` / `meeting_ready` runs —
+`discovery_ready` runs do not contribute patterns.
+
+**Production target**: Hetzner PostgreSQL with `pgvector`, table
+`memory_patterns`, stable `content_hash`, `schema_version`, `embedding_model`,
+role/scope/industry filters, and HNSW vector index. `source_run_id` is retained
+only for audit/trace and must not be used as a domain-specific retrieval boost.
+
+**Known limitation**: the DSN-backed `PostgresLongTermMemoryStore` and
+transactional `RunStateStore` are not implemented yet. Until then, production
+profile fails fast instead of silently using local files.
+
 ## Follow-Up Mode (CHG-08)
 
 Follow-up mode starts from a stored `run_id`.
@@ -369,6 +685,24 @@ Flow:
 Follow-up answering is grounded in the rehydrated run brain. If additional
 research is needed, `DepartmentRuntime.run_followup()` initiates a new
 mini-session with the stored context.
+
+### Follow-up routing
+
+**Current implementation**: keyword-based routing against the lowercased
+question text. Questions containing terms like "contact", "market",
+"buyer" are routed to the corresponding department; unmatched questions
+default to `CompanyDepartment`. Routing happens in `run_bounded_follow_up()`
+and `answer_follow_up()` in `src/orchestration/follow_up.py`.
+
+**Known limitation**: keyword matching is brittle. A question like
+"Who is the right contact for a restructuring discussion?" routes to
+`CompanyDepartment` because no contact keyword matches — despite being
+a clear `ContactDepartment` question.
+
+**Target (2026)**: route via embedding similarity of the question against
+the `MEETING_QUESTION_REGISTRY` entries, or a lightweight classifier LLM
+call. This would make routing robust to phrasing variation and cross-domain
+questions.
 
 ## Required Output Artifacts
 
@@ -474,3 +808,100 @@ compatibility but are not the authoritative action model.
 | Global one-size-fits-all completion semantics | Department-specific KB policy gates at acceptance time |
 | Shallow follow-up heuristics | Run brain rehydration from `department_run_states` (CHG-08) |
 | Unguarded company facts in long-term memory | Scrubbed structural patterns only (CHG-09) |
+| Monolithic `run_pipeline()` function | Phase-decomposed runner with typed dataclasses per phase |
+| Inline `OPENAI_API_KEY` in deploy script | Secret forwarded as SSH session env var; no literal in script |
+
+## Architecture Gap Analysis — 2026 State-of-the-Art Targets
+
+This section documents the delta between the current implementation and
+2026 best-practice standards for production multi-agent AI pipelines.
+Items are ordered by impact.
+
+### GAP-01 · Complete LLM cost tracking across all roles
+
+**Current**: Only Researcher LLM calls are tracked in `worker_reports`.
+Lead, Critic, Judge, and CodingSpecialist token usage is not captured.
+Cost figures in `run_meta.json` understate true LLM cost — especially on
+runs with many Judge escalations.
+
+**Target**: Instrument all `ConversableAgent` LLM calls. Emit a usage
+record per role per call. Aggregate into a complete per-run cost breakdown
+by role.
+
+### GAP-02 · Distributed tracing (OpenTelemetry)
+
+**Current**: Phase checkpoints and `logging.info/warning` provide local
+observability. No trace/span IDs, no metric emission, no integration with
+external monitoring (Prometheus, Grafana).
+
+**Target**: Instrument the pipeline with OpenTelemetry spans at phase,
+department, and tool-call level. Emit metrics (department duration,
+token cost, resolution bucket frequency) to a time-series backend.
+This is a prerequisite for production SLA monitoring on Hetzner.
+
+### GAP-03 · Vector store for Long-Term Process Memory
+
+**Current**: `long_term_memory.json` is a flat JSON file with filter-based
+retrieval. Does not scale beyond ~200 patterns and cannot retrieve by
+semantic similarity.
+
+**Target**: Replace with an embedding-indexed store (e.g. `pgvector` on
+the Hetzner Postgres instance, or `ChromaDB`). Use embedding similarity
+for pattern retrieval at run start. This becomes relevant once the system
+has processed 50+ distinct runs.
+
+### GAP-04 · LLM/embedding-based follow-up routing
+
+**Current**: Keyword matching on lowercased question text.
+Phrasing variation and cross-domain questions route incorrectly.
+
+**Target**: Embed the question and compute cosine similarity against the
+`MEETING_QUESTION_REGISTRY` embeddings, or issue a single lightweight
+classifier LLM call with the 5 department descriptions as candidates.
+Latency cost: < 200 ms. Accuracy improvement: significant.
+
+### GAP-05 · Systematic evaluation framework
+
+**Current**: `tests/golden/` covers structural regressions. No systematic
+measurement of research quality, evidence completeness, or synthesis
+accuracy across runs.
+
+**Target**: Build a run-level eval pipeline that scores each run against
+a rubric (e.g. question coverage rate, evidence-to-gap ratio, Supervisor
+admission rate per department). Run evals after every release. Use results
+to calibrate Critic thresholds and Supervisor admission prompts.
+
+### GAP-06 · Turn-level AG2 GroupChat streaming
+
+**Current**: `on_message` hook fires at phase boundaries (department
+assigned, department reviewed, synthesis reviewed). Within a GroupChat,
+the UI receives no updates until the department returns its full package.
+
+**Target**: Stream AG2 GroupChat turns via `on_message` at each
+Lead/Researcher/Critic/Judge turn. Requires hooking into AG2's
+`process_message` callback or equivalent. Reduces perceived latency
+significantly for runs lasting 5–20 minutes.
+
+### GAP-07 · Adaptive department execution
+
+**Current**: All departments always execute all assigned tasks. No
+shortcut path for well-documented companies where primary data is
+immediately available.
+
+**Target**: After Supervisor brief, evaluate a readiness pre-check
+(e.g. public annual report present, company in LTM with high-confidence
+prior run). If pre-check passes, reduce task scope for Company Department.
+Estimated impact: 30–50% runtime reduction for well-known targets.
+
+### GAP-08 · Gate calibration alignment
+
+**Current**: The internal Judge gate (deterministic, rule-based) and the
+Supervisor admission gate (LLM-based) are calibrated independently.
+Divergence produces `BLOCKING_FAILURE` on runs where evidence was
+collected but did not satisfy the Supervisor's cross-task coherence check.
+
+**Target**: Define explicit calibration tests that run both gates against
+synthetic department packages. Ensure that a Judge-accepted package at
+`accepted_with_gaps` confidence meets the Supervisor admission threshold
+for `accepted_with_gaps`. Gate prompts and KB policy thresholds must be
+jointly reviewed when either is changed.

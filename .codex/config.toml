@@ -1,0 +1,219 @@
+################################################################################
+# .codex/config.toml
+# Projektbezogene Codex-Konfiguration für dieses GitHub-Repository.
+#
+# Hinweis:
+# - Diese Datei gilt nur für dieses Repo.
+# - Codex lädt projektlokale .codex-Konfiguration nur, wenn das Projekt trusted ist.
+# - Keine Secrets, API-Keys oder Tokens in diese Datei schreiben.
+################################################################################
+
+
+################################################################################
+# Core Model Selection
+################################################################################
+
+# Hauptmodell, das Codex für Aufgaben in diesem Repo verwenden soll.
+model = "gpt-5.5"
+
+# Steuert, wie viel Reasoning-Aufwand Codex verwenden soll.
+# Sinnvoll für Architektur-, Security- und Repo-Analysen: "high".
+model_reasoning_effort = "high"
+
+# Steuert die Ausführlichkeit der Antworten.
+# "medium" ist meist gut für technische Arbeit: nicht zu knapp, nicht zu lang.
+model_verbosity = "medium"
+
+# Modellanbieter. Standard ist normalerweise "openai".
+model_provider = "openai"
+
+
+################################################################################
+# Approval & Sandbox
+################################################################################
+
+# Legt fest, wann Codex um Erlaubnis fragt.
+# "on-request" ist sicherer als "never", weil riskante Aktionen bestätigt werden müssen.
+approval_policy = "on-request"
+
+# Legt fest, wie stark Codex vom System isoliert wird.
+# "workspace-write" erlaubt Schreiben im Workspace, aber nicht beliebig im System.
+sandbox_mode = "workspace-write"
+
+
+################################################################################
+# Windows
+################################################################################
+
+[windows]
+
+# Recommended native Windows sandbox mode. Falls die Einrichtung auf einem
+# Rechner ohne passende Rechte scheitert, lokal auf "unelevated" wechseln.
+sandbox = "elevated"
+
+
+################################################################################
+# Workspace Write Settings
+################################################################################
+
+[sandbox_workspace_write]
+
+# Zusätzliche Ordner, in die Codex schreiben darf.
+# Leer lassen, wenn Codex nur im aktuellen Repo arbeiten soll.
+writable_roots = []
+
+# Netzwerkzugriff innerhalb der Sandbox.
+# Für reproduzierbare Repo-Arbeit meist besser auf false setzen.
+network_access = false
+
+
+################################################################################
+# Web Search
+################################################################################
+
+# Steuert Websuche durch Codex.
+# "cached" reduziert Live-Abhängigkeit.
+# Für aktuelle Paket-/Security-/API-Fragen kann "live" sinnvoll sein.
+# Für streng lokale Repo-Analysen kann "disabled" sinnvoll sein.
+web_search = "cached"
+
+
+################################################################################
+# Project Documentation / AGENTS.md
+################################################################################
+
+# Maximale Größe der Projektdokumentation, die Codex automatisch laden soll.
+# Hilft, AGENTS.md oder ähnliche Steuerdateien nicht unbegrenzt groß einzulesen.
+project_doc_max_bytes = 32768
+
+# Fallback-Dateien, die Codex als Projektdokumentation berücksichtigen soll.
+# AGENTS.md ist der wichtigste Ort für Repo-Regeln, Arbeitsweise und Qualitätskriterien.
+project_doc_fallback_filenames = ["AGENTS.md"]
+
+# Marker, an denen Codex die Projektwurzel erkennt.
+# Standard ist meist ".git"; explizit gesetzt ist es robuster.
+project_root_markers = [".git"]
+
+
+################################################################################
+# Feature Flags
+################################################################################
+
+[features]
+
+# Aktiviert Codex Hooks, sofern eine passende hooks.json vorhanden ist.
+codex_hooks = true
+
+# Aktiviert Multi-Agent-/Subagent-Funktionen, falls verwendet.
+multi_agent = true
+
+# Kann schnellere Interaktionen ermöglichen.
+# Nur nutzen, wenn es zu deinem Workflow passt.
+fast_mode = true
+
+
+################################################################################
+# Shell Environment Policy
+################################################################################
+
+[shell_environment_policy]
+
+# Legt fest, welche Umgebungsvariablen Codex aus der Shell übernehmen darf.
+# "core" ist restriktiver als alles ungefiltert zu übernehmen.
+inherit = "core"
+
+# Schließt sensible Variablenmuster aus.
+# Wichtig, damit Tokens/Keys nicht versehentlich in Tools, Logs oder Befehle gelangen.
+exclude = [
+  "*KEY*",
+  "*SECRET*",
+  "*TOKEN*",
+  "OPENAI_API_KEY",
+  "GITHUB_TOKEN"
+]
+
+
+################################################################################
+# Agents / Subagents
+################################################################################
+
+[agents]
+
+# Maximale Anzahl paralleler Agent-Threads.
+# Höher = mehr Parallelität, aber potenziell mehr Kosten und Unübersichtlichkeit.
+max_threads = 4
+
+# Maximale Verschachtelung von Agenten.
+# 1 ist für die meisten Repo-Workflows ausreichend.
+max_depth = 1
+
+
+# Beispiel für einen spezialisierten Reviewer-Agent.
+# Aktuell nur mit Beschreibung konfiguriert.
+[agents.reviewer]
+
+# Kurze Beschreibung, wann dieser Agent eingesetzt werden soll.
+description = "Find correctness, security, architecture, and test risks in code."
+
+# Optionaler Pfad zu einer Agent-Konfiguration relativ zu dieser Datei.
+# Der alte Pfad "./agents/reviewer.toml" zeigt aktuell auf ein Verzeichnis,
+# nicht auf eine TOML-Datei. Erst wieder aktivieren, wenn dort eine echte
+# TOML-Konfigurationsdatei liegt.
+# config_file = "./agents/reviewer.toml"
+
+
+################################################################################
+# Skills
+################################################################################
+
+# Skills können aktiviert/deaktiviert werden.
+# Hinweis: Wiederverwendbare Skills liegen typischerweise unter .agents/skills/.
+[[skills.config]]
+
+# Pfad zum Skill-Ordner mit SKILL.md.
+# Aktuell existiert dieser Skill im Repo nicht; wenn er angelegt wird, sollte
+# der Pfad auf den Ordner zeigen, z. B. "../.agents/skills/repo-audit".
+path = "../.agents/skills/repo-audit"
+
+# true = Skill ist aktiv.
+# false = Skill bleibt vorhanden, wird aber nicht verwendet.
+enabled = false
+
+
+################################################################################
+# MCP Servers
+################################################################################
+
+# Beispiel: lokaler MCP-Server.
+# Nur aktivieren, wenn du wirklich einen passenden MCP-Server nutzt.
+#
+# [mcp_servers.local_docs]
+# command = "npx"
+# args = ["-y", "@example/local-docs-mcp"]
+#
+# Aufgabe:
+# - Codex kann über MCP zusätzliche Tools oder Datenquellen nutzen.
+# - Keine Secrets direkt eintragen.
+# - Falls Auth nötig ist, besser Umgebungsvariablen verwenden.
+
+
+################################################################################
+# History / Logging
+################################################################################
+
+[history]
+
+# Optionaler Ordner für lokale Verlauf-/Logdaten.
+# Nur setzen, wenn du bewusst kontrollieren willst, wo Codex Verlauf speichert.
+# log_dir = ".codex/history"
+
+
+################################################################################
+# TUI / UI
+################################################################################
+
+[tui]
+
+# Optional: UI-bezogene Einstellungen für die Terminal-Oberfläche.
+# Nur relevant, wenn du Codex im Terminal intensiv nutzt.
+# notifications = true

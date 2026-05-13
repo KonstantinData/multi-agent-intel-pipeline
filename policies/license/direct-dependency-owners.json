@@ -9,11 +9,25 @@
       "reviewed_at": "2026-01-01"
     },
     {
+      "package": "bcrypt",
+      "owner": "@liquisto/security-governance",
+      "purpose": "Password hashing for local UI authentication",
+      "risk_tier": "high",
+      "reviewed_at": "2026-05-13"
+    },
+    {
       "package": "filelock",
       "owner": "@liquisto/runtime-review",
       "purpose": "Cross-platform file locking for artifact writes",
       "risk_tier": "low",
       "reviewed_at": "2026-01-01"
+    },
+    {
+      "package": "idna",
+      "owner": "@liquisto/runtime-review",
+      "purpose": "IDNA 2008 hostname normalization for intake validation",
+      "risk_tier": "medium",
+      "reviewed_at": "2026-05-13"
     },
     {
       "package": "keyring",
@@ -56,6 +70,13 @@
       "purpose": "Operator-facing UI and resolution dashboard",
       "risk_tier": "medium",
       "reviewed_at": "2026-01-01"
+    },
+    {
+      "package": "tldextract",
+      "owner": "@liquisto/runtime-review",
+      "purpose": "Offline public-suffix and registrable-domain parsing for intake validation",
+      "risk_tier": "medium",
+      "reviewed_at": "2026-05-13"
     },
     {
       "package": "reportlab",

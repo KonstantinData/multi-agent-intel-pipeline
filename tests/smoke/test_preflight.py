@@ -76,6 +76,43 @@ def test_preflight_credential_status_does_not_expose_source(monkeypatch):
     assert preflight._model_api_credential_status() == "configured"
 
 
+def test_runtime_agents_status_uses_healthcheck(monkeypatch):
+    class _FactoryModule:
+        @staticmethod
+        def create_runtime_agents():
+            return object()
+
+    class _RuntimeAgentsModule:
+        @staticmethod
+        def runtime_agents_healthcheck(_agents):
+            return {
+                "status": "ok",
+                "errors": (),
+                "snapshot": {
+                    "departments": [
+                        "CompanyDepartment",
+                        "MarketDepartment",
+                        "BuyerDepartment",
+                        "ContactDepartment",
+                    ],
+                    "factory_version": "test-version",
+                },
+            }
+
+    real_import = __import__
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "src.agents.runtime_factory":
+            return _FactoryModule
+        if name == "src.orchestration.runtime_agents":
+            return _RuntimeAgentsModule
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _fake_import)
+
+    assert preflight._runtime_agents_status() == "ok (4 departments, factory test-version)"
+
+
 def test_port_status_accepts_reachable_local_http_service():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _OkHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

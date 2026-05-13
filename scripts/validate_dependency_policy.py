@@ -178,11 +178,17 @@ def validate_licenses(policy: dict, lock_file: Path | None = None) -> list[str]:
         if lock_exists and name.lower().replace("-", "_") not in locked:
             continue
         raw_license = dist.metadata.get("License") or dist.metadata.get("License-Expression") or "Unknown"
-        lic = _normalize_license(raw_license)
+        classifier_licenses = [
+            c.split("::")[-1].strip()
+            for c in _all_classifier_values(dist.metadata)
+            if "License ::" in c
+        ]
+        if "\n" in raw_license and classifier_licenses:
+            lic = _normalize_license(classifier_licenses[-1])
+        else:
+            lic = _normalize_license(raw_license)
 
         if lic in {"Unknown", "UNKNOWN", "unknown", ""}:
-            classifiers = _all_classifier_values(dist.metadata)
-            classifier_licenses = [c.split("::")[-1].strip() for c in classifiers if "License ::" in c]
             if classifier_licenses:
                 lic = _normalize_license(classifier_licenses[-1])
 
