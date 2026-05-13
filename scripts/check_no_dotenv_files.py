@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tracked_files() -> list[str]:
-    result = subprocess.run(  # nosec B603,B607 - fixed argv, no shell, repo-local command
+    # Fixed argv, no shell, and repo-local cwd make this invocation deterministic.
+    result = subprocess.run(  # nosec B603,B607
         ["git", "ls-files"],
         cwd=ROOT,
         check=True,
