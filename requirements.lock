@@ -16,6 +16,8 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
+bcrypt==4.3.0
+    # via -r requirements.txt
 blinker==1.9.0
     # via streamlit
 cachetools==7.1.1
@@ -40,7 +42,9 @@ distro==1.9.0
 fast-depends==3.0.8
     # via ag2
 filelock==3.29.0
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   tldextract
 gitdb==4.0.12
     # via gitpython
 gitpython==3.1.50
@@ -55,9 +59,11 @@ httpx==0.28.1
     #   openai
 idna==3.13
     # via
+    #   -r requirements.txt
     #   anyio
     #   httpx
     #   requests
+    #   tldextract
 jaraco-classes==3.4.0
     # via keyring
 jaraco-context==6.1.2
@@ -144,8 +150,12 @@ reportlab==4.4.10
     # via -r requirements.txt
 requests==2.33.1
     # via
+    #   requests-file
     #   streamlit
     #   tiktoken
+    #   tldextract
+requests-file==3.0.1
+    # via tldextract
 rpds-py==0.30.0
     # via
     #   jsonschema
@@ -166,6 +176,8 @@ termcolor==3.3.0
     # via ag2
 tiktoken==0.12.0
     # via ag2
+tldextract==5.3.1
+    # via -r requirements.txt
 toml==0.10.2
     # via streamlit
 tornado==6.5.5
