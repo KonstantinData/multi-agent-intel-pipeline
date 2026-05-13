@@ -1,15 +1,15 @@
 services:
   app:
-    image: ghcr.io/konstantindata/multi-agent-intel-pipeline:latest
+    image: ghcr.io/konstantindata/multi-agent-intel-pipeline:${LIQUISTO_IMAGE_TAG:?LIQUISTO_IMAGE_TAG is required}
     restart: unless-stopped
     ports:
       - "127.0.0.1:8501:8501"
     environment:
-      - OPENAI_API_KEY
-      - LIQUISTO_POSTGRES_DSN
-      - LIQUISTO_AUTH_POSTGRES_DSN
-      - DATABASE_URL
-      - LIQUISTO_STORAGE_PROFILE
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      LIQUISTO_POSTGRES_DSN: ${LIQUISTO_POSTGRES_DSN:?LIQUISTO_POSTGRES_DSN is required}
+      LIQUISTO_AUTH_POSTGRES_DSN: ${LIQUISTO_AUTH_POSTGRES_DSN:-${LIQUISTO_POSTGRES_DSN:?LIQUISTO_POSTGRES_DSN is required}}
+      DATABASE_URL: ${DATABASE_URL:-${LIQUISTO_POSTGRES_DSN:?LIQUISTO_POSTGRES_DSN is required}}
+      LIQUISTO_STORAGE_PROFILE: ${LIQUISTO_STORAGE_PROFILE:-production}
     volumes:
       - artifacts:/app/artifacts
     logging:

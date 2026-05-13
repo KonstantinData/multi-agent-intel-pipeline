@@ -14,7 +14,7 @@
 ################################################################################
 
 # Hauptmodell, das Codex für Aufgaben in diesem Repo verwenden soll.
-model = "gpt-5.5"
+model = "gpt-5.3-codex"
 
 # Steuert, wie viel Reasoning-Aufwand Codex verwenden soll.
 # Sinnvoll für Architektur-, Security- und Repo-Analysen: "high".

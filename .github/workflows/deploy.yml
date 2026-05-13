@@ -1,6 +1,7 @@
 name: Deploy to Hetzner
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Release Attestation"]
     types: [completed]
@@ -17,11 +18,17 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       packages: read
     steps:
+      - name: Resolve image tag
+        id: image_tag
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          echo "tag=sha-${HEAD_SHA:0:12}" >> "$GITHUB_OUTPUT"
       - name: Deploy via SSH
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         env:
@@ -31,11 +38,12 @@ jobs:
           LIQUISTO_POSTGRES_DSN: ${{ secrets.LIQUISTO_POSTGRES_DSN }}
           LIQUISTO_AUTH_POSTGRES_DSN: ${{ secrets.LIQUISTO_AUTH_POSTGRES_DSN }}
           LIQUISTO_STORAGE_PROFILE: production
+          LIQUISTO_IMAGE_TAG: ${{ steps.image_tag.outputs.tag }}
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_ACTOR,OPENAI_API_KEY,LIQUISTO_POSTGRES_DSN,LIQUISTO_AUTH_POSTGRES_DSN,LIQUISTO_STORAGE_PROFILE
+          envs: GHCR_TOKEN,GHCR_ACTOR,OPENAI_API_KEY,LIQUISTO_POSTGRES_DSN,LIQUISTO_AUTH_POSTGRES_DSN,LIQUISTO_STORAGE_PROFILE,LIQUISTO_IMAGE_TAG
           script: |
             cd /opt/liquisto
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
