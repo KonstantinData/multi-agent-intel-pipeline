@@ -379,13 +379,13 @@ def test_build_intake_brief_flags_final_url_domain_mismatch(
     missing = {item["supports_field"]: item["reason"] for item in brief.missing_evidence}
     assert "normalized_domain" in missing
     reason = missing["normalized_domain"]
-    hostnames = {
-        parsed.hostname
+    url_tokens = [
+        token.strip(".,;:()[]{}<>\"'")
         for token in reason.split()
-        for parsed in (urlparse(token.strip(".,;:()[]{}<>\"'")),)
-        if parsed.hostname
-    }
-    assert "other-example.com" in hostnames
+        if token.startswith(("http://", "https://"))
+    ]
+    parsed_hostnames = [urlparse(token).hostname for token in url_tokens]
+    assert "other-example.com" in parsed_hostnames
 
 
 def test_supervisor_brief_message_contract_validator_accepts_valid_message() -> None:
