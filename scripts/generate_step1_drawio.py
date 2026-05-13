@@ -8,6 +8,7 @@ Fixes vs. previous version:
 - Step1Handoff node added: RuntimeEvent, checkpoint hash, validation gate
 - outputs node: adds budget_tracker + run_dir from InitialRunState
 """
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "drawio" / "runtime_step1.drawio"
@@ -73,7 +74,7 @@ cells.append(txt("subtitle",
     40, 52, 1860, 22, "#475569", 11, False))
 
 # Lanes
-for i, (lx, lw) in enumerate(zip(LX, LW)):
+for i, (lx, lw) in enumerate(zip(LX, LW, strict=False)):
     cells.append(lane(f"lane_{i}", lx, LANE_Y, lw, LANE_H))
 
 # Lane labels
@@ -382,8 +383,6 @@ xml = f"""<mxfile host="65bd71144e">
   </diagram>
 </mxfile>"""
 
-# Validate
-import xml.etree.ElementTree as ET
 try:
     ET.fromstring(xml)
     print("XML valid ✓")

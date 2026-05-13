@@ -30,7 +30,6 @@ from src.orchestration.runtime_agents import (
     validate_runtime_agents,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 class _Role:
@@ -190,7 +189,9 @@ def test_validate_runtime_agents_rejects_supervisor_missing_method() -> None:
 
 
 def test_validate_runtime_agents_rejects_department_missing_run() -> None:
-    class _NoRun: pass
+    class _NoRun:
+        pass
+
     deps = {name: _Role() for name in DOMAIN_DEPARTMENT_NAMES}
     deps["CompanyDepartment"] = _NoRun()
     result = validate_runtime_agents(_make_bundle(departments=deps))
@@ -237,8 +238,10 @@ def test_search_cache_get_namespace_is_thread_safe() -> None:
         references.append(cache.get_namespace("__search__"))
 
     threads = [threading.Thread(target=_worker) for _ in range(8)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
     assert len(references) == 8
     # All workers must observe the same dict (no torn allocation).
     first = references[0]
@@ -254,8 +257,10 @@ def test_search_cache_namespace_operations_are_locked() -> None:
         namespace[f"k{idx}"] = idx
 
     threads = [threading.Thread(target=_worker, args=(idx,)) for idx in range(8)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     assert len(namespace) == 8
     assert namespace.get("k3") == 3
@@ -337,13 +342,19 @@ def test_create_runtime_agents_builds_and_validates_bundle(monkeypatch: pytest.M
     """2.9: exercise the actual factory path with lightweight patched constructors."""
     from src.agents import runtime_factory
 
-    class _Supervisor(_Role): pass
+    class _Supervisor(_Role):
+        pass
+
     class _Department(_Role):
         def __init__(self, department: str, *, search_cache=None) -> None:
             self.department = department
             self.search_cache = search_cache
-    class _Synthesis(_Role): pass
-    class _Report(_Role): pass
+
+    class _Synthesis(_Role):
+        pass
+
+    class _Report(_Role):
+        pass
 
     monkeypatch.setattr(runtime_factory, "SupervisorAgent", _Supervisor)
     monkeypatch.setattr(runtime_factory, "DepartmentRuntime", _Department)

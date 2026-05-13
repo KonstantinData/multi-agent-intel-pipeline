@@ -1,8 +1,8 @@
 """Website fetching helpers."""
 from __future__ import annotations
 
-import html
 import hashlib
+import html
 import io
 import re
 import socket
@@ -244,6 +244,18 @@ def _decode_html(raw_bytes: bytes, content_type: str) -> str:
 def _extract_pdf_text(raw_bytes: bytes) -> tuple[str, str]:
     try:
         from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(raw_bytes))
+        meta_title = ""
+        if getattr(reader, "metadata", None):
+            meta_title = str(getattr(reader.metadata, "title", "") or "").strip()
+        text_parts: list[str] = []
+        for page in reader.pages[:8]:
+            text = page.extract_text() or ""
+            text = " ".join(text.split())
+            if text:
+                text_parts.append(text)
+        return " ".join(text_parts)[:12000], meta_title[:300]
     except Exception:
         return "", ""
 
@@ -280,21 +292,6 @@ def _extraction_quality(visible_text: str, js_content_detected: bool) -> str:
     if len(words) < 35:
         return "weak"
     return "ok"
-
-    try:
-        reader = PdfReader(io.BytesIO(raw_bytes))
-        meta_title = ""
-        if getattr(reader, "metadata", None):
-            meta_title = str(getattr(reader.metadata, "title", "") or "").strip()
-        text_parts: list[str] = []
-        for page in reader.pages[:8]:
-            text = page.extract_text() or ""
-            text = " ".join(text.split())
-            if text:
-                text_parts.append(text)
-        return " ".join(text_parts)[:12000], meta_title[:300]
-    except Exception:
-        return "", ""
 
 
 def fetch_website_snapshot(

@@ -38,15 +38,10 @@ from src.models.meeting_ready import FinalBriefing, MeetingAction, ResolutionPla
 from src.models.registry import assemble_section
 from src.models.schemas import empty_pipeline_data, validate_pipeline_data
 from src.orchestration.dashboard_composer import compose_dashboard
-from src.orchestration.factory_logging import log_factory_event
-from src.orchestration.intake_logging import log_intake_event
-from src.orchestration.supervisor_logging import log_supervisor_brief_event
-from src.orchestration.runtime_agents import (
-    RuntimeAgentFactoryError,
-    RuntimeAgents,
-)
 from src.orchestration.envelope import resolve_admission
+from src.orchestration.factory_logging import log_factory_event
 from src.orchestration.follow_up import run_bounded_follow_up
+from src.orchestration.intake_logging import log_intake_event
 from src.orchestration.meeting_questions import (
     build_initial_answer_matrix,
     build_question_registry,
@@ -55,16 +50,21 @@ from src.orchestration.meeting_questions import (
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
 from src.orchestration.run_context import RunContext
 from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
+from src.orchestration.runtime_agents import (
+    RuntimeAgentFactoryError,
+    RuntimeAgents,
+)
 from src.orchestration.runtime_guardrails import PhaseBudgetTracker, sort_meeting_actions
-from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.step1_handoff import (
-    CheckpointInfo,
     STEP1_BLOCKED,
     STEP1_HANDOFF_SCHEMA_VERSION,
+    CheckpointInfo,
     build_step1_handoff,
     handoff_allows_department_routing,
     stable_json_hash,
 )
+from src.orchestration.supervisor_logging import log_supervisor_brief_event
+from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
     assess_research_readiness,
     build_contact_briefing_assets,

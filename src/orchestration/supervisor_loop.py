@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, NamedTuple
 
@@ -20,12 +20,12 @@ from src.orchestration.meeting_questions import (
     matrix_status_for_task_status,
 )
 from src.orchestration.resolution_controller import ResolutionController
+from src.orchestration.step1_handoff import RUNTIME_EVENT_SCHEMA_VERSION
 from src.orchestration.task_router import (
     build_department_assignments,
     build_initial_assignments,
     evaluate_run_conditions,
 )
-from src.orchestration.step1_handoff import RUNTIME_EVENT_SCHEMA_VERSION
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 

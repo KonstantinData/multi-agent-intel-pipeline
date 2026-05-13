@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
 
-
 RESEARCH_SCHEMA_VERSION = "2026-05-12.1"
 OWNED_WEBSITE_SOURCE = "owned_website"
 REGISTER_SOURCE = "register"
@@ -137,7 +136,7 @@ class WebsiteSnapshot:
         return payload
 
     @classmethod
-    def from_mapping(cls, payload: dict[str, Any]) -> "WebsiteSnapshot":
+    def from_mapping(cls, payload: dict[str, Any]) -> WebsiteSnapshot:
         return cls(
             requested_url=str(payload.get("requested_url") or payload.get("url") or ""),
             final_url=str(payload.get("final_url") or payload.get("url") or ""),

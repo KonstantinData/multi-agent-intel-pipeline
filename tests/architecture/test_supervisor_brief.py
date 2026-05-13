@@ -20,7 +20,6 @@ from src.domain.briefing import (
     SOURCE_TYPE_OWNED_WEBSITE,
     BriefingReadiness,
     EvidenceSummary,
-    EvidenceItem,
     IdentityConfidence,
     IndustryConfidence,
     SupervisorBriefMessage,
@@ -31,7 +30,6 @@ from src.domain.briefing import (
     validate_supervisor_brief_message,
 )
 from src.domain.intake import IntakeRequest
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

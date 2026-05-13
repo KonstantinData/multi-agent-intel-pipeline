@@ -5,17 +5,9 @@ import pytest
 from src.agents import supervisor as supervisor_module
 from src.agents.supervisor import SupervisorAgent
 from src.domain.intake import IntakeRequest, IntakeValidationError
-from src.research.extract import infer_company_identity
-from src.research.fetch import fetch_website_snapshot
-from src.research.normalize import (
-    IntakeErrorCode,
-    NormalizedDomainResult,
-    normalize_domain,
-    normalize_domain_result,
-)
 from src.orchestration.runtime_agents import (
-    DOMAIN_DEPARTMENT_NAMES,
     DEPARTMENT_REQUIRED_METHODS,
+    DOMAIN_DEPARTMENT_NAMES,
     REPORT_WRITER_REQUIRED_METHODS,
     SUPERVISOR_REQUIRED_METHODS,
     SYNTHESIS_REQUIRED_METHODS,
@@ -24,11 +16,19 @@ from src.orchestration.runtime_agents import (
     RuntimeFactoryConfig,
     SearchCache,
 )
+from src.research.extract import infer_company_identity
+from src.research.fetch import fetch_website_snapshot
+from src.research.normalize import (
+    IntakeErrorCode,
+    NormalizedDomainResult,
+    normalize_domain,
+    normalize_domain_result,
+)
 from src.research.ssrf_guard import (
     BLOCKED_PRIVATE_HOST,
     BLOCKED_REDIRECT_TARGET,
-    SSRFBlockedError,
     UNSUPPORTED_SCHEME,
+    SSRFBlockedError,
     assert_safe_url,
     resolve_and_validate_host,
 )
@@ -974,7 +974,7 @@ def test_fetch_website_snapshot_flags_js_limited_content(monkeypatch: pytest.Mon
         status = 200
         headers = _Headers()
 
-        def __enter__(self) -> "_Response":
+        def __enter__(self) -> _Response:
             return self
 
         def __exit__(self, exc_type: object, exc: object, tb: object) -> None:

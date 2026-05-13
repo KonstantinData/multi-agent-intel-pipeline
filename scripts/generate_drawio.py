@@ -316,7 +316,8 @@ def dept_side(prefix, title, scope_lbl, lx, fill, stroke, fc):
                    lx+8, ly+6, lw-16, 20, fc, 12))
     # Internal layout within narrow dept
     ry = ly + 32
-    rw = 180; gap = 8
+    rw = 180
+    gap = 8
     rx = lx + 8
     for r_id, r_name, r_tool in [
         (f"{prefix}_lead", "Lead / Analyst", "finalize_package()"),
@@ -347,7 +348,8 @@ def dept_wide(prefix, title, scope_lbl, ly, lh, fill, stroke, fc, dep_note=""):
     out.append(txt(f"{prefix}_hdr", f"<b>{title}</b>  →  section: {scope_lbl}  {dep_note}",
                    lx+8, ly+6, lw-16, 20, fc, 12))
     ry = ly + 32
-    rw = 260; gap = 10
+    rw = 260
+    gap = 10
     rx = lx + 8
     for r_id, r_name, r_tool in [
         (f"{prefix}_lead", "Lead / Analyst", "finalize_package()"),

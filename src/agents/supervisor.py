@@ -9,8 +9,8 @@ from src.app.use_cases import build_standard_scope
 from src.config import get_role_model_selection
 from src.config.settings import MAX_TASK_RETRIES
 from src.domain.briefing import (
-    BRIEFING_SCHEMA_VERSION,
     BRIEFING_REDIRECT_DOMAIN_MISMATCH,
+    BRIEFING_SCHEMA_VERSION,
     SOURCE_TYPE_OWNED_WEBSITE,
     BriefingFetchAudit,
     EvidenceItem,
@@ -203,8 +203,8 @@ class SupervisorAgent:
                 missing_evidence.append(MissingEvidence(
                     supports_field="normalized_domain",
                     reason=(
-                        "final homepage URL host differs from validated canonical domain: "
-                        f"{final_hostname}"
+                        "final homepage URL differs from validated canonical domain: "
+                        f"{fetch_audit.final_url or final_hostname} expected {expected_hostname}"
                     ),
                 ))
         else:

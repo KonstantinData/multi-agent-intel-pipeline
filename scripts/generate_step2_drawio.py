@@ -1,6 +1,6 @@
 """Generate docs/drawio/runtime_step2.drawio."""
-from pathlib import Path
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docs" / "drawio" / "runtime_step2.drawio"
 
@@ -66,7 +66,7 @@ cells = []
 cells.append(txt("title", "Liquisto Runtime - Step 2: First Pass + Supervisor Department Routing", 40, 18, 1500, 32, "#0f172a", 22))
 cells.append(txt("subtitle", "Code-aligned flow in src/pipeline_runner.py::_run_first_pass() and src/orchestration/supervisor_loop.py::run_supervisor_loop()", 40, 52, 1960, 22, "#475569", 11, False))
 
-for i, (x, w) in enumerate(zip(LX, LW)):
+for i, (x, w) in enumerate(zip(LX, LW, strict=False)):
     cells.append(lane(f"lane_{i}", x, LANE_Y, w, LANE_H))
 
 labels = [
