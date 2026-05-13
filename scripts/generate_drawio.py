@@ -161,20 +161,33 @@ cy += 150
 
 cells.append(rect("supervisor",
     "<b>Supervisor</b>\n"
-    "build_intake_brief() · Homepage-Fetch · Domain-Normalisierung\n"
-    "Industry Hint · verified_company_name · SupervisorBrief\n"
+    "build_intake_brief() · NormalizedDomainResult\n"
+    "WebsiteSnapshot · CompanyResearchResult · SupervisorBriefMessage\n"
+    "Industry Hint + Confidence · verified_company_name · Evidence Summary\n"
     "accept_department_package() — LLM-based Admission Gate\n"
     "accept_synthesis() — LLM-based Synthesis Gate",
-    CTRL["x"], cy, CTRL["w"], 110, CTRL["fill"], CTRL["stroke"], CTRL["fc"], CTRL["fs"]))
-cy += 130
+    CTRL["x"], cy, CTRL["w"], 130, CTRL["fill"], CTRL["stroke"], CTRL["fc"], CTRL["fs"]))
+cy += 150
 
 cells.append(rect("qreg",
     "<b>Question Registry + Answer Matrix</b>\n"
-    "11 MEETING_QUESTION_REGISTRY Fragen\n"
+    "12 MEETING_QUESTION_REGISTRY Fragen\n"
+    "stabile question_id pro Registry-Key\n"
     "TASK_TO_QUESTION_IDS Mapping\n"
-    "initialisiert vor Dept-Ausführung · fortgeschrieben nach jedem Task",
-    CTRL["x"], cy, CTRL["w"], 100, CTRL["fill"], CTRL["stroke"], CTRL["fc"], CTRL["fs"]))
-cy += 120
+    "initiale Answer Matrix: pending · answer='' · notes='' · source_tasks=[]",
+    CTRL["x"], cy, CTRL["w"], 110, CTRL["fill"], CTRL["stroke"], CTRL["fc"], CTRL["fs"]))
+cy += 130
+
+cells.append(rect("step1_handoff",
+    "<b>Step1Handoff Contract + Gate</b>\n"
+    "schema_version · run_id · intake · supervisor_message\n"
+    "question_registry + answer_matrix · retrieval snapshots\n"
+    "runtime_agents_snapshot · storage_snapshot · budget_snapshot\n"
+    "first RuntimeEvent: event_id · sequence · timestamp · phase\n"
+    "CheckpointInfo: after_supervisor_brief · hash · written\n"
+    "readiness: ready_for_department_routing / ready_with_gaps / blocked_step1_handoff",
+    CTRL["x"], cy, CTRL["w"], 160, "#e0e7ff","#4338ca","#312e81", CTRL["fs"], 2))
+cy += 180
 
 cells.append(rect("stm",
     "<b>ShortTermMemoryStore (Run Brain)</b>\n"
@@ -208,10 +221,11 @@ cells.append(rect("budget",
     "<b>PhaseBudgetTracker + Checkpoints</b>\n"
     "first_pass / closure / optional_depth Token-Budgets\n"
     "HARD_TOKEN_CAP enforced nach sequenziellen Depts\n"
-    "Checkpoints: after_supervisor_brief · after_first_pass\n"
+    "after_supervisor_brief: atomarer JSON-Checkpoint + checkpoint_hash\n"
+    "Checkpoints: after_first_pass\n"
     "after_closure · after_synthesis · after_finalization",
-    CTRL["x"], cy, CTRL["w"], 110, "#fff7ed","#ea580c","#7c2d12", CTRL["fs"]))
-cy += 130
+    CTRL["x"], cy, CTRL["w"], 120, "#fff7ed","#ea580c","#7c2d12", CTRL["fs"]))
+cy += 140
 
 # ── Resolution nodes in Control lane (gap after budget) ──────────────────────
 # Make sure RC_Y >= cy + 20
@@ -452,7 +466,7 @@ OUT_STYLE = dict(x=OX+10, w=OW-20, fill="#fef3c7", stroke="#d97706", fc="#78350f
 
 cells.append(rect("checkpoints",
     "<b>Phase Checkpoints</b>\n"
-    "after_supervisor_brief\n"
+    "after_supervisor_brief: Step1Handoff + hash\n"
     "after_first_pass\n"
     "after_closure\n"
     "after_synthesis\n"
@@ -563,17 +577,18 @@ cells.append(edge("e_run_sup",    "build_intake_brief",  "runner",     "supervis
 cells.append(edge("e_run_stm",    "initialisiert",       "runner",     "stm",           "#dc2626", 1, True))
 cells.append(edge("e_run_ltm",    "retrieve_strategies", "runner",     "ltm_load",      "#dc2626", 1, True))
 cells.append(edge("e_run_qreg",   "build_question_registry", "supervisor", "qreg",      "#2563eb"))
+cells.append(edge("e_qreg_handoff", "validate Step 1", "qreg", "step1_handoff", "#4338ca", 2))
 cells.append(edge("e_run_budget", "PhaseBudget init",   "runner",     "budget",        "#ea580c", 1, True))
 
 # Supervisor → Departments (Phase 1 parallel, cross-lane routing)
 PH1_MID = Z_PH1 + Z_PH1_H // 2
-cells.append(edge("e_sup_co", "brief (Phase 1 parallel)", "supervisor", "co_lead", "#16a34a", 2,
+cells.append(edge("e_sup_co", "validated handoff (Phase 1 parallel)", "step1_handoff", "co_lead", "#16a34a", 2,
                   pts=[(CX+CW, PH1_MID-20), (DX, PH1_MID-20)]))
-cells.append(edge("e_sup_ma", "brief (Phase 1 parallel)", "supervisor", "ma_lead", "#f97316", 2,
+cells.append(edge("e_sup_ma", "validated handoff (Phase 1 parallel)", "step1_handoff", "ma_lead", "#f97316", 2,
                   pts=[(CX+CW, PH1_MID+20), (DX, PH1_MID+20)]))
-cells.append(edge("e_sup_bu", "brief (Phase 2 sequential)", "supervisor", "bu_lead", "#06b6d4", 2,
+cells.append(edge("e_sup_bu", "validated handoff (Phase 2 sequential)", "step1_handoff", "bu_lead", "#06b6d4", 2,
                   pts=[(CX+CW, Z_PH2+Z_PH2_H//2), (DX, Z_PH2+Z_PH2_H//2)]))
-cells.append(edge("e_sup_ct", "brief + buyer_candidates", "supervisor", "ct_lead", "#c026d3", 2,
+cells.append(edge("e_sup_ct", "validated handoff + buyer_candidates", "step1_handoff", "ct_lead", "#c026d3", 2,
                   pts=[(CX+CW, Z_PH3+Z_PH3_H//2), (DX, Z_PH3+Z_PH3_H//2)]))
 
 # KB → Depts (dashed, from control lane to departments)

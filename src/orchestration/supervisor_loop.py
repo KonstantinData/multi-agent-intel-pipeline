@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import perf_counter
@@ -24,6 +25,7 @@ from src.orchestration.task_router import (
     build_initial_assignments,
     evaluate_run_conditions,
 )
+from src.orchestration.step1_handoff import RUNTIME_EVENT_SCHEMA_VERSION
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -158,8 +160,25 @@ def emit_message(
     agent: str,
     content: str,
     message_type: str = "agent_message",
+    run_id: str = "",
+    sequence: int = 0,
+    phase: str = "",
+    content_type: str = "application/json",
 ) -> dict[str, Any]:
-    event = {"agent": agent, "content": content, "type": message_type}
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    event_sequence = int(sequence or 0)
+    event = {
+        "event_id": f"{run_id or 'runtime'}:{event_sequence:06d}:{phase or message_type}",
+        "run_id": run_id,
+        "sequence": event_sequence,
+        "timestamp": timestamp,
+        "agent": agent,
+        "content": content,
+        "content_type": content_type,
+        "phase": phase,
+        "schema_version": RUNTIME_EVENT_SCHEMA_VERSION,
+        "type": message_type,
+    }
     if on_message:
         on_message(event)
     return event

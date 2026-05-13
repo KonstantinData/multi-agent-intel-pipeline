@@ -1,15 +1,15 @@
 <mxfile host="65bd71144e">
   <diagram id="runtime-step1" name="Runtime Step 1 - Runner Init">
-    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1960" pageHeight="2600" math="0" shadow="0">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1960" pageHeight="2820" math="0" shadow="0">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
         <mxCell id="title" value="Liquisto Runtime — Step 1: Runner Init + Supervisor Brief" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="40" y="18" width="1200" height="32" as="geometry"/></mxCell>
         <mxCell id="subtitle" value="Code-aligned flow in src/pipeline_runner.py — endet unmittelbar vor run_supervisor_loop() / _run_first_pass()" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;fontColor=#475569;" parent="1" vertex="1"><mxGeometry x="40" y="52" width="1860" height="22" as="geometry"/></mxCell>
-        <mxCell id="lane_0" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="40" y="120" width="280" height="2440" as="geometry"/></mxCell>
-        <mxCell id="lane_1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="340" y="120" width="460" height="2440" as="geometry"/></mxCell>
-        <mxCell id="lane_2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="820" y="120" width="430" height="2440" as="geometry"/></mxCell>
-        <mxCell id="lane_3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="1270" y="120" width="650" height="2440" as="geometry"/></mxCell>
+        <mxCell id="lane_0" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="40" y="120" width="280" height="2660" as="geometry"/></mxCell>
+        <mxCell id="lane_1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="340" y="120" width="460" height="2660" as="geometry"/></mxCell>
+        <mxCell id="lane_2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="820" y="120" width="430" height="2660" as="geometry"/></mxCell>
+        <mxCell id="lane_3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="1270" y="120" width="650" height="2660" as="geometry"/></mxCell>
         <mxCell id="lbl_0" value="Input" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="60" y="128" width="360" height="20" as="geometry"/></mxCell>
         <mxCell id="lbl_1" value="pipeline_runner.py" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="360" y="128" width="360" height="20" as="geometry"/></mxCell>
         <mxCell id="lbl_2" value="Supervisor Intake Research" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="840" y="128" width="360" height="20" as="geometry"/></mxCell>
@@ -34,93 +34,140 @@ normalized_domain = normalize_domain(intake.web_domain)
 agents = create_runtime_agents()
 → Supervisor · Company/Market/Buyer/Contact Dept
 → Synthesis · ReportWriter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="450" width="420" height="100" as="geometry"/></mxCell>
-        <mxCell id="memory" value="&lt;b&gt;Initialize memory + run context&lt;/b&gt;
-memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)
-backfill_enabled = _long_term_backfill_enabled()  ← Env-Flag
-  → backfill_long_term_memory_from_runs() wenn aktiviert
+        <mxCell id="memory" value="&lt;b&gt;Initialize storage boundary + run context&lt;/b&gt;
+stores = create_runtime_stores(
+  runs_root=RUNS_DIR,
+  long_term_memory_path=LONG_TERM_MEMORY_PATH
+)
+stores.healthcheck_required()
+memory_store = stores.long_term_memory
+  local_dev → FileLongTermMemoryStore
+  production → Postgres/pgvector required, no file fallback
 run_context = RunContext(
   run_id=run_id,
-  intake={company_name, web_domain, normalized_domain, language}
+  intake={company_name, web_domain, normalized_domain,
+          canonical_url, language, resolved_ips, suffix metadata}
 )
 _record_phase(run_context, 'initialized')
-run_context.resolution_state['long_term_memory'] = {
-  backfill_enabled, backfilled_patterns
-}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="570" width="420" height="210" as="geometry"/></mxCell>
-        <mxCell id="retrieve" value="&lt;b&gt;Retrieve process patterns&lt;/b&gt;
-run_context.retrieved_strategies =
-  retrieve_strategies(memory_store,
-    domain=normalized_domain, limit=5)
-run_context.retrieved_role_strategies = {
-  role: retrieve_strategies(..., role=role, limit=3)
-  for role in RETRIEVABLE_ROLE_ORDER
-}
-← Nur Prozessmuster, keine Zielkunden-Fakten" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="800" width="420" height="150" as="geometry"/></mxCell>
+run_context.resolution_state['storage'] = stores.snapshot()
+← no opportunistic historical backfill in normal run path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="570" width="420" height="230" as="geometry"/></mxCell>
+        <mxCell id="retrieve" value="&lt;b&gt;Initial process-memory retrieval&lt;/b&gt;
+context = RetrievalContext(
+  run_id, company_name, normalized_domain,
+  phase='memory_retrieval', target_scope='run_start'
+)
+initial_retrieval = retrieve_strategy_batch(
+  memory_store, context, DEFAULT_GENERAL_RETRIEVAL_LIMIT
+)
+run_context.retrieved_strategies = initial_retrieval.patterns
+resolution_state['memory_retrieval']['initial'] = snapshot
+← generic, no industry hint yet; no domain/company ranking bonus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#3b82f6;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="820" width="420" height="150" as="geometry"/></mxCell>
         <mxCell id="brief_call" value="&lt;b&gt;Build supervisor brief&lt;/b&gt;
 supervisor = _build_supervisor_brief(state, on_message)
 _record_phase(run_context, 'supervisor_brief')
 brief, supervisor_message =
   state.agents['supervisor'].build_intake_brief(state.intake)
-← Step 1, noch vor Department-Routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="970" width="420" height="130" as="geometry"/></mxCell>
+← Step 1, noch vor Department-Routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="360" y="990" width="420" height="130" as="geometry"/></mxCell>
         <mxCell id="research_tool" value="&lt;b&gt;src/research/tools.py&lt;/b&gt;
-build_company_research(web_domain, company_name)
-← aufgerufen innerhalb build_intake_brief()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="980" width="390" height="100" as="geometry"/></mxCell>
+build_company_research(NormalizedDomainResult, company_name)
+→ CompanyResearchResult schema_version
+← string domain only as deprecated legacy path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1000" width="390" height="100" as="geometry"/></mxCell>
         <mxCell id="research_steps" value="&lt;b&gt;Research helper sequence&lt;/b&gt;
-normalize_domain(web_domain)
-homepage_url(normalized_domain)
+homepage_url = normalized.canonical_url
 fetch_website_snapshot(url)
-→ Website-Snapshot (title, meta, text)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1100" width="390" height="120" as="geometry"/></mxCell>
+→ WebsiteSnapshot contract
+DNS/redirect SSRF guard · IP pinning · max redirects
+content-type allowlist · response size limit · content_hash
+title/meta/OG/H1/H2/about/imprint/language" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1120" width="390" height="120" as="geometry"/></mxCell>
         <mxCell id="identity" value="&lt;b&gt;Identity + summary&lt;/b&gt;
 infer_company_identity(snapshot)
-summarize_visible_text(snapshot)
-→ verified_company_name, verified_legal_name
-→ name_confidence, homepage_excerpt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1240" width="390" height="120" as="geometry"/></mxCell>
-        <mxCell id="industry" value="&lt;b&gt;Supervisor enriches brief&lt;/b&gt;
-infer_industry(title, description, summary)
-→ industry_hint  ← Startsignal für Departments
-constructs SupervisorBrief (dataclass)
-constructs supervisor_message dict:
-  {section: 'supervisor_brief', payload: asdict(brief),
-   status: 'ready_for_department_routing'}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1380" width="390" height="150" as="geometry"/></mxCell>
+→ IdentityResolutionResult
+  submitted_name · brand_name · verified_company_name
+  verified_legal_name='' in MVP + source_gap(register/linkedin/wiki)
+summarize_visible_text(snapshot.visible_text)
+→ bounded homepage_excerpt + extraction_quality" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1260" width="390" height="120" as="geometry"/></mxCell>
+        <mxCell id="industry" value="&lt;b&gt;Supervisor evidence + readiness contract&lt;/b&gt;
+infer_industry_result(title, description, summary)
+→ IndustryInferenceResult: hint, confidence, evidence_fields, alternatives
+CompanyResearchResult warnings/errors:
+  fetch_timeout · tls_failed · redirect_blocked · unsupported_content_type
+  text_extraction_empty/weak · js_content_detected · industry_unknown
+classify_identity_confidence(...) + detect_identity_conflict(...)
+BriefingFetchAudit: final_url, redirects, status, content length/lang
+EvidenceItem / MissingEvidence per supported field
+classify_briefing_readiness(...)
+SupervisorBriefMessage:
+  schema_version, status, readiness, confidence,
+  routing_gaps, evidence_summary, payload
+validate_supervisor_brief_message(...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="840" y="1400" width="390" height="210" as="geometry"/></mxCell>
         <mxCell id="runtime_state" value="&lt;b&gt;Seed RunContext with Step-1-Data&lt;/b&gt;
 state.run_context.supervisor_brief = supervisor_message['payload']
 state.run_context.question_registry = build_question_registry()
-  → 11 MEETING_QUESTION_REGISTRY Einträge
+  → 12 MEETING_QUESTION_REGISTRY Einträge
 state.run_context.answer_matrix = build_initial_answer_matrix()
-  → alle Fragen auf status='pending'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1290" y="1550" width="610" height="140" as="geometry"/></mxCell>
-        <mxCell id="message" value="&lt;b&gt;Emit first runtime event&lt;/b&gt;
-state.messages.append(
-  emit_message(
-    on_message,
-    agent='Supervisor',
-    content=json.dumps(supervisor_message)
-  )
+  → alle Fragen auf status='pending'
+brief_context = RetrievalContext(
+  industry_hint=brief.industry_hint,
+  phase='supervisor_brief', question_ids=registry.keys()
 )
-→ Event: section='supervisor_brief', status='ready_for_department_routing'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1290" y="1710" width="610" height="150" as="geometry"/></mxCell>
+role_batches = retrieve_strategy_batch(..., role_context(role))
+→ retrieved_role_strategies final before Step 2
+→ memory_retrieval audit snapshots: initial, brief_context, roles
+resolution_state['supervisor_brief'] = non-sensitive diagnosis:
+  readiness, confidence, fetch_status, evidence_count,
+  routing_gaps, duration_ms
+resolution_state['intake_research'] = non-sensitive research diagnostics:
+  timings, snapshot audit, warnings/errors, identity + industry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1290" y="1630" width="610" height="200" as="geometry"/></mxCell>
+        <mxCell id="message" value="&lt;b&gt;Emit first RuntimeEvent&lt;/b&gt;
+first_event = emit_message(
+  on_message,
+  agent='Supervisor',
+  content=json.dumps(supervisor_message),
+  run_id=state.run_id,
+  sequence=len(state.messages)+1,
+  phase='supervisor_brief',
+  content_type='application/json'
+)
+→ event_id · sequence · timestamp · schema_version" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1290" y="1850" width="610" height="150" as="geometry"/></mxCell>
         <mxCell id="checkpoint" value="&lt;b&gt;Checkpoint: after_supervisor_brief&lt;/b&gt;
 _write_checkpoint(
   state.run_dir,
   'after_supervisor_brief',
   state.run_context
 )
-→ artifacts/runs/{run_id}/checkpoints/after_supervisor_brief.json
-← Crash-Recovery-Punkt vor dem ersten Department-Round" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1290" y="1880" width="610" height="140" as="geometry"/></mxCell>
+→ CheckpointInfo: checkpoint_id, phase, path, written
+→ checkpoint_hash im JSON-Payload
+→ atomarer Write via .tmp + replace" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1290" y="2020" width="610" height="140" as="geometry"/></mxCell>
+        <mxCell id="handoff_gate" value="&lt;b&gt;Step1Handoff Contract + Gate&lt;/b&gt;
+build_step1_handoff(...)
+schema_version · run_id · intake · supervisor_message
+question_registry + answer_matrix
+retrieval snapshots · runtime_agents_snapshot
+storage_snapshot · budget_snapshot
+first_event + checkpoint
+readiness: ready_for_department_routing / ready_with_gaps / blocked_step1_handoff
+handoff_allows_department_routing(...) gates Step 2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4338ca;fontSize=12;spacing=8;fontColor=#312e81;" parent="1" vertex="1"><mxGeometry x="1290" y="2180" width="610" height="170" as="geometry"/></mxCell>
         <mxCell id="handoff" value="&lt;b&gt;Step 1 Boundary — Handoff an Step 2&lt;/b&gt;
-returns SupervisorBriefResult(brief, supervisor_message)
+returns SupervisorBriefResult(
+  brief, supervisor_message, step1_handoff
+)
 
 Nächster Aufruf in run_pipeline():
-first_pass = _run_first_pass(state, brief=supervisor.brief)
+if handoff_allows_department_routing(...):
+  first_pass = _run_first_pass(state, brief=supervisor.brief)
   → run_supervisor_loop(brief, run_context, agents, on_message)
-  → startet Supervisor-controlled Department Routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1"><mxGeometry x="1290" y="2040" width="610" height="140" as="geometry"/></mxCell>
+else: failed_phase='step1_handoff'" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1"><mxGeometry x="1290" y="2370" width="610" height="140" as="geometry"/></mxCell>
         <mxCell id="outputs" value="&lt;b&gt;Step 1 live objects (InitialRunState)&lt;/b&gt;
 state.run_context  ← Run Brain: Intake + Strategies
   + supervisor_brief + question_registry + answer_matrix
-  + resolution_state[initialized, long_term_memory]
+  + resolution_state[initialized, storage]
 state.agents       ← alle Runtime-Agents bereit
 state.messages[0]  ← erstes Supervisor-Event
+resolution_state['step1_handoff'] ← validated snapshot
 state.budget_tracker  ← PhaseBudgetTracker (leer)
 state.run_dir      ← Artefakt-Zielpfad
 supervisor.brief   ← SupervisorBrief Dataclass
-supervisor.supervisor_message" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1"><mxGeometry x="1290" y="2200" width="610" height="180" as="geometry"/></mxCell>
+supervisor.supervisor_message" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=12;spacing=8;fontColor=#78350f;" parent="1" vertex="1"><mxGeometry x="1290" y="2530" width="610" height="180" as="geometry"/></mxCell>
         <mxCell id="e1" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="user_input" target="run_start" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e2" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="run_start" target="intake" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e3" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="intake" target="agents" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
@@ -131,11 +178,12 @@ supervisor.supervisor_message" style="rounded=1;whiteSpace=wrap;html=1;fillColor
         <mxCell id="e8" value="" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="research_tool" target="research_steps" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e9" value="" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="research_steps" target="identity" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e10" value="" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="identity" target="industry" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e11" value="brief fertig" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="industry" target="runtime_state" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1260" y="1455"/><mxPoint x="1260" y="1620"/></Array></mxGeometry></mxCell>
+        <mxCell id="e11" value="brief fertig" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="industry" target="runtime_state" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1260" y="1475"/><mxPoint x="1260" y="1700"/></Array></mxGeometry></mxCell>
         <mxCell id="e12" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="runtime_state" target="message" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e13" value="" style="endArrow=block;endFill=1;strokeColor=#ca8a04;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#ca8a04;fontSize=11;" parent="1" source="message" target="checkpoint" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e14" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="checkpoint" target="handoff" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e15" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="handoff" target="outputs" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e14" value="CheckpointInfo" style="endArrow=block;endFill=1;strokeColor=#4338ca;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#4338ca;fontSize=11;" parent="1" source="checkpoint" target="handoff_gate" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e15" value="validated" style="endArrow=block;endFill=1;strokeColor=#4338ca;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#4338ca;fontSize=11;" parent="1" source="handoff_gate" target="handoff" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e16" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="handoff" target="outputs" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>

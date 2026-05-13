@@ -8,6 +8,8 @@ from typing import Any
 
 from filelock import FileLock
 
+from src.storage.contracts import StorageHealth
+
 _UNSAFE_URL_OR_DOMAIN_RE = re.compile(
     r"https?://|www\.|\b[\w\-]+\.(com|de|io|net|org|co\.uk|eu|at|ch)\b",
     re.IGNORECASE,
@@ -48,10 +50,31 @@ class FileLongTermMemoryStore:
                 return [item for item in candidates if isinstance(item, dict)]
         return []
 
-    def retrieve(self, *, domain: str, industry_hint: str = "", role: str = "", limit: int = 5) -> list[dict[str, Any]]:
+    def healthcheck(self) -> StorageHealth:
+        return StorageHealth(
+            status="ok" if self.path.exists() else "failed",
+            component="long_term_memory",
+            error_code="" if self.path.exists() else "file_store_missing",
+            message="" if self.path.exists() else f"File store missing: {self.path}",
+            details={"backend": "file", "path": str(self.path)},
+        )
+
+    def retrieve(
+        self,
+        *,
+        domain: str,
+        industry_hint: str = "",
+        role: str = "",
+        pattern_scope: str = "",
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
         items = self.load()
         scored: list[tuple[float, dict[str, Any]]] = []
         for item in items:
+            if role and item.get("role") and item.get("role") != role:
+                continue
+            if pattern_scope and item.get("pattern_scope") and item.get("pattern_scope") != pattern_scope:
+                continue
             score = 0.0
             # No domain-match bonus — domain-specific entries violate memory policy.
             # Only industry_hint and role contribute to retrieval scoring.
@@ -59,12 +82,14 @@ class FileLongTermMemoryStore:
                 score += 0.5
             if role and item.get("role") == role:
                 score += 0.75
+            if pattern_scope and item.get("pattern_scope") == pattern_scope:
+                score += 0.25
             score += float(item.get("score", 0.0))
             if score > 0:
                 enriched = dict(item)
                 enriched["score"] = round(score, 2)
                 scored.append((score, enriched))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
+        scored.sort(key=lambda pair: (-pair[0], str(pair[1].get("name") or "")))
         return [item for _, item in scored[:limit]]
 
     def upsert_strategy(self, pattern: dict[str, Any]) -> None:

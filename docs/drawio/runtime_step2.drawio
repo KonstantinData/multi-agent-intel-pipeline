@@ -1,0 +1,173 @@
+<mxfile host="65bd71144e">
+  <diagram id="runtime-step2" name="Runtime Step 2 - First Pass">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2160" pageHeight="2720" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Liquisto Runtime - Step 2: First Pass + Supervisor Department Routing" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="40" y="18" width="1500" height="32" as="geometry"/></mxCell>
+        <mxCell id="subtitle" value="Code-aligned flow in src/pipeline_runner.py::_run_first_pass() and src/orchestration/supervisor_loop.py::run_supervisor_loop()" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontStyle=0;fontColor=#475569;" parent="1" vertex="1"><mxGeometry x="40" y="52" width="1960" height="22" as="geometry"/></mxCell>
+        <mxCell id="lane_0" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="40" y="120" width="290" height="2520" as="geometry"/></mxCell>
+        <mxCell id="lane_1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="360" y="120" width="460" height="2520" as="geometry"/></mxCell>
+        <mxCell id="lane_2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="850" y="120" width="470" height="2520" as="geometry"/></mxCell>
+        <mxCell id="lane_3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="1350" y="120" width="380" height="2520" as="geometry"/></mxCell>
+        <mxCell id="lane_4" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#cbd5e1;" parent="1" vertex="1"><mxGeometry x="1760" y="120" width="360" height="2520" as="geometry"/></mxCell>
+        <mxCell id="lbl_0" value="Step-1 Handoff" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="60" y="128" width="340" height="20" as="geometry"/></mxCell>
+        <mxCell id="lbl_1" value="pipeline_runner.py" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="380" y="128" width="340" height="20" as="geometry"/></mxCell>
+        <mxCell id="lbl_2" value="Supervisor Loop" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="870" y="128" width="340" height="20" as="geometry"/></mxCell>
+        <mxCell id="lbl_3" value="Departments / AG2 Runtimes" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="1370" y="128" width="340" height="20" as="geometry"/></mxCell>
+        <mxCell id="lbl_4" value="Run State + Boundary" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#0f172a;" parent="1" vertex="1"><mxGeometry x="1780" y="128" width="340" height="20" as="geometry"/></mxCell>
+        <mxCell id="step1_ready" value="&lt;b&gt;Step 1 complete&lt;/b&gt;
+SupervisorBriefResult
+- brief
+- supervisor_message
+RunContext already has:
+- supervisor_brief
+- question_registry
+- answer_matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="60" y="170" width="250" height="150" as="geometry"/></mxCell>
+        <mxCell id="first_pass_entry" value="&lt;b&gt;_run_first_pass(...)&lt;/b&gt;
+_record_phase(run_context, 'first_pass')
+
+Calls run_supervisor_loop(
+  brief, run_context, agents, on_message
+)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="380" y="170" width="420" height="130" as="geometry"/></mxCell>
+        <mxCell id="runner_collect" value="&lt;b&gt;Collect loop result&lt;/b&gt;
+sections
+department_packages
+loop_messages
+completed_backlog
+department_timings
+first_round_resolution
+
+state.messages.extend(loop_messages)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="380" y="2130" width="420" height="150" as="geometry"/></mxCell>
+        <mxCell id="runner_budget" value="&lt;b&gt;First-pass budget accounting&lt;/b&gt;
+first_pass_snapshot = short_term_memory.snapshot()
+first_pass_tokens = usage_totals.total_tokens
+budget_tracker.record_phase_tokens('first_pass', first_pass_tokens)
+if budget exceeded:
+  record_stop('first_pass', 'token_budget_exceeded')" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="380" y="2300" width="420" height="170" as="geometry"/></mxCell>
+        <mxCell id="loop_init" value="&lt;b&gt;run_supervisor_loop(...)&lt;/b&gt;
+Ensure question_registry + answer_matrix exist
+Initialize local outputs:
+sections, department_packages, messages, completed_backlog, department_timings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="870" y="160" width="430" height="130" as="geometry"/></mxCell>
+        <mxCell id="assignments" value="&lt;b&gt;Build task contracts&lt;/b&gt;
+assignments = build_initial_assignments(brief)
+department_assignments = build_department_assignments(brief)
+
+Each Assignment carries:
+task_key, assignee, target_section, objective, model_name, allowed_tools, depends_on, run_condition, question_ids" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="870" y="320" width="430" height="170" as="geometry"/></mxCell>
+        <mxCell id="opening" value="&lt;b&gt;Supervisor opening + active tasks&lt;/b&gt;
+emit Supervisor opening_message()
+For every non-synthesis task:
+run_context.record_task(... status='assigned' ...)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="870" y="520" width="430" height="120" as="geometry"/></mxCell>
+        <mxCell id="parallel_assign" value="&lt;b&gt;Phase 1: parallel batch&lt;/b&gt;
+_PARALLEL_BATCH = {CompanyDepartment, MarketDepartment}
+For each department:
+- emit department_assigned
+- create isolated working_set + baseline
+- submit _run_single_department(...) to ThreadPoolExecutor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="870" y="700" width="430" height="170" as="geometry"/></mxCell>
+        <mxCell id="parallel_review" value="&lt;b&gt;As each parallel future completes&lt;/b&gt;
+section_payload, department_messages, package = future.result()
+Supervisor accept_department_package(...)
+_apply_structured_runtime_artifacts(...)
+_apply_acceptance_gate(...)
+emit department_package_reviewed
+update task statuses + answer matrix" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="870" y="1110" width="430" height="190" as="geometry"/></mxCell>
+        <mxCell id="merge" value="&lt;b&gt;Merge parallel memory deltas&lt;/b&gt;
+For dept in canonical order:
+  delta = working_set.delta_from(baseline)
+  main short_term_memory.merge_from(delta)
+
+Prevents concurrent writes and duplicate seeded data." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="870" y="1330" width="430" height="150" as="geometry"/></mxCell>
+        <mxCell id="sequential" value="&lt;b&gt;Phase 2: sequential departments&lt;/b&gt;
+_SEQUENTIAL_AFTER = [BuyerDepartment, ContactDepartment]
+For each department:
+- emit department_assigned
+- evaluate_run_conditions(...)
+- skipped tasks become status='skipped'
+- runnable tasks execute in order" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=12;spacing=8;fontColor=#1e3a8a;" parent="1" vertex="1"><mxGeometry x="870" y="1540" width="430" height="180" as="geometry"/></mxCell>
+        <mxCell id="contact_enrich" value="&lt;b&gt;Contact dependency handling&lt;/b&gt;
+When department == ContactDepartment:
+read sections['market_network']
+extract buyer_candidates from downstream_buyers, service_providers, cross_industry_buyers
+add buyer_candidates to current_section when available" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="870" y="1750" width="430" height="160" as="geometry"/></mxCell>
+        <mxCell id="resolution" value="&lt;b&gt;First-round resolution&lt;/b&gt;
+ResolutionController().classify(
+  sections, department_packages, answer_matrix, task_statuses
+)
+
+emit {status: 'first_round_resolution', ...}
+Synthesis intentionally not run here." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1"><mxGeometry x="870" y="1960" width="430" height="150" as="geometry"/></mxCell>
+        <mxCell id="dept_company" value="&lt;b&gt;CompanyDepartment&lt;/b&gt;
+AG2 DepartmentRuntime.run(...)
+Receives isolated working-set memory in parallel phase
+Returns section_payload, messages, package" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="1370" y="720" width="340" height="130" as="geometry"/></mxCell>
+        <mxCell id="dept_market" value="&lt;b&gt;MarketDepartment&lt;/b&gt;
+AG2 DepartmentRuntime.run(...)
+Runs concurrently with CompanyDepartment
+Returns industry_analysis / market evidence package" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="1370" y="880" width="340" height="130" as="geometry"/></mxCell>
+        <mxCell id="dept_buyer" value="&lt;b&gt;BuyerDepartment&lt;/b&gt;
+Runs after Company + Market admission
+Uses current_sections snapshot
+Builds peer/buyer/redeployment package" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="1370" y="1540" width="340" height="130" as="geometry"/></mxCell>
+        <mxCell id="dept_contact" value="&lt;b&gt;ContactDepartment&lt;/b&gt;
+Runs after BuyerDepartment
+May receive buyer_candidates from admitted market_network
+Builds contact_intelligence package" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12;spacing=8;fontColor=#14532d;" parent="1" vertex="1"><mxGeometry x="1370" y="1740" width="340" height="140" as="geometry"/></mxCell>
+        <mxCell id="active_tasks" value="&lt;b&gt;RunContext.active_tasks&lt;/b&gt;
+Every non-synthesis assignment is recorded as assigned. Later status updates overwrite matching task_key." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1780" y="520" width="320" height="120" as="geometry"/></mxCell>
+        <mxCell id="structured_state" value="&lt;b&gt;Structured runtime artifacts&lt;/b&gt;
+AnswerMatrixUpdate
+GapCandidate
+EvidencePacket
+are validated and appended to short_term_memory.
+answer_matrix entries receive status, answer, notes, source_tasks." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1780" y="1110" width="320" height="170" as="geometry"/></mxCell>
+        <mxCell id="sections_state" value="&lt;b&gt;Admission-controlled outputs&lt;/b&gt;
+accepted -&gt; section payload visible
+accepted_with_gaps -&gt; section payload with _admission marker
+rejected -&gt; BlockedArtifact section
+Raw package is always preserved in department_packages." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1780" y="1310" width="320" height="170" as="geometry"/></mxCell>
+        <mxCell id="answer_matrix" value="&lt;b&gt;Task status -&gt; answer matrix&lt;/b&gt;
+accepted -&gt; answered
+degraded/blocked -&gt; partially_answered
+skipped -&gt; blocked
+
+completed_backlog records task_key, label, target_section, status." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1780" y="1540" width="320" height="160" as="geometry"/></mxCell>
+        <mxCell id="token_guard" value="&lt;b&gt;Token guardrails inside loop&lt;/b&gt;
+After sequential departments, usage_totals.total_tokens is checked against HARD_TOKEN_CAP and SOFT_TOKEN_BUDGET.
+Hard cap breaks remaining departments." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1"><mxGeometry x="1780" y="1740" width="320" height="150" as="geometry"/></mxCell>
+        <mxCell id="first_pass_state" value="&lt;b&gt;Runner writes first-pass state&lt;/b&gt;
+resolution_state['first_round_resolution'] = first_round_resolution
+resolution_state['auto_close'] = {triggered: False, max_questions: 4, attempted_questions: 0, stop_reason: 'not_required', remaining_public_gaps: []}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef9c3;strokeColor=#ca8a04;fontSize=12;spacing=8;fontColor=#713f12;" parent="1" vertex="1"><mxGeometry x="1780" y="2130" width="320" height="190" as="geometry"/></mxCell>
+        <mxCell id="checkpoint" value="&lt;b&gt;Checkpoint: after_first_pass&lt;/b&gt;
+_write_checkpoint(run_dir, 'after_first_pass', run_context)
+
+Step 2 boundary: returns FirstPassResult.
+Next step is auto-close decision / closure." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;spacing=8;fontColor=#7f1d1d;" parent="1" vertex="1"><mxGeometry x="1780" y="2350" width="320" height="160" as="geometry"/></mxCell>
+        <mxCell id="e1" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="step1_ready" target="first_pass_entry" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="first_pass_entry" target="loop_init" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="loop_init" target="assignments" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="assignments" target="opening" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" value="records" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="opening" target="active_tasks" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="opening" target="parallel_assign" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="submit" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="parallel_assign" target="dept_company" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1300" y="765"/></Array></mxGeometry></mxCell>
+        <mxCell id="e8" value="submit" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="parallel_assign" target="dept_market" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1300" y="945"/></Array></mxGeometry></mxCell>
+        <mxCell id="e9" value="package" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="dept_company" target="parallel_review" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1320" y="785"/><mxPoint x="1320" y="1200"/></Array></mxGeometry></mxCell>
+        <mxCell id="e10" value="package" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="dept_market" target="parallel_review" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1320" y="945"/><mxPoint x="1320" y="1200"/></Array></mxGeometry></mxCell>
+        <mxCell id="e11" value="validates" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="parallel_review" target="structured_state" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e12" value="admission" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="parallel_review" target="sections_state" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e13" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="parallel_review" target="merge" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e14" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="merge" target="sequential" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e15" value="run" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="sequential" target="dept_buyer" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e16" value="market_network available" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="dept_buyer" target="contact_enrich" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1320" y="1605"/><mxPoint x="1320" y="1830"/></Array></mxGeometry></mxCell>
+        <mxCell id="e17" value="buyer_candidates" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="contact_enrich" target="dept_contact" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e18" value="skips/statuses" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="sequential" target="answer_matrix" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e19" value="final dept package" style="endArrow=block;endFill=1;strokeColor=#16a34a;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#16a34a;fontSize=11;" parent="1" source="dept_contact" target="resolution" edge="1"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1320" y="1810"/><mxPoint x="1320" y="2025"/></Array></mxGeometry></mxCell>
+        <mxCell id="e20" value="loop result" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="resolution" target="runner_collect" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e21" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="runner_collect" target="runner_budget" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e22" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="runner_budget" target="first_pass_state" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e23" value="" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="first_pass_state" target="checkpoint" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e24" value="checks" style="endArrow=block;endFill=1;strokeColor=#64748b;strokeWidth=2;edgeStyle=orthogonalEdgeStyle;fontColor=#64748b;fontSize=11;" parent="1" source="sequential" target="token_guard" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

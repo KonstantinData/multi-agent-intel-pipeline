@@ -6,6 +6,7 @@ markers = [
     "integration: Integration tests — require AG2/autogen and may start agent runtimes",
     "runtime: Runtime tests — require AG2/autogen or OpenAI SDK",
     "smoke: Lightweight sanity checks",
+    "security: SSRF, injection, and input-validation tests — subset of architecture",
 ]
 
 [tool.ruff]

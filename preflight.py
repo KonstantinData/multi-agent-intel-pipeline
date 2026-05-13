@@ -33,6 +33,20 @@ def _model_api_credential_status() -> str:
     return "configured"
 
 
+def _runtime_agents_status() -> str:
+    sys.path.insert(0, str(ROOT))
+    from src.agents.runtime_factory import create_runtime_agents
+    from src.orchestration.runtime_agents import runtime_agents_healthcheck
+
+    result = runtime_agents_healthcheck(create_runtime_agents())
+    if result["status"] != "ok":
+        errors = ", ".join(str(err) for err in result.get("errors", ()))
+        raise ValueError(f"runtime agent composition failed: {errors}")
+    snapshot = result.get("snapshot", {})
+    departments = snapshot.get("departments", [])
+    return f"ok ({len(departments)} departments, factory {snapshot.get('factory_version', 'unknown')})"
+
+
 def _port_status(port: int) -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -118,6 +132,7 @@ def main() -> int:
     check("src.agents.definitions", lambda: __import__("src.agents.definitions") and "ok", counters)
     check("src.pipeline_runner", lambda: __import__("src.pipeline_runner") and "ok", counters)
     check("src.exporters.pdf_report", lambda: __import__("src.exporters.pdf_report") and "ok", counters)
+    check("Runtime agent composition", _runtime_agents_status, counters)
 
     print("\n7. Query strategy files")
     for dept in ("company", "market", "buyer", "contact"):

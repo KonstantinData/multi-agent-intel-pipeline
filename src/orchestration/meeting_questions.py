@@ -86,7 +86,10 @@ def question_ids_for_task(task_key: str) -> tuple[str, ...]:
 
 def build_question_registry() -> dict[str, dict[str, Any]]:
     """Create a run-local copy of the central question registry."""
-    return deepcopy(MEETING_QUESTION_REGISTRY)
+    registry = deepcopy(MEETING_QUESTION_REGISTRY)
+    for question_id, meta in registry.items():
+        meta["question_id"] = question_id
+    return registry
 
 
 def build_initial_answer_matrix() -> dict[str, dict[str, Any]]:

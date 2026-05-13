@@ -3,9 +3,9 @@
 Fixes vs. previous version:
 - normalize_domain shown in intake step (not in retrieve step)
 - Supervisor Research nodes moved to align with brief_call (edges go forward/right, not backward/up)
-- memory node: adds normalized_domain in RunContext.intake + _record_phase + LTM state write
+- memory node: shows create_runtime_stores(), healthcheck, storage snapshot, no run-path backfill
 - retrieve node: removes normalize_domain (already done earlier)
-- New checkpoint node: after_supervisor_brief checkpoint before handoff
+- Step1Handoff node added: RuntimeEvent, checkpoint hash, validation gate
 - outputs node: adds budget_tracker + run_dir from InitialRunState
 """
 from pathlib import Path
@@ -52,8 +52,8 @@ def edge(id_, src, tgt, label="", color="#64748b", fw=2, pts=None):
 
 
 # ── Layout ────────────────────────────────────────────────────────────────────
-PAGE_W, PAGE_H = 1960, 2600
-LANE_Y, LANE_H = 120, 2440
+PAGE_W, PAGE_H = 1960, 2820
+LANE_Y, LANE_H = 120, 2660
 
 # 4 lanes
 LX = [40, 340, 820, 1270]
@@ -130,32 +130,39 @@ cells.append(rect("agents",
 RY += 120
 
 cells.append(rect("memory",
-    "<b>Initialize memory + run context</b>\n"
-    "memory_store = FileLongTermMemoryStore(LONG_TERM_MEMORY_PATH)\n"
-    "backfill_enabled = _long_term_backfill_enabled()  ← Env-Flag\n"
-    "  → backfill_long_term_memory_from_runs() wenn aktiviert\n"
+    "<b>Initialize storage boundary + run context</b>\n"
+    "stores = create_runtime_stores(\n"
+    "  runs_root=RUNS_DIR,\n"
+    "  long_term_memory_path=LONG_TERM_MEMORY_PATH\n"
+    ")\n"
+    "stores.healthcheck_required()\n"
+    "memory_store = stores.long_term_memory\n"
+    "  local_dev → FileLongTermMemoryStore\n"
+    "  production → Postgres/pgvector required, no file fallback\n"
     "run_context = RunContext(\n"
     "  run_id=run_id,\n"
-    "  intake={company_name, web_domain, normalized_domain, language}\n"
+    "  intake={company_name, web_domain, normalized_domain,\n"
+    "          canonical_url, language, resolved_ips, suffix metadata}\n"
     ")\n"
     "_record_phase(run_context, 'initialized')\n"
-    "run_context.resolution_state['long_term_memory'] = {\n"
-    "  backfill_enabled, backfilled_patterns\n"
-    "}",
-    LX[1]+20, RY, LW[1]-40, 210,
+    "run_context.resolution_state['storage'] = stores.snapshot()\n"
+    "← no opportunistic historical backfill in normal run path",
+    LX[1]+20, RY, LW[1]-40, 230,
     "#eff6ff","#3b82f6","#1e3a8a", 12))
-RY += 230
+RY += 250
 
 cells.append(rect("retrieve",
-    "<b>Retrieve process patterns</b>\n"
-    "run_context.retrieved_strategies =\n"
-    "  retrieve_strategies(memory_store,\n"
-    "    domain=normalized_domain, limit=5)\n"
-    "run_context.retrieved_role_strategies = {\n"
-    "  role: retrieve_strategies(..., role=role, limit=3)\n"
-    "  for role in RETRIEVABLE_ROLE_ORDER\n"
-    "}\n"
-    "← Nur Prozessmuster, keine Zielkunden-Fakten",
+    "<b>Initial process-memory retrieval</b>\n"
+    "context = RetrievalContext(\n"
+    "  run_id, company_name, normalized_domain,\n"
+    "  phase='memory_retrieval', target_scope='run_start'\n"
+    ")\n"
+    "initial_retrieval = retrieve_strategy_batch(\n"
+    "  memory_store, context, DEFAULT_GENERAL_RETRIEVAL_LIMIT\n"
+    ")\n"
+    "run_context.retrieved_strategies = initial_retrieval.patterns\n"
+    "resolution_state['memory_retrieval']['initial'] = snapshot\n"
+    "← generic, no industry hint yet; no domain/company ranking bonus",
     LX[1]+20, RY, LW[1]-40, 150,
     "#eff6ff","#3b82f6","#1e3a8a", 12))
 RY += 170
@@ -176,18 +183,21 @@ SR_Y = BRIEF_Y + 10   # align with brief_call
 
 cells.append(rect("research_tool",
     "<b>src/research/tools.py</b>\n"
-    "build_company_research(web_domain, company_name)\n"
-    "← aufgerufen innerhalb build_intake_brief()",
+    "build_company_research(NormalizedDomainResult, company_name)\n"
+    "→ CompanyResearchResult schema_version\n"
+    "← string domain only as deprecated legacy path",
     LX[2]+20, SR_Y, LW[2]-40, 100,
     "#dcfce7","#16a34a","#14532d", 12))
 SR_Y += 120
 
 cells.append(rect("research_steps",
     "<b>Research helper sequence</b>\n"
-    "normalize_domain(web_domain)\n"
-    "homepage_url(normalized_domain)\n"
+    "homepage_url = normalized.canonical_url\n"
     "fetch_website_snapshot(url)\n"
-    "→ Website-Snapshot (title, meta, text)",
+    "→ WebsiteSnapshot contract\n"
+    "DNS/redirect SSRF guard · IP pinning · max redirects\n"
+    "content-type allowlist · response size limit · content_hash\n"
+    "title/meta/OG/H1/H2/about/imprint/language",
     LX[2]+20, SR_Y, LW[2]-40, 120,
     "#f0fdf4","#16a34a","#14532d", 12))
 SR_Y += 140
@@ -195,51 +205,73 @@ SR_Y += 140
 cells.append(rect("identity",
     "<b>Identity + summary</b>\n"
     "infer_company_identity(snapshot)\n"
-    "summarize_visible_text(snapshot)\n"
-    "→ verified_company_name, verified_legal_name\n"
-    "→ name_confidence, homepage_excerpt",
+    "→ IdentityResolutionResult\n"
+    "  submitted_name · brand_name · verified_company_name\n"
+    "  verified_legal_name='' in MVP + source_gap(register/linkedin/wiki)\n"
+    "summarize_visible_text(snapshot.visible_text)\n"
+    "→ bounded homepage_excerpt + extraction_quality",
     LX[2]+20, SR_Y, LW[2]-40, 120,
     "#f0fdf4","#16a34a","#14532d", 12))
 SR_Y += 140
 
 cells.append(rect("industry",
-    "<b>Supervisor enriches brief</b>\n"
-    "infer_industry(title, description, summary)\n"
-    "→ industry_hint  ← Startsignal für Departments\n"
-    "constructs SupervisorBrief (dataclass)\n"
-    "constructs supervisor_message dict:\n"
-    "  {section: 'supervisor_brief', payload: asdict(brief),\n"
-    "   status: 'ready_for_department_routing'}",
-    LX[2]+20, SR_Y, LW[2]-40, 150,
+    "<b>Supervisor evidence + readiness contract</b>\n"
+    "infer_industry_result(title, description, summary)\n"
+    "→ IndustryInferenceResult: hint, confidence, evidence_fields, alternatives\n"
+    "CompanyResearchResult warnings/errors:\n"
+    "  fetch_timeout · tls_failed · redirect_blocked · unsupported_content_type\n"
+    "  text_extraction_empty/weak · js_content_detected · industry_unknown\n"
+    "classify_identity_confidence(...) + detect_identity_conflict(...)\n"
+    "BriefingFetchAudit: final_url, redirects, status, content length/lang\n"
+    "EvidenceItem / MissingEvidence per supported field\n"
+    "classify_briefing_readiness(...)\n"
+    "SupervisorBriefMessage:\n"
+    "  schema_version, status, readiness, confidence,\n"
+    "  routing_gaps, evidence_summary, payload\n"
+    "validate_supervisor_brief_message(...)",
+    LX[2]+20, SR_Y, LW[2]-40, 210,
     "#f0fdf4","#16a34a","#14532d", 12))
 
 # ── STATE LANE ────────────────────────────────────────────────────────────────
 # Starts after research completes → SR_Y + 150 + gap
-STATE_Y = SR_Y + 170
+STATE_Y = SR_Y + 230
 
 RUNTIME_STATE_Y = STATE_Y   # save before incrementing — needed for edge11 routing
 cells.append(rect("runtime_state",
     "<b>Seed RunContext with Step-1-Data</b>\n"
     "state.run_context.supervisor_brief = supervisor_message['payload']\n"
     "state.run_context.question_registry = build_question_registry()\n"
-    "  → 11 MEETING_QUESTION_REGISTRY Einträge\n"
+    "  → 12 MEETING_QUESTION_REGISTRY Einträge\n"
     "state.run_context.answer_matrix = build_initial_answer_matrix()\n"
-    "  → alle Fragen auf status='pending'",
-    LX[3]+20, STATE_Y, LW[3]-40, 140,
+    "  → alle Fragen auf status='pending'\n"
+    "brief_context = RetrievalContext(\n"
+    "  industry_hint=brief.industry_hint,\n"
+    "  phase='supervisor_brief', question_ids=registry.keys()\n"
+    ")\n"
+    "role_batches = retrieve_strategy_batch(..., role_context(role))\n"
+    "→ retrieved_role_strategies final before Step 2\n"
+    "→ memory_retrieval audit snapshots: initial, brief_context, roles\n"
+    "resolution_state['supervisor_brief'] = non-sensitive diagnosis:\n"
+    "  readiness, confidence, fetch_status, evidence_count,\n"
+    "  routing_gaps, duration_ms\n"
+    "resolution_state['intake_research'] = non-sensitive research diagnostics:\n"
+    "  timings, snapshot audit, warnings/errors, identity + industry",
+    LX[3]+20, STATE_Y, LW[3]-40, 200,
     "#fef9c3","#ca8a04","#713f12", 12))
-STATE_Y += 160
+STATE_Y += 220
 
 cells.append(rect("message",
-    "<b>Emit first runtime event</b>\n"
-    "state.messages.append(\n"
-    "  emit_message(\n"
-    "    on_message,\n"
-    "    agent='Supervisor',\n"
-    "    content=json.dumps(supervisor_message)\n"
-    "  )\n"
+    "<b>Emit first RuntimeEvent</b>\n"
+    "first_event = emit_message(\n"
+    "  on_message,\n"
+    "  agent='Supervisor',\n"
+    "  content=json.dumps(supervisor_message),\n"
+    "  run_id=state.run_id,\n"
+    "  sequence=len(state.messages)+1,\n"
+    "  phase='supervisor_brief',\n"
+    "  content_type='application/json'\n"
     ")\n"
-    "→ Event: section='supervisor_brief', "
-    "status='ready_for_department_routing'",
+    "→ event_id · sequence · timestamp · schema_version",
     LX[3]+20, STATE_Y, LW[3]-40, 150,
     "#fef9c3","#ca8a04","#713f12", 12))
 STATE_Y += 170
@@ -251,20 +283,38 @@ cells.append(rect("checkpoint",
     "  'after_supervisor_brief',\n"
     "  state.run_context\n"
     ")\n"
-    "→ artifacts/runs/{run_id}/checkpoints/after_supervisor_brief.json\n"
-    "← Crash-Recovery-Punkt vor dem ersten Department-Round",
+    "→ CheckpointInfo: checkpoint_id, phase, path, written\n"
+    "→ checkpoint_hash im JSON-Payload\n"
+    "→ atomarer Write via .tmp + replace",
     LX[3]+20, STATE_Y, LW[3]-40, 140,
     "#fef9c3","#ca8a04","#713f12", 12))
 STATE_Y += 160
 
+cells.append(rect("handoff_gate",
+    "<b>Step1Handoff Contract + Gate</b>\n"
+    "build_step1_handoff(...)\n"
+    "schema_version · run_id · intake · supervisor_message\n"
+    "question_registry + answer_matrix\n"
+    "retrieval snapshots · runtime_agents_snapshot\n"
+    "storage_snapshot · budget_snapshot\n"
+    "first_event + checkpoint\n"
+    "readiness: ready_for_department_routing / ready_with_gaps / blocked_step1_handoff\n"
+    "handoff_allows_department_routing(...) gates Step 2",
+    LX[3]+20, STATE_Y, LW[3]-40, 170,
+    "#e0e7ff","#4338ca","#312e81", 12))
+STATE_Y += 190
+
 cells.append(rect("handoff",
     "<b>Step 1 Boundary — Handoff an Step 2</b>\n"
-    "returns SupervisorBriefResult(brief, supervisor_message)\n"
+    "returns SupervisorBriefResult(\n"
+    "  brief, supervisor_message, step1_handoff\n"
+    ")\n"
     "\n"
     "Nächster Aufruf in run_pipeline():\n"
-    "first_pass = _run_first_pass(state, brief=supervisor.brief)\n"
+    "if handoff_allows_department_routing(...):\n"
+    "  first_pass = _run_first_pass(state, brief=supervisor.brief)\n"
     "  → run_supervisor_loop(brief, run_context, agents, on_message)\n"
-    "  → startet Supervisor-controlled Department Routing",
+    "else: failed_phase='step1_handoff'",
     LX[3]+20, STATE_Y, LW[3]-40, 140,
     "#fee2e2","#dc2626","#7f1d1d", 12))
 STATE_Y += 160
@@ -273,9 +323,10 @@ cells.append(rect("outputs",
     "<b>Step 1 live objects (InitialRunState)</b>\n"
     "state.run_context  ← Run Brain: Intake + Strategies\n"
     "  + supervisor_brief + question_registry + answer_matrix\n"
-    "  + resolution_state[initialized, long_term_memory]\n"
+    "  + resolution_state[initialized, storage]\n"
     "state.agents       ← alle Runtime-Agents bereit\n"
     "state.messages[0]  ← erstes Supervisor-Event\n"
+    "resolution_state['step1_handoff'] ← validated snapshot\n"
     "state.budget_tracker  ← PhaseBudgetTracker (leer)\n"
     "state.run_dir      ← Artefakt-Zielpfad\n"
     "supervisor.brief   ← SupervisorBrief Dataclass\n"
@@ -313,8 +364,9 @@ cells.append(edge("e11", "industry", "runtime_state", "brief fertig",
 # State internal flow (top-down)
 cells.append(edge("e12", "runtime_state", "message",    "", "#64748b"))
 cells.append(edge("e13", "message",       "checkpoint", "", "#ca8a04", 2))
-cells.append(edge("e14", "checkpoint",    "handoff",    "", "#64748b"))
-cells.append(edge("e15", "handoff",       "outputs",    "", "#64748b"))
+cells.append(edge("e14", "checkpoint",    "handoff_gate", "CheckpointInfo", "#4338ca", 2))
+cells.append(edge("e15", "handoff_gate",  "handoff",    "validated", "#4338ca", 2))
+cells.append(edge("e16", "handoff",       "outputs",    "", "#64748b"))
 
 # ── ASSEMBLE XML ──────────────────────────────────────────────────────────────
 xml_cells = "\n        ".join(cells)
