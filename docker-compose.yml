@@ -6,6 +6,10 @@ services:
       - "127.0.0.1:8501:8501"
     environment:
       - OPENAI_API_KEY
+      - LIQUISTO_POSTGRES_DSN
+      - LIQUISTO_AUTH_POSTGRES_DSN
+      - DATABASE_URL
+      - LIQUISTO_STORAGE_PROFILE
     volumes:
       - artifacts:/app/artifacts
     logging:

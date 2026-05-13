@@ -24,6 +24,7 @@ from src.research.contracts import (
     ResearchIssue,
     ResearchSeverity,
 )
+from src.security.secret_guard import assert_no_secrets_in_payload
 
 # Words that appear in website chrome, not in product descriptions
 _STOPWORDS = {
@@ -98,6 +99,10 @@ def _llm_extract_keywords(text: str, *, company_name: str = "") -> list[str]:
                 {"role": "user", "content": f"Company: {company_name}\nText: {text[:800]}"},
             ],
         }
+        assert_no_secrets_in_payload(
+            request_payload["messages"],
+            context="research_extract_keywords",
+        )
         request_payload.update(temperature_param(model_name, 0.0))
         response = client.chat.completions.create(
             **request_payload,

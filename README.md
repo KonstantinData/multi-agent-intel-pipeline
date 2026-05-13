@@ -104,7 +104,7 @@ The runtime plans around **meeting questions**, not only departments.
 8. Meeting-Readiness Gate evaluates finalization eligibility
 9. Final Briefing Composer produces meeting actions and final briefing artifacts
 10. Report Writer assembles the final `report_package`
-11. Artifacts exported to `artifacts/runs/<run_id>/` with phase-aware checkpoints
+11. Artifacts exported to PostgreSQL (`run_artifacts`, `run_checkpoints`) with phase-aware checkpoints
 
 ### Dashboard pause/resume
 
@@ -153,17 +153,19 @@ The runtime plans around **meeting questions**, not only departments.
 
 ## Output Artifacts
 
-Each run writes to `artifacts/runs/<run_id>/`:
+In production profile, each run writes to PostgreSQL:
 
-| File | Content |
+| Artifact type / table | Content |
 |------|---------|
-| `run_meta.json` | Run metadata (company, domain, status, timing, cost, meeting_readiness) |
-| `chat_history.json` | Full message trace |
-| `pipeline_data.json` | Structured research output |
-| `run_context.json` | Supervisor brief, answer matrix, question registry, resolution state, department packages, department run states |
-| `memory_snapshot.json` | Short-term memory: evidence packets, gap candidates, meeting actions, resolution plans |
-| `checkpoints/*.json` | Phase-aware checkpoints (after_first_pass, after_closure, after_synthesis, after_finalization) |
-| `follow_up_history.json` | Follow-up Q&A (when applicable) |
+| `run_meta` in `run_artifacts` | Run metadata (company, domain, status, timing, cost, meeting_readiness) |
+| `chat_history` in `run_artifacts` | Full message trace |
+| `pipeline_data` in `run_artifacts` | Structured research output |
+| `run_context` in `run_artifacts` | Supervisor brief, answer matrix, question registry, resolution state, department packages, department run states |
+| `memory_snapshot` in `run_artifacts` | Short-term memory: evidence packets, gap candidates, meeting actions, resolution plans |
+| `checkpoints` in `run_checkpoints` | Phase-aware checkpoints (after_first_pass, after_closure, after_synthesis, after_finalization) |
+| `follow_up_history` in `run_artifacts` | Follow-up Q&A (when applicable) |
+
+Non-production profile may export JSON files for local testing only.
 
 ## Success-Path Semantics
 
@@ -183,9 +185,9 @@ Security architecture, threat model, agent permissions, CI/CD gates, and data cl
 ## Configuration
 
 - **Secrets management**: API-key lookup, OS-keyring setup, no-`.env` API-key rule, and logging requirements are documented in [docs/Secrets-Management.md](docs/Secrets-Management.md).
-- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env first, then local `.env` fallback)
+- **Role model overrides**: `OPENAI_MODEL_<ROLE>` and `OPENAI_STRUCTURED_MODEL_<ROLE>` (read from process env first, then optional untracked local `.env` fallback)
 - **Role env key format**: preferred snake-case (for example `OPENAI_MODEL_COMPANY_RESEARCHER`), legacy compact keys (for example `OPENAI_MODEL_COMPANYRESEARCHER`) are still supported
-- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env first, then local `.env` fallback)
+- **Dedicated model settings**: `OPENAI_MODEL_SEARCH`, `OPENAI_MODEL_TRANSLATION`, `OPENAI_MODEL_EXTRACTION` (process env first, then optional untracked local `.env` fallback)
 - **OpenAI request controls**: `LIQUISTO_OPENAI_TIMEOUT_SECONDS`, `LIQUISTO_OPENAI_MAX_RETRIES`
 - **Runtime cost calculation**: `estimated_cost_usd` in `run_meta.json` is computed from
   tracked LLM token usage plus `web_search_preview` call fees

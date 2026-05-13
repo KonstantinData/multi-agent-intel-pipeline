@@ -70,7 +70,7 @@ The classification must be reviewed before release if the system is changed to:
 | Control | Repository mechanism |
 | --- | --- |
 | Human oversight | UI/operator review, meeting-readiness status, dashboard pause/resume for user selections |
-| Evidence traceability | `pipeline_data.json`, `run_context.json`, `memory_snapshot.json`, `DepartmentRunState` artifacts |
+| Evidence traceability | `pipeline_data`, `run_context`, `memory_snapshot`, `DepartmentRunState` artifacts |
 | Quality gates | Department policy KB gates, critic review, judge decisions, `MeetingReadinessGate` |
 | Data minimization | Audit log minimization policy, run-brain/long-term memory separation |
 | Transparency | Report package and exported briefing identify evidence, gaps, blockers, and readiness status |

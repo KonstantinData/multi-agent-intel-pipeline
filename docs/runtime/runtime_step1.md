@@ -9,7 +9,7 @@ Step 1 beschreibt den Start eines initialen Pipeline-Runs in
 
 ## MVP-Stand 2026-05-12 — Intake-Vertrag und SSRF-Guard
 
-Punkt 1 der `docs/runtime/20260511_runtime_step1_todo.md` wurde so weit
+Punkt 1 des Runtime-Step-1-Backlogs wurde so weit
 umgesetzt, dass der Intake jetzt als typisierter, auditierbarer Vertrag
 arbeitet:
 
@@ -44,7 +44,7 @@ DrawIO-Diagramm-Synchronisierung mit dem neuen Vertrag.
 
 ## MVP-Stand 2026-05-12 — Runtime-Agent-Composition-Vertrag
 
-Punkt 2 der `docs/runtime/20260511_runtime_step1_todo.md` wurde so weit
+Punkt 2 des Runtime-Step-1-Backlogs wurde so weit
 umgesetzt, dass die Runtime-Agent-Erzeugung jetzt ein typisierter, validierter
 und auditierbarer Composition-Vertrag liefert:
 
@@ -97,16 +97,16 @@ Prometheus-Counter fuer Factory-Fehler.
 
 ## Phase-2-Zielbild 2026-05-12 — Storage Boundary
 
-Punkt 3 der `docs/runtime/20260511_runtime_step1_todo.md` wurde lokal als
+Punkt 3 des Runtime-Step-1-Backlogs wurde als
 Storage-Backbone vorbereitet, ohne das MVP von Postgres abhaengig zu machen:
 
 - `src/storage/contracts.py` definiert `LongTermMemoryStore`,
   `RunStateStore`, `RuntimeStorageConfig`, `RuntimeStores` und
   `StorageHealthcheckError`.
-- `src/storage/runtime_stores.py` waehlt explizit zwischen `local_dev` und
-  `production`. `local_dev` nutzt weiter lokale Artefakte; `production`
-  verlangt Postgres/pgvector und scheitert fail-fast, solange kein migriertes
-  DSN-Backend aktiviert ist.
+- `src/storage/runtime_stores.py` trennt Profile explizit. Im
+  Produktionsprofil ist PostgreSQL/pgvector verpflichtend; fehlende oder
+  unvollstaendige Migrationen fuehren fail-fast zu `storage_init`.
+  File-basierte Stores bleiben nur fuer explizite Test-/Migrationsszenarien.
 - `_initialize_run(...)` erzeugt Stores ueber `create_runtime_stores(...)`,
   fuehrt `stores.healthcheck_required()` vor fachlicher Recherche aus und
   speichert einen non-sensitiven Storage-Snapshot in
@@ -126,7 +126,7 @@ Deployment-Smoke-Tests gegen Test-Postgres mit pgvector.
 
 ## Phase-2-Zielbild 2026-05-12 — Kontextuelles Retrieval
 
-Punkt 4 der `docs/runtime/20260511_runtime_step1_todo.md` wurde lokal als
+Punkt 4 des Runtime-Step-1-Backlogs wurde als
 Retrieval-Contract umgesetzt:
 
 - `RetrievalContext` (`src/memory/retrieval.py`) transportiert Run-Kontext
@@ -152,7 +152,7 @@ Retrieval-Contract umgesetzt:
 
 ## MVP-Stand 2026-05-12 — Evidence-Backed Supervisor Brief
 
-Punkt 5 der `docs/runtime/20260511_runtime_step1_todo.md` wurde als
+Punkt 5 des Runtime-Step-1-Backlogs wurde als
 evidence-backed Identity- und Briefing-Contract umgesetzt:
 
 - `src/domain/briefing.py` definiert die Contract-Erweiterungen:
@@ -201,9 +201,9 @@ Punkt 7 wurde lokal als versionierter Handoff-Contract vorbereitet:
 - Das erste Supervisor Event ist versioniert und sequenziert:
   `event_id`, `run_id`, `sequence`, `timestamp`, `agent`, `type`,
   `schema_version`, `content`, `content_type`, `phase`.
-- `_write_checkpoint(...)` schreibt den lokalen JSON-Checkpoint atomar ueber
-  `.tmp` + Replace, versieht ihn mit `schema_version` und `checkpoint_hash`
-  und liefert `CheckpointInfo`.
+- `_write_checkpoint(...)` schreibt Checkpoints mit `schema_version` und
+  `checkpoint_hash` und liefert `CheckpointInfo`; im Produktionsprofil
+  erfolgt die persistente Ablage ueber den Run-State-Store.
 - `_build_supervisor_brief(...)` speichert
   `RunContext.resolution_state["step1_handoff"]` mit Intake, Brief,
   Supervisor Message, Registry, Answer Matrix, Retrieval-Snapshots,
@@ -218,7 +218,7 @@ fuer produktive DB-/Event-Store-Schreibfehler.
 
 ## MVP-Stand 2026-05-12 — Supervisor Intake Research Pipeline
 
-Punkt 6 der `docs/runtime/20260511_runtime_step1_todo.md` wurde lokal als
+Punkt 6 des Runtime-Step-1-Backlogs wurde als
 sichere, evidence-basierte Intake-Research-Pipeline umgesetzt:
 
 - `src/research/contracts.py` definiert versionierte Contracts:
@@ -403,9 +403,8 @@ stores.healthcheck_required()
 memory_store = stores.long_term_memory
 ```
 
-Im lokalen Profil ist das weiterhin der dateibasierte
-`FileLongTermMemoryStore`. Im Produktionsprofil darf kein File-Store
-opportunistisch genutzt werden: fehlendes oder nicht migriertes
+Der Runtime-Storage wird PostgreSQL-first betrieben. Ein opportunistischer
+File-Store-Fallback ist nicht zulaessig: fehlendes oder nicht migriertes
 Postgres/pgvector fuehrt zu `failed_phase="storage_init"`.
 
 Dieser Store ist nicht fuer run-spezifische Unternehmensfakten gedacht. Er
@@ -836,3 +835,4 @@ Der Supervisor ist in Step 1 Intake- und Control-Plane-Akteur. Er normalisiert,
 strukturiert und uebergibt. Die fachliche Domain-Recherche, Evidenzpruefung und
 Retry-Logik bleiben ausserhalb dieses Schritts und gehoeren in die Department
 Runtime.
+

@@ -5,37 +5,42 @@
 
 ## Purpose
 
-This document describes the repository's run artifact and audit logging schema.
-The runtime persists structured run artifacts under `artifacts/runs/<run_id>/`.
-These files are the primary audit trail for meeting-readiness, evidence
-coverage, follow-up grounding, and export behavior.
+This document describes the runtime audit schema for run artifacts,
+checkpoints, and follow-up history.
 
-## Run Directory
+Production profile persists artifacts in PostgreSQL tables (`run_artifacts`,
+`run_checkpoints`). File-based exports are non-production only.
 
-Each pipeline run writes to:
+## Storage Backends
 
-```text
-artifacts/runs/<run_id>/
-```
+- Production: PostgreSQL (`run_artifacts`, `run_checkpoints`)
+- Non-production: optional JSON export for explicit local tests/migration only
 
 `run_id` is generated as a UTC timestamp by `src/pipeline_runner.py` unless a
 paused run is resumed.
 
-## Required Files
+## Required Artifact Types
 
-| File | Writer | Purpose |
+| Artifact type | Writer | Purpose |
 | --- | --- | --- |
-| `run_meta.json` | `src/exporters/json_export.py` | Run-level metadata, status, usage, budget, unresolved items, meeting-readiness summary |
-| `chat_history.json` | `src/exporters/json_export.py` | Display-oriented agent message history with `name` and `content` |
-| `pipeline_data.json` | `src/exporters/json_export.py` | Final structured briefing sections and report-facing artifacts |
-| `run_context.json` | `src/exporters/json_export.py` | Full run context, including run brain, answer matrix, resolution state, report package |
-| `memory_snapshot.json` | `src/exporters/json_export.py` | Exported `ShortTermMemoryStore` snapshot |
-| `checkpoints/<phase>.json` | `src/pipeline_runner.py` | Phase-aware recovery and observability snapshots |
-| `follow_up_history.json` | `src/exporters/json_export.py` | Appended follow-up answers for the run |
-| `reports/liquisto_briefing_<run_id>_DE.pdf` | PDF exporter | German report export when generation succeeds |
-| `reports/liquisto_briefing_<run_id>_EN.pdf` | PDF exporter | English report export when generation succeeds |
+| `run_meta` | `src/exporters/json_export.py` | Run-level metadata, status, usage, budget, unresolved items, meeting-readiness summary |
+| `chat_history` | `src/exporters/json_export.py` | Display-oriented agent message history with `name` and `content` |
+| `pipeline_data` | `src/exporters/json_export.py` | Final structured briefing sections and report-facing artifacts |
+| `run_context` | `src/exporters/json_export.py` | Full run context, including run brain, answer matrix, resolution state, report package |
+| `memory_snapshot` | `src/exporters/json_export.py` | Exported `ShortTermMemoryStore` snapshot |
+| `follow_up_history` | `src/exporters/json_export.py` | Appended follow-up answers for the run |
 
-## `run_meta.json`
+## Required Checkpoint Records
+
+Checkpoints are written by `src/pipeline_runner.py` to `run_checkpoints`.
+Expected phases include:
+
+- `after_first_pass`
+- `after_closure`
+- `after_synthesis`
+- `after_finalization`
+
+## `run_meta` Fields
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -50,9 +55,7 @@ paused run is resumed.
 | `unresolved` | object | Status-dependent unresolved items |
 | `meeting_readiness` | object | Serialized `MeetingReadinessAssessment` |
 
-## `run_context.json`
-
-Important top-level fields:
+## `run_context` Core Fields
 
 | Field | Description |
 | --- | --- |
@@ -69,28 +72,6 @@ Important top-level fields:
 | `status` | Current run status |
 | `resolution_state` | Resolution bucket, dashboard state, closure state, budget/stop reasons |
 
-## `short_term_memory` Fields
-
-| Field | Description |
-| --- | --- |
-| `facts` | Collected text facts |
-| `sources` | Source dictionaries with URL/title/source type where available |
-| `open_questions` | Legacy unresolved question list |
-| `gap_candidates` | Structured unresolved gaps |
-| `task_outputs` | Task-level payloads |
-| `task_statuses` | Canonical task statuses |
-| `critic_reviews` | Review details by task |
-| `department_packages` | Final package per department |
-| `department_conversations` | Department conversation traces where recorded |
-| `department_run_states` | Serialized `DepartmentRunState` per department |
-| `follow_up_sessions` | Follow-up answer records |
-| `answer_matrix_updates` | Structured meeting-question updates |
-| `resolution_decisions` | Resolution-controller decisions |
-| `resolution_plans` | Planned closure/user-decision actions |
-| `meeting_actions` | Final `MeetingAction` list |
-| `evidence_packets` | Structured evidence packets |
-| `usage_totals` | LLM/search/page-fetch counters |
-
 ## Department Artifact Schema
 
 `department_run_states` contains the authoritative department state:
@@ -103,27 +84,11 @@ Important top-level fields:
 
 Canonical task decision outcomes are defined in `src/orchestration/contracts.py`.
 
-## Follow-Up Logging
-
-`follow_up_history.json` is appended under a file lock. A follow-up answer should
-record:
-
-- run id;
-- user question;
-- routed department;
-- generated answer;
-- evidence list;
-- unresolved points;
-- `requires_additional_research` flag;
-- timestamp when supplied by the caller.
-
 ## Minimization Rules
 
 - Do not log API keys, environment variables, cookies, auth headers, or raw HTTP
   request bodies.
 - Prefer structured evidence packets and source URLs over full copied page text.
-- Store run-specific facts only in the run directory, not in long-term memory.
-- Keep `chat_history.json` for audit/debugging but do not treat it as the
-  authoritative state. The authoritative state is `run_context.json` and
-  department artifacts.
-- Use `atomic_write_json()` for JSON export and file locks for follow-up append.
+- Store run-specific facts only in run artifacts, not in long-term memory.
+- Keep `chat_history` for audit/debugging but do not treat it as authoritative
+  state. Authoritative state is `run_context` plus department artifacts.

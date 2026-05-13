@@ -34,6 +34,7 @@ from src.models.visualization import (
     InsightCallout,
     TableBlock,
 )
+from src.security.secret_guard import assert_no_secrets_in_payload
 from src.utils import strict_json_dumps
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
@@ -2461,21 +2462,26 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
             chunk_tokens = tokens[start:start + chunk_size]
             chunk_payload = {token: pending[token] for token in chunk_tokens}
             try:
+                messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are fixing residual untranslated text inside a German executive PDF export. "
+                            "Translate every JSON value fully into idiomatic German. "
+                            "Do not leave English words behind unless they are company names, URLs, legal names, "
+                            "or abbreviations like CEO/CFO/EBIT/NDA. "
+                            "Return only a valid JSON object with the exact same keys."
+                        ),
+                    },
+                    {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
+                ]
+                assert_no_secrets_in_payload(
+                    messages,
+                    context="pdf_report_translate_residual_german",
+                )
                 resp = client.chat.completions.create(
                     model=translation_model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are fixing residual untranslated text inside a German executive PDF export. "
-                                "Translate every JSON value fully into idiomatic German. "
-                                "Do not leave English words behind unless they are company names, URLs, legal names, "
-                                "or abbreviations like CEO/CFO/EBIT/NDA. "
-                                "Return only a valid JSON object with the exact same keys."
-                            ),
-                        },
-                        {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
-                    ],
+                    messages=messages,
                     response_format={"type": "json_object"},
                     timeout=TRANSLATION_TIMEOUT_SECONDS,
                     **temperature_param(translation_model, 0),
@@ -2672,23 +2678,28 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
         for start in range(0, len(keys), chunk_size):
             chunk_keys = keys[start:start + chunk_size]
             chunk_payload = {key: batch[key] for key in chunk_keys}
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are a professional business translator. "
+                        f"Translate every JSON value fully into {lang_name}. "
+                        f"The input may contain mixed-language content. "
+                        f"Do not leave source-language sentences unchanged. "
+                        f"Keep company names, brand names, legal entity names, "
+                        f"abbreviations, URLs, and numeric values unchanged. "
+                        f"Return ONLY a valid JSON object with the exact same keys."
+                    ),
+                },
+                {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
+            ]
+            assert_no_secrets_in_payload(
+                messages,
+                context=f"pdf_report_translate:{target_lang}",
+            )
             resp = client.chat.completions.create(
                 model=translation_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            f"You are a professional business translator. "
-                            f"Translate every JSON value fully into {lang_name}. "
-                            f"The input may contain mixed-language content. "
-                            f"Do not leave source-language sentences unchanged. "
-                            f"Keep company names, brand names, legal entity names, "
-                            f"abbreviations, URLs, and numeric values unchanged. "
-                            f"Return ONLY a valid JSON object with the exact same keys."
-                        ),
-                    },
-                    {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
-                ],
+                messages=messages,
                 response_format={"type": "json_object"},
                 timeout=TRANSLATION_TIMEOUT_SECONDS,
                 **temperature_param(translation_model, 0.1),

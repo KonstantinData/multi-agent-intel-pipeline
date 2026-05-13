@@ -289,20 +289,20 @@ Unit tests: [`policies/rego/ci_supply_chain_test.rego`](../../../policies/rego/c
 
 **File:** [docs/en/audit/logging-schema.md](../audit/logging-schema.md)
 
-Defines the run directory structure and the schema of every file written by the
-runtime during a run. Each run produces artifacts under
-`artifacts/runs/<run_id>/`:
+Defines the production run-artifact schema and checkpoint records written by the
+runtime during a run. In production, each run writes to PostgreSQL tables
+(`run_artifacts`, `run_checkpoints`):
 
 | File | Contents |
 | --- | --- |
-| `run_meta.json` | Run identification, timing, usage totals |
-| `run_context.json` | Normalized supervisor brief, department packages, answer matrix, readiness state |
-| `pipeline_data.json` | Evidence packets, source URLs, final pipeline state |
-| `chat_history.json` | AG2 conversation transcript |
-| `memory_snapshot.json` | Exported short-term memory state |
-| `checkpoints/` | Crash-recovery snapshots at defined phases |
-| `follow_up_history.json` | Historical follow-up questions and answers |
-| `reports/` | Final report package and exported PDFs |
+| `run_meta` | Run identification, timing, usage totals |
+| `run_context` | Normalized supervisor brief, department packages, answer matrix, readiness state |
+| `pipeline_data` | Evidence packets, source URLs, final pipeline state |
+| `chat_history` | AG2 conversation transcript |
+| `memory_snapshot` | Exported short-term memory state |
+| `run_checkpoints` rows | Crash-recovery snapshots at defined phases |
+| `follow_up_history` | Historical follow-up questions and answers |
+| `reports` metadata | Final report package and exported PDFs |
 
 The minimization rules that govern what may be written to these files are defined
 in the [Audit Log Minimization Policy](#2c-audit-log-minimization-policy) above.

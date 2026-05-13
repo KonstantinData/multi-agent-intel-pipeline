@@ -97,6 +97,7 @@ from src.research.search import (
     build_company_queries,
     perform_search,
 )
+from src.security.secret_guard import assert_no_secrets_in_payload
 from src.utils import strict_json_dumps
 
 _MAX_LLM_SYSTEM_CONTENT_CHARS = 12_000
@@ -1401,6 +1402,10 @@ class ResearchWorker:
                 },
             ],
         }
+        assert_no_secrets_in_payload(
+            request_payload["messages"],
+            context=f"worker_llm:{self.name}:{task_key}",
+        )
         request_payload.update(temperature_param(effective_model, config.get("temperature")))
         client = self._client if self._client is not None else self._new_client()
         try:

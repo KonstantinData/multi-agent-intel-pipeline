@@ -1,30 +1,47 @@
-"""SQLite user store and audit log for Liquisto auth."""
+"""PostgreSQL user store and audit log for Liquisto auth."""
 from __future__ import annotations
 
 import os
-import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Generator
-
-# Docker: set LIQUISTO_DATA_DIR=/app/data  |  Dev: defaults to <project_root>/data/
-_DATA_DIR = Path(
-    os.environ.get("LIQUISTO_DATA_DIR", Path(__file__).resolve().parents[2] / "data")
-)
-_DB_PATH = _DATA_DIR / "users.db"
+from typing import Any, Generator
 
 _MAX_FAILED_ATTEMPTS = 5
 _LOCKOUT_MINUTES = 15
 
 
+def _postgres_dsn() -> str:
+    return (
+        os.getenv("LIQUISTO_AUTH_POSTGRES_DSN", "").strip()
+        or os.getenv("LIQUISTO_POSTGRES_DSN", "").strip()
+        or os.getenv("DATABASE_URL", "").strip()
+    )
+
+
+def _require_postgres_dsn() -> str:
+    dsn = _postgres_dsn()
+    if dsn:
+        return dsn
+    raise RuntimeError(
+        "PostgreSQL auth backend requires LIQUISTO_AUTH_POSTGRES_DSN, "
+        "LIQUISTO_POSTGRES_DSN, or DATABASE_URL.",
+    )
+
+
+def _connect_postgres() -> Any:
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except Exception as exc:  # pragma: no cover - dependency guard
+        raise RuntimeError(
+            "PostgreSQL auth backend requires package `psycopg`.",
+        ) from exc
+    return psycopg.connect(_require_postgres_dsn(), row_factory=dict_row, autocommit=False)
+
+
 @contextmanager
-def _db() -> Generator[sqlite3.Connection, None, None]:
-    _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+def _db() -> Generator[Any, None, None]:
+    conn = _connect_postgres()
     try:
         yield conn
         conn.commit()
@@ -37,67 +54,83 @@ def _db() -> Generator[sqlite3.Connection, None, None]:
 
 def init_db() -> None:
     with _db() as conn:
-        conn.executescript("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
-                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-                email                   TEXT    UNIQUE NOT NULL COLLATE NOCASE,
-                password_hash           TEXT    NOT NULL,
-                first_name              TEXT    NOT NULL DEFAULT '',
-                last_name               TEXT    NOT NULL DEFAULT '',
-                company                 TEXT    NOT NULL DEFAULT '',
-                role                    TEXT    NOT NULL DEFAULT '',
-                mobile                  TEXT    NOT NULL DEFAULT '',
-                language                TEXT    NOT NULL DEFAULT 'de',
-                is_admin                INTEGER NOT NULL DEFAULT 0,
-                is_active               INTEGER NOT NULL DEFAULT 1,
-                created_at              TEXT    NOT NULL,
-                last_login              TEXT,
-                failed_login_attempts   INTEGER NOT NULL DEFAULT 0,
-                locked_until            TEXT
-            );
-
+                id                    BIGSERIAL PRIMARY KEY,
+                email                 TEXT NOT NULL,
+                password_hash         TEXT NOT NULL,
+                first_name            TEXT NOT NULL DEFAULT '',
+                last_name             TEXT NOT NULL DEFAULT '',
+                company               TEXT NOT NULL DEFAULT '',
+                role                  TEXT NOT NULL DEFAULT '',
+                mobile                TEXT NOT NULL DEFAULT '',
+                language              TEXT NOT NULL DEFAULT 'de',
+                is_admin              BOOLEAN NOT NULL DEFAULT FALSE,
+                is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at            TIMESTAMPTZ NOT NULL,
+                last_login            TIMESTAMPTZ,
+                failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until          TIMESTAMPTZ
+            )
+            """,
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower
+            ON users (LOWER(email))
+            """,
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS audit_log (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp     TEXT NOT NULL,
-                actor_email   TEXT NOT NULL,
-                action        TEXT NOT NULL,
-                target_email  TEXT,
-                detail        TEXT
-            );
-        """)
+                id           BIGSERIAL PRIMARY KEY,
+                timestamp    TIMESTAMPTZ NOT NULL,
+                actor_email  TEXT NOT NULL,
+                action       TEXT NOT NULL,
+                target_email TEXT,
+                detail       TEXT
+            )
+            """,
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp_desc
+            ON audit_log (timestamp DESC)
+            """,
+        )
 
-
-# ── User queries ──────────────────────────────────────────────────────────────
 
 def get_user_by_email(email: str) -> dict | None:
     with _db() as conn:
         row = conn.execute(
-            "SELECT * FROM users WHERE email = ?", (email.strip().lower(),)
+            "SELECT * FROM users WHERE LOWER(email) = LOWER(%s)",
+            (email.strip().lower(),),
         ).fetchone()
-        return dict(row) if row else None
+        return _normalize_row(row)
 
 
 def get_user_by_id(user_id: int) -> dict | None:
     with _db() as conn:
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-        return dict(row) if row else None
+        row = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
+        return _normalize_row(row)
 
 
 def list_users() -> list[dict]:
     with _db() as conn:
         rows = conn.execute(
-            "SELECT * FROM users ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE"
+            "SELECT * FROM users ORDER BY LOWER(last_name), LOWER(first_name)",
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_normalize_row(row) for row in rows if row]
 
 
 def user_count() -> int:
     with _db() as conn:
         row = conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()
-        return row["n"] if row else 0
+        if not row:
+            return 0
+        return int(row.get("n", 0) or 0)
 
-
-# ── User mutations ────────────────────────────────────────────────────────────
 
 def create_user(
     *,
@@ -115,19 +148,32 @@ def create_user(
     now = _utcnow()
     with _db() as conn:
         conn.execute(
-            """INSERT INTO users
-               (email, password_hash, first_name, last_name, company, role,
-                mobile, language, is_admin, is_active, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+            """
+            INSERT INTO users
+            (email, password_hash, first_name, last_name, company, role,
+             mobile, language, is_admin, is_active, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
+            """,
             (
-                email.strip().lower(), password_hash,
-                first_name.strip(), last_name.strip(),
-                company.strip(), role.strip(), mobile.strip(),
-                language, int(is_admin), now,
+                email.strip().lower(),
+                password_hash,
+                first_name.strip(),
+                last_name.strip(),
+                company.strip(),
+                role.strip(),
+                mobile.strip(),
+                language,
+                bool(is_admin),
+                now,
             ),
         )
-        _write_audit(conn, actor_email, "create_user", email,
-                     f"{first_name} {last_name} admin={is_admin}")
+        _write_audit(
+            conn,
+            actor_email,
+            "create_user",
+            email,
+            f"{first_name} {last_name} admin={bool(is_admin)}",
+        )
     return get_user_by_email(email)  # type: ignore[return-value]
 
 
@@ -140,44 +186,29 @@ def update_user(actor_email: str, user_id: int, **fields: object) -> None:
     if not updates:
         return
 
+    assignments = ", ".join(f"{column} = %s" for column in updates.keys())
+    values = list(updates.values())
+    values.append(user_id)
+
     with _db() as conn:
-        conn.execute(
-            """UPDATE users SET
-               first_name = CASE WHEN ? THEN ? ELSE first_name END,
-               last_name = CASE WHEN ? THEN ? ELSE last_name END,
-               company = CASE WHEN ? THEN ? ELSE company END,
-               role = CASE WHEN ? THEN ? ELSE role END,
-               mobile = CASE WHEN ? THEN ? ELSE mobile END,
-               language = CASE WHEN ? THEN ? ELSE language END,
-               is_admin = CASE WHEN ? THEN ? ELSE is_admin END,
-               is_active = CASE WHEN ? THEN ? ELSE is_active END,
-               password_hash = CASE WHEN ? THEN ? ELSE password_hash END
-               WHERE id = ?""",
-            (
-                "first_name" in updates, updates.get("first_name"),
-                "last_name" in updates, updates.get("last_name"),
-                "company" in updates, updates.get("company"),
-                "role" in updates, updates.get("role"),
-                "mobile" in updates, updates.get("mobile"),
-                "language" in updates, updates.get("language"),
-                "is_admin" in updates, updates.get("is_admin"),
-                "is_active" in updates, updates.get("is_active"),
-                "password_hash" in updates, updates.get("password_hash"),
-                user_id,
-            ),
+        conn.execute(f"UPDATE users SET {assignments} WHERE id = %s", tuple(values))
+        _write_audit(
+            conn,
+            actor_email,
+            "update_user",
+            str(user_id),
+            str(sorted(updates.keys())),
         )
-        _write_audit(conn, actor_email, "update_user", str(user_id),
-                     str(sorted(updates.keys())))
 
-
-# ── Login tracking ────────────────────────────────────────────────────────────
 
 def record_login_success(user_id: int, email: str) -> None:
     with _db() as conn:
         conn.execute(
-            """UPDATE users
-               SET last_login = ?, failed_login_attempts = 0, locked_until = NULL
-               WHERE id = ?""",
+            """
+            UPDATE users
+            SET last_login = %s, failed_login_attempts = 0, locked_until = NULL
+            WHERE id = %s
+            """,
             (_utcnow(), user_id),
         )
         _write_audit(conn, email, "login", email, "success")
@@ -186,21 +217,26 @@ def record_login_success(user_id: int, email: str) -> None:
 def record_login_failure(user_id: int, email: str) -> None:
     with _db() as conn:
         conn.execute(
-            "UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = ?",
+            """
+            UPDATE users
+            SET failed_login_attempts = failed_login_attempts + 1
+            WHERE id = %s
+            """,
             (user_id,),
         )
         row = conn.execute(
-            "SELECT failed_login_attempts FROM users WHERE id = ?", (user_id,)
+            "SELECT failed_login_attempts FROM users WHERE id = %s",
+            (user_id,),
         ).fetchone()
-        if row and row["failed_login_attempts"] >= _MAX_FAILED_ATTEMPTS:
-            locked = (
-                datetime.now(timezone.utc) + timedelta(minutes=_LOCKOUT_MINUTES)
-            ).isoformat()
-            conn.execute("UPDATE users SET locked_until = ? WHERE id = ?", (locked, user_id))
+        attempts = int((row or {}).get("failed_login_attempts", 0) or 0)
+        if attempts >= _MAX_FAILED_ATTEMPTS:
+            locked = datetime.now(timezone.utc) + timedelta(minutes=_LOCKOUT_MINUTES)
+            conn.execute(
+                "UPDATE users SET locked_until = %s WHERE id = %s",
+                (locked.isoformat(), user_id),
+            )
         _write_audit(conn, email, "login_failed", email, "invalid credentials")
 
-
-# ── Audit log ─────────────────────────────────────────────────────────────────
 
 def log_audit(actor_email: str, action: str, target_email: str = "", detail: str = "") -> None:
     with _db() as conn:
@@ -210,26 +246,37 @@ def log_audit(actor_email: str, action: str, target_email: str = "", detail: str
 def get_audit_log(limit: int = 200) -> list[dict]:
     with _db() as conn:
         rows = conn.execute(
-            "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?", (limit,)
+            "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT %s",
+            (int(limit),),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [_normalize_row(row) for row in rows if row]
 
-
-# ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_row(row: Any) -> dict | None:
+    if not row:
+        return None
+    payload = dict(row)
+    for key, value in list(payload.items()):
+        if isinstance(value, datetime):
+            payload[key] = value.astimezone(timezone.utc).isoformat()
+    return payload
+
+
 def _write_audit(
-    conn: sqlite3.Connection,
+    conn: Any,
     actor: str,
     action: str,
     target: str,
     detail: str = "",
 ) -> None:
     conn.execute(
-        """INSERT INTO audit_log (timestamp, actor_email, action, target_email, detail)
-           VALUES (?, ?, ?, ?, ?)""",
+        """
+        INSERT INTO audit_log (timestamp, actor_email, action, target_email, detail)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
         (_utcnow(), actor, action, target, detail),
     )

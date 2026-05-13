@@ -278,8 +278,10 @@ If local `main` is ahead with unsigned commits, create a PR branch from
 | `src/agents/report_writer.py` | report package assembly agent used by report runtime |
 | `src/memory/short_term_store.py` | run-scoped memory including department run states |
 | `src/memory/consolidation.py` | process-pattern consolidation into long-term memory |
+| `src/security/secret_guard.py` | runtime prompt secret guard: blocks secret-like prompt payloads before model calls |
 | `docs/drawio/target_runtime_architecture.md` | canonical detailed runtime architecture reference |
 | `docs/target_runtime_architecture.md` | compatibility wrapper that points to the canonical architecture document |
+| `docs/security_policy_enforcement_checklist.md` | enforceable security baseline for secrets, prompts, and CI gates |
 | `knowledge/sources/*.yaml` | department-specific source registry: priorities, evidence type, provenance notes |
 | `knowledge/policies/*.yaml` | department-specific required fields, evidence minima, and gate rules |
 | `knowledge/query_strategies/*.yaml` | runtime query templates per task — single query-strategy authority |

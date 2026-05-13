@@ -28,11 +28,14 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_ACTOR: ${{ github.actor }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LIQUISTO_POSTGRES_DSN: ${{ secrets.LIQUISTO_POSTGRES_DSN }}
+          LIQUISTO_AUTH_POSTGRES_DSN: ${{ secrets.LIQUISTO_AUTH_POSTGRES_DSN }}
+          LIQUISTO_STORAGE_PROFILE: production
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
-          envs: GHCR_TOKEN,GHCR_ACTOR,OPENAI_API_KEY
+          envs: GHCR_TOKEN,GHCR_ACTOR,OPENAI_API_KEY,LIQUISTO_POSTGRES_DSN,LIQUISTO_AUTH_POSTGRES_DSN,LIQUISTO_STORAGE_PROFILE
           script: |
             cd /opt/liquisto
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
