@@ -396,6 +396,23 @@ def test_secret_scan_validators_accept_clean_reports(tmp_path: Path) -> None:
     val_secret_scan.validate_gitleaks(gitleaks_report)
 
 
+def test_secret_scan_validator_ignores_generated_artifact_paths(tmp_path: Path) -> None:
+    detect_report = tmp_path / "detect.json"
+    detect_report.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "artifacts/pre_pr_gate_report.json": [{"type": "Secret", "line_number": 1}],
+                    "bom/actions/actions-bom.json": [{"type": "Secret", "line_number": 2}],
+                    "bom/attestations/compliance-manifest.sha256": [{"type": "Secret", "line_number": 3}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    val_secret_scan.validate_detect_secrets(detect_report)
+
+
 def test_gitleaks_validator_fails_clearly_when_report_missing(tmp_path: Path) -> None:
     missing = tmp_path / "no-report.json"
     with pytest.raises(SystemExit, match="Secret scan report missing"):
