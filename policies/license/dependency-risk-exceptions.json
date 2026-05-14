@@ -1,4 +1,21 @@
 {
   "schema_version": "1.0",
-  "exceptions": []
+  "exceptions": [
+    {
+      "id": "LIC-PSYCOPG-LGPL-001",
+      "package": "psycopg",
+      "owner": "@liquisto/security-governance",
+      "reason": "Runtime requires psycopg3 for PostgreSQL connectivity; LGPL-3.0-only under legal review and temporary acceptance.",
+      "expires": "2026-08-31",
+      "accepted_risk": "Temporary license-policy exception while legal/compliance review finalizes long-term disposition."
+    },
+    {
+      "id": "LIC-PSYCOPG-BINARY-LGPL-001",
+      "package": "psycopg-binary",
+      "owner": "@liquisto/security-governance",
+      "reason": "Binary wheel companion package for psycopg3; same temporary LGPL-3.0-only exception during compliance review.",
+      "expires": "2026-08-31",
+      "accepted_risk": "Temporary license-policy exception while legal/compliance review finalizes long-term disposition."
+    }
+  ]
 }
