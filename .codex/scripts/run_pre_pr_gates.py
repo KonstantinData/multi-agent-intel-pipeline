@@ -103,12 +103,14 @@ def build_gates(base_ref: str) -> list[Gate]:
                     "docker run --rm --platform linux/amd64 -v \"%cd%:/project\" "
                     f"{TRIVY_IMAGE} fs /project --exit-code 1 --severity HIGH,CRITICAL "
                     "--ignore-unfixed --ignorefile /project/.trivyignore --scanners vuln "
+                    "--timeout 15m "
                     "--skip-dirs '.git' --skip-dirs '.mypy_cache' --skip-dirs '.ruff_cache' "
                     "--skip-dirs '.pytest_cache' --skip-dirs 'bom'"
                 ),
                 (
                     "docker run --rm --platform linux/amd64 -v \"%cd%:/project\" "
                     f"{TRIVY_IMAGE} config /project --exit-code 1 --severity HIGH,CRITICAL "
+                    "--timeout 15m "
                     "--misconfig-scanners dockerfile --skip-dirs '.git' --skip-dirs 'bom'"
                 ),
             ),
