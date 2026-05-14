@@ -1,0 +1,71 @@
+id = "contract_architecture_test_gate_pre_pr"
+name = "Contract and Architecture Change Test Gate"
+scope_fit = "both"
+intent = "Require architecture tests and affected contract tests when orchestration contracts or knowledge definitions change."
+owner = "liquisto/runtime-review"
+risk_level = "high"
+
+[trigger]
+paths = [
+  "src/orchestration/contracts.py",
+  "src/orchestration/**",
+  "knowledge/**",
+]
+
+[local_commands]
+required = [
+  "pytest -q tests/architecture",
+]
+conditional = [
+  "pytest -q tests/test_scripts_contracts.py",
+  "pytest -q tests/meeting_readiness tests/golden tests/test_query_*.py tests/smoke",
+]
+
+[contract_test_mapping]
+contracts = [
+  "src/orchestration/contracts.py -> pytest -q tests/architecture tests/test_scripts_contracts.py",
+]
+orchestration = [
+  "src/orchestration/** -> pytest -q tests/architecture",
+  "src/orchestration/** with contract-affecting diff -> pytest -q tests/test_scripts_contracts.py",
+]
+knowledge = [
+  "knowledge/** -> pytest -q tests/architecture",
+  "knowledge/query_strategies/** -> pytest -q tests/test_query_*.py",
+]
+
+[acceptance_criteria]
+must_pass = [
+  "pytest -q tests/architecture passes.",
+  "Affected contract tests pass based on contract_test_mapping and changed files.",
+  "For contracts.py changes, tests/test_scripts_contracts.py passes.",
+]
+failure_policy = "Run automatic remediation and re-check loops until all required architecture and mapped contract tests pass."
+
+[execution]
+mode = "auto_fix_then_recheck"
+max_auto_fix_cycles = 5
+require_manual_intervention = false
+
+[auto_remediation]
+strategy = [
+  "Identify failing test module and map it to changed orchestration/knowledge paths.",
+  "Apply minimal compatible fix in code or test fixtures.",
+  "Re-run failed tests first, then re-run full required test set.",
+  "Repeat until acceptance criteria are satisfied or max_auto_fix_cycles is reached.",
+]
+hard_blockers = [
+  "Missing runtime dependencies that cannot be installed in-session.",
+  "Deterministic test failure caused by external infrastructure unavailable in-session.",
+  "Repository permission constraints that prevent required file updates.",
+]
+escalation_rule = "Ask user only when a hard_blocker is hit; otherwise continue autonomously."
+
+[evidence]
+canonical_ci_workflow = ".github/workflows/compliance-security-ai.yml"
+canonical_contract_test_job = "script-contract-tests"
+canonical_architecture_test_job = "architecture-tests"
+related_docs = [
+  "AGENTS.md",
+  "README.md",
+]

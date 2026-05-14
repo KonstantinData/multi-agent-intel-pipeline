@@ -1,0 +1,73 @@
+id = "security_gate_regression_pre_pr"
+name = "Security Gate Regression Check Before PR"
+scope_fit = "security_pipeline"
+intent = "Ensure security-critical changes cannot bypass canonical CI security gates."
+owner = "liquisto/security-governance"
+risk_level = "high"
+
+[trigger]
+paths = [
+  ".github/workflows/**",
+  ".github/rulesets/**",
+  ".github/dependency-review-config.yml",
+  "Dockerfile",
+  ".dockerignore",
+  ".gitleaks.toml",
+  "requirements.txt",
+  "requirements.lock",
+  "pyproject.toml",
+  "scripts/**",
+  "policies/rego/**",
+]
+
+[local_commands]
+required = [
+  "ruff check src scripts tests",
+  "mypy",
+  "bandit -q -r src scripts -x tests",
+  "python scripts/validate_ruleset_config.py",
+  "python scripts/check_github_actions_hardening.py",
+]
+conditional = [
+  "uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock",
+  "python scripts/run_pip_audit_with_policy.py",
+  "python scripts/generate_actions_bom.py --output bom/actions/actions-bom.json",
+  "python scripts/validate_actions_bom.py bom/actions/actions-bom.json",
+  "python scripts/validate_dependency_policy.py",
+]
+
+[acceptance_criteria]
+must_pass = [
+  "No command in local_commands.required fails.",
+  "When requirements or workflow files changed, all relevant conditional commands pass.",
+  "No unsigned or unreviewed bypass path is introduced for required status checks.",
+  "Required status-check contexts remain present in .github/rulesets/main-protection.json.",
+]
+failure_policy = "Run automatic remediation and re-check loops until all gates pass; block PR only if a hard blocker remains."
+
+[execution]
+mode = "auto_fix_then_recheck"
+max_auto_fix_cycles = 5
+require_manual_intervention = false
+
+[auto_remediation]
+strategy = [
+  "Parse failing command output and map failure to the changed files.",
+  "Apply minimal code/config fix aligned with repository policy.",
+  "Re-run only the failed gate first; if green, run the full required gate set.",
+  "Repeat until all acceptance criteria pass or max_auto_fix_cycles is reached.",
+]
+hard_blockers = [
+  "Missing credentials or secrets required for checks.",
+  "Unavailable external tooling/runtime that cannot be provisioned in-session.",
+  "Conflicting branch protection or repository permission constraints.",
+]
+escalation_rule = "Ask user only when a hard_blocker is hit; otherwise continue autonomously."
+
+[evidence]
+canonical_ci_workflow = ".github/workflows/compliance-security-ai.yml"
+canonical_ruleset = ".github/rulesets/main-protection.json"
+related_docs = [
+  "docs/security_policy_enforcement_checklist.md",
+  "docs/en/security/threat-model.md",
+]
