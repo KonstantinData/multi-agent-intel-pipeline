@@ -8,7 +8,7 @@ from typing import Any
 
 _SECRET_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("private_key_block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", re.IGNORECASE)),
-    ("openai_api_key", re.compile(r"\bsk-[A-Za-z0-9]{20,}\b")),
+    ("openai_api_key", re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{19,}\b")),
     ("github_token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
     ("aws_access_key_id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("bearer_token_header", re.compile(r"authorization\s*:\s*bearer\s+[A-Za-z0-9._\-]{16,}", re.IGNORECASE)),
