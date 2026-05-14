@@ -1,0 +1,9 @@
+name = "liquisto_fast"
+intent = "Low-risk edits and quick iterations"
+reasoning_effort = "low"
+max_context_blocks = 6
+max_retrieved_heuristics = 2
+require_full_test_suite = false
+require_architecture_tests = true
+token_budget_soft = 6000
+token_budget_hard = 10000

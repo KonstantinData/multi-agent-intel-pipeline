@@ -1,0 +1,17 @@
+{
+  "id": "gt-0001",
+  "title": "Example gold task",
+  "category": "contract_changes",
+  "risk_level": "high",
+  "target_paths": [
+    "src/orchestration/contracts.py"
+  ],
+  "expected_validations": [
+    "architecture_tests",
+    "targeted_runtime_tests"
+  ],
+  "success_criteria": [
+    "no contract regressions",
+    "tests pass in declared scope"
+  ]
+}

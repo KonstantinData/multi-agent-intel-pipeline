@@ -1,0 +1,26 @@
+[defaults]
+profile = "liquisto_standard"
+
+[task_categories.architecture_review]
+profile = "liquisto_deep"
+reasoning_effort = "high"
+
+[task_categories.contract_changes]
+profile = "liquisto_deep"
+reasoning_effort = "high"
+
+[task_categories.small_bugfix]
+profile = "liquisto_fast"
+reasoning_effort = "low"
+
+[task_categories.docs_sync]
+profile = "liquisto_fast"
+reasoning_effort = "low"
+
+[task_categories.security_hardening]
+profile = "liquisto_deep"
+reasoning_effort = "high"
+
+[task_categories.test_refactor]
+profile = "liquisto_standard"
+reasoning_effort = "medium"

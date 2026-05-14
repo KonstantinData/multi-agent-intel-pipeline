@@ -1,0 +1,6 @@
+name = "weekly_eval"
+kind = "cron"
+schedule = "weekly"
+day = "sunday"
+window = "03:00"
+intent = "run gold task replay and update scorecards against baselines"

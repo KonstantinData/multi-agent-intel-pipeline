@@ -1,0 +1,5 @@
+name = "nightly_consolidation"
+kind = "cron"
+schedule = "daily"
+window = "02:00"
+intent = "merge duplicate memory entries, update confidence, emit report"

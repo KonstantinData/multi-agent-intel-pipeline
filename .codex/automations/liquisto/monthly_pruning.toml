@@ -1,0 +1,6 @@
+name = "monthly_pruning"
+kind = "cron"
+schedule = "monthly"
+day = 1
+window = "04:00"
+intent = "prune stale low-confidence memory and rotate snapshots"

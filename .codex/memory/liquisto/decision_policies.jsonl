@@ -1,0 +1,1 @@
+{"id":"dp-0001","context_tags":["routing","risk","profile"],"if":"Task touches control-plane boundaries, security logic, or runtime contracts.","then":"Route to deep profile and require targeted tests plus architecture checks before completion.","rationale":"Boundary and contract changes have high regression cost.","confidence":0.88,"last_validated_at":"2026-05-14"}

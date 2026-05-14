@@ -1,0 +1,23 @@
+[defaults]
+prefer_parallel_reads = true
+prefer_apply_patch_for_single_file = true
+prefer_non_destructive_git = true
+
+[task_categories.architecture_review]
+primary = ["rg", "targeted_file_reads"]
+secondary = ["tests_architecture_subset"]
+
+[task_categories.contract_changes]
+primary = ["typed_contract_edit", "affected_tests"]
+secondary = ["runtime_smoke_tests"]
+
+[task_categories.small_bugfix]
+primary = ["targeted_edit", "minimal_repro_test"]
+secondary = ["broader_regression_if_risk_detected"]
+
+[task_categories.docs_sync]
+primary = ["targeted_doc_update", "link_check"]
+
+[task_categories.security_hardening]
+primary = ["policy_first", "secret_guard_validation", "focused_tests"]
+secondary = ["full_suite_if_core_runtime_touched"]
