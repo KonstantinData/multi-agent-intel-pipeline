@@ -16,6 +16,7 @@
 /Dockerfile @KonstantinData @liquisto/security-governance
 /.dockerignore @KonstantinData @liquisto/security-governance
 /.gitleaks.toml @KonstantinData @liquisto/security-governance
+/.codex/ @KonstantinData @liquisto/security-governance @liquisto/runtime-review
 
 /src/orchestration/ @KonstantinData @liquisto/runtime-review
 /src/agents/ @KonstantinData @liquisto/runtime-review
