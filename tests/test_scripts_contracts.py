@@ -1013,4 +1013,30 @@ def test_pre_push_hook_invokes_codex_pre_pr_runner() -> None:
     hook_path = ROOT / ".githooks" / "pre-push"
     assert hook_path.is_file()
     text = hook_path.read_text(encoding="utf-8")
-    assert "python .codex/scripts/run_pre_pr_gates.py --fail-fast" in text
+    assert "python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume" in text
+
+
+def test_pre_pr_gate_resume_starts_at_last_failed_gate() -> None:
+    report = ROOT / "artifacts" / "pre_pr_gate_resume_test.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {"name": "lint", "result": "success"},
+                    {"name": "type-check", "result": "success"},
+                    {"name": "bandit-sast", "result": "failure"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._resolve_resume_start(
+        gates=gates,
+        explicit_start="",
+        resume=True,
+        report_path=report,
+    )
+    assert start == "bandit-sast"
+    report.unlink(missing_ok=True)

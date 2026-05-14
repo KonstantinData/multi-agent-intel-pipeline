@@ -252,8 +252,13 @@ git config core.hooksPath .githooks
 The `pre-push` hook runs:
 
 ```bash
-python .codex/scripts/run_pre_pr_gates.py --fail-fast
+python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume
 ```
+
+Progress and resume state are written to:
+
+- `artifacts/pre_pr_gate_progress.json`
+- `artifacts/pre_pr_gate_report.json`
 
 Manual single-file check:
 

@@ -19,6 +19,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 from check_workflow_needs_result import evaluate_needs
 
 REPORT_PATH = ROOT / "artifacts" / "pre_pr_gate_report.json"
+PROGRESS_PATH = ROOT / "artifacts" / "pre_pr_gate_progress.json"
 
 GITLEAKS_IMAGE = "zricethezav/gitleaks@sha256:105ac66a57b2bb8afb61a3b8a5dcc4817773d03724a7e8a515214cfe58225556"
 TRIVY_IMAGE = "aquasec/trivy@sha256:fc10faf341a1d8fa8256c5ff1a6662ef74dd38b65034c8ce42346cf958a02d5d"
@@ -196,15 +197,75 @@ def _parse_set(raw: str) -> set[str]:
     return {item.strip() for item in raw.split(",") if item.strip()}
 
 
+def _load_json(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    return None
+
+
+def _extract_previous_results(report_path: Path) -> dict[str, str]:
+    payload = _load_json(report_path)
+    if payload is None:
+        return {}
+    raw_gates = payload.get("gates", [])
+    if not isinstance(raw_gates, list):
+        return {}
+    results: dict[str, str] = {}
+    for gate_item in raw_gates:
+        if not isinstance(gate_item, dict):
+            continue
+        name = str(gate_item.get("name", "")).strip()
+        result = str(gate_item.get("result", "")).strip()
+        if name:
+            results[name] = result
+    return results
+
+
+def _resolve_resume_start(
+    *,
+    gates: list[Gate],
+    explicit_start: str,
+    resume: bool,
+    report_path: Path,
+) -> str:
+    if explicit_start:
+        return explicit_start
+    if not resume:
+        return ""
+    previous = _extract_previous_results(report_path)
+    if not previous:
+        return ""
+    for gate in gates:
+        if previous.get(gate.name) != "success":
+            return gate.name
+    return ""
+
+
+def _write_progress(
+    path: Path,
+    payload: dict[str, Any],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--list", action="store_true", help="List gate names and exit.")
+    parser.add_argument("--resume", action="store_true", help="Resume from last failed gate in previous report.")
     parser.add_argument("--start-at", default="", help="Start execution from this gate.")
     parser.add_argument("--only", default="", help="Comma-separated gate names to run.")
     parser.add_argument("--skip", default="", help="Comma-separated gate names to skip.")
     parser.add_argument("--base-ref", default="origin/main", help="Base ref for dependency-diff-gate.")
     parser.add_argument("--fail-fast", action="store_true", help="Stop at first failed gate.")
     parser.add_argument("--report", default=str(REPORT_PATH), help="JSON report output path.")
+    parser.add_argument("--progress", default=str(PROGRESS_PATH), help="JSON progress output path.")
     return parser.parse_args()
 
 
@@ -217,27 +278,66 @@ def main() -> None:
             print(gate.name)
         return
 
+    report_path = Path(args.report)
+    if not report_path.is_absolute():
+        report_path = ROOT / report_path
+    progress_path = Path(args.progress)
+    if not progress_path.is_absolute():
+        progress_path = ROOT / progress_path
+
+    start_at = _resolve_resume_start(
+        gates=gates,
+        explicit_start=args.start_at.strip(),
+        resume=args.resume,
+        report_path=report_path,
+    )
     selected = _subset_gates(
         gates,
         only=_parse_set(args.only),
         skip=_parse_set(args.skip),
-        start_at=args.start_at.strip(),
+        start_at=start_at,
     )
     if not selected:
         raise SystemExit("No gates selected.")
 
+    previous_results = _extract_previous_results(report_path) if args.resume else {}
+    canonical_order = [g.name for g in gates]
     report: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
+        "resume_mode": bool(args.resume),
+        "resolved_start_at": start_at or "",
         "gates": [],
     }
     needs: dict[str, dict[str, str]] = {}
+    selected_names = {gate.name for gate in selected}
 
-    for gate in selected:
-        print(f"\n=== {gate.name} ===")
+    for gate_name in canonical_order:
+        if gate_name in selected_names:
+            continue
+        if previous_results.get(gate_name) == "success":
+            report["gates"].append({"name": gate_name, "result": "success", "source": "previous_report"})
+            needs[gate_name] = {"result": "success"}
+
+    total = len(selected)
+    for gate_index, gate in enumerate(selected, start=1):
+        print(f"\n=== [{gate_index}/{total}] {gate.name} ===", flush=True)
         gate_ok = True
         steps: list[dict[str, Any]] = []
-        for cmd in gate.commands:
-            print(f"$ {cmd}")
+        for step_index, cmd in enumerate(gate.commands, start=1):
+            print(f"[{gate.name} {step_index}/{len(gate.commands)}] $ {cmd}", flush=True)
+            _write_progress(
+                progress_path,
+                {
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "current_gate": gate.name,
+                    "current_gate_index": gate_index,
+                    "total_gates": total,
+                    "current_command_index": step_index,
+                    "current_command_total": len(gate.commands),
+                    "command": cmd,
+                    "report_path": report_path.as_posix(),
+                },
+            )
             proc = _run(cmd)
             steps.append(
                 {
@@ -249,13 +349,15 @@ def main() -> None:
             )
             if proc.returncode != 0:
                 gate_ok = False
-                print(proc.stdout)
-                print(proc.stderr)
+                if proc.stdout:
+                    print(proc.stdout, flush=True)
+                if proc.stderr:
+                    print(proc.stderr, flush=True)
                 break
         result = "success" if gate_ok else "failure"
         needs[gate.name] = {"result": result}
         report["gates"].append({"name": gate.name, "result": result, "steps": steps})
-        print(f"[{result.upper()}] {gate.name}")
+        print(f"[{result.upper()}] {gate.name}", flush=True)
         if not gate_ok and args.fail_fast:
             break
 
@@ -265,19 +367,27 @@ def main() -> None:
         "failed_gates": failures,
     }
 
-    out_path = Path(args.report)
-    if not out_path.is_absolute():
-        out_path = ROOT / out_path
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\nReport written: {out_path.as_posix()}")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    _write_progress(
+        progress_path,
+        {
+            "updated_at": datetime.now(UTC).isoformat(),
+            "status": "completed",
+            "pipeline_result": report["pipeline_status"]["result"],
+            "failed_gates": failures,
+            "report_path": report_path.as_posix(),
+        },
+    )
+    print(f"\nReport written: {report_path.as_posix()}", flush=True)
+    print(f"Progress written: {progress_path.as_posix()}", flush=True)
 
     if failures:
-        print("\nFailed gates:")
+        print("\nFailed gates:", flush=True)
         for name, result in failures.items():
-            print(f"- {name}: {result}")
+            print(f"- {name}: {result}", flush=True)
         raise SystemExit(1)
-    print("\nAll required compliance-security-ai gates passed.")
+    print("\nAll required compliance-security-ai gates passed.", flush=True)
 
 
 if __name__ == "__main__":
