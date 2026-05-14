@@ -22,6 +22,7 @@ import generate_actions_bom as gen_actions_bom  # noqa: E402
 import generate_ai_bom as gen_ai_bom  # noqa: E402
 import generate_release_attestation as gen_attestation  # noqa: E402
 import generate_sbom as gen_sbom  # noqa: E402
+import generate_instruction_index as gen_instruction_index  # noqa: E402
 import generate_trivyignore as gen_trivyignore  # noqa: E402
 import validate_actions_bom as val_actions_bom  # noqa: E402
 import validate_ai_bom as val_ai_bom  # noqa: E402
@@ -191,6 +192,53 @@ def test_repository_structure_allows_german_docs(tmp_path: Path) -> None:
     de_doc.write_text("ok", encoding="utf-8")
 
     val_audit.validate_repository_structure(tmp_path)
+
+
+def test_instruction_index_contains_required_entries() -> None:
+    index = gen_instruction_index.build_instruction_index(ROOT)
+    failures = gen_instruction_index.validate_instruction_index(index, ROOT)
+    assert not failures
+    assert "required_startup_message" in index
+    assert "Pflicht-Startmeldung:" in index["required_startup_message"]
+    all_files = set(index["all_files"])
+    assert ".codex/README.md" in all_files
+    assert ".codex/policies/README.md" in all_files
+    assert ".codex/config/README.md" in all_files
+    assert ".codex/policies/liquisto/secret_policy.md" in all_files
+    assert ".codex/config/profiles/liquisto_standard.toml" in all_files
+
+
+def test_instruction_index_validation_fails_when_required_file_missing(tmp_path: Path) -> None:
+    (tmp_path / ".codex").mkdir(parents=True)
+    (tmp_path / ".codex" / "policies" / "liquisto").mkdir(parents=True)
+    (tmp_path / ".codex" / "config" / "profiles").mkdir(parents=True)
+    (tmp_path / ".codex" / "config" / "routing").mkdir(parents=True)
+    (tmp_path / ".codex" / "tasks" / "liquisto").mkdir(parents=True)
+    (tmp_path / ".codex" / "skills" / "liquisto" / "supervisor").mkdir(parents=True)
+    (tmp_path / ".codex" / "skills" / "shared" / "review").mkdir(parents=True)
+    # .codex/README.md intentionally missing.
+    (tmp_path / ".codex" / "policies" / "README.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "README.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "secret_policy.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "tool_allowlist.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "prompt_budget_policy.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "README.md").write_text("c", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "profiles" / "liquisto_fast.toml").write_text("name='f'", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "profiles" / "liquisto_standard.toml").write_text("name='s'", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "profiles" / "liquisto_deep.toml").write_text("name='d'", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "routing" / "model_routing.toml").write_text("x=1", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "routing" / "tool_routing.toml").write_text("x=1", encoding="utf-8")
+    (tmp_path / ".codex" / "tasks" / "README.md").write_text("t", encoding="utf-8")
+    (tmp_path / ".codex" / "tasks" / "liquisto" / "README.md").write_text("t", encoding="utf-8")
+    (tmp_path / ".codex" / "tasks" / "liquisto" / "sample.toml").write_text("id='x'", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "README.md").write_text("s", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "liquisto" / "README.md").write_text("s", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "liquisto" / "supervisor" / "README.md").write_text("x", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "shared" / "review" / "README.md").write_text("x", encoding="utf-8")
+
+    index = gen_instruction_index.build_instruction_index(tmp_path)
+    failures = gen_instruction_index.validate_instruction_index(index, tmp_path)
+    assert any(".codex/README.md" in failure for failure in failures)
 
 
 def test_validate_ai_bom_rejects_missing_models(tmp_path: Path) -> None:

@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "root": "D:/Git-GitHub/Repositories/00-Liquisto/multi-agent-intel-pipeline",
+  "precedence": [
+    ".codex policies",
+    ".codex config (profiles + routing)",
+    ".codex task gates",
+    ".codex skills",
+    ".codex memory/eval/telemetry (observational, non-normative)"
+  ],
+  "required_startup_message": "Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden (Instruction-Index, Policies, Config/Routing, Tasks, Skills). Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede Abweichung sofort mit Begründung.",
+  "required_files": [
+    ".codex/README.md",
+    ".codex/policies/README.md",
+    ".codex/policies/liquisto/README.md",
+    ".codex/policies/liquisto/secret_policy.md",
+    ".codex/policies/liquisto/tool_allowlist.md",
+    ".codex/policies/liquisto/prompt_budget_policy.md",
+    ".codex/config/README.md",
+    ".codex/config/profiles/liquisto_fast.toml",
+    ".codex/config/profiles/liquisto_standard.toml",
+    ".codex/config/profiles/liquisto_deep.toml",
+    ".codex/config/routing/model_routing.toml",
+    ".codex/config/routing/tool_routing.toml",
+    ".codex/tasks/README.md",
+    ".codex/tasks/liquisto/README.md",
+    ".codex/skills/README.md",
+    ".codex/skills/liquisto/README.md"
+  ],
+  "groups": [
+    {
+      "id": "codex_core",
+      "title": "Codex Core Layer",
+      "description": "Operating-layer objective, precedence, and trust model.",
+      "files": [
+        ".codex/README.md"
+      ]
+    },
+    {
+      "id": "codex_policies",
+      "title": "Codex Policies",
+      "description": "Hard constraints for secrets, tools, memory, and budgets.",
+      "files": [
+        ".codex/policies/README.md",
+        ".codex/policies/liquisto/README.md",
+        ".codex/policies/liquisto/data_governance.md",
+        ".codex/policies/liquisto/heuristic_promotion_policy.md",
+        ".codex/policies/liquisto/memory_retention.md",
+        ".codex/policies/liquisto/memory_topology.md",
+        ".codex/policies/liquisto/prompt_budget_policy.md",
+        ".codex/policies/liquisto/secret_policy.md",
+        ".codex/policies/liquisto/tool_allowlist.md"
+      ]
+    },
+    {
+      "id": "codex_profiles_and_routing",
+      "title": "Codex Profiles and Routing",
+      "description": "Risk/effort profiles and model/tool routing defaults.",
+      "files": [
+        ".codex/config/README.md",
+        ".codex/config/profiles/liquisto_deep.toml",
+        ".codex/config/profiles/liquisto_fast.toml",
+        ".codex/config/profiles/liquisto_standard.toml",
+        ".codex/config/routing/model_routing.toml",
+        ".codex/config/routing/tool_routing.toml"
+      ]
+    },
+    {
+      "id": "codex_tasks",
+      "title": "Codex Task Gates",
+      "description": "Executable rule tasks with trigger paths and acceptance criteria.",
+      "files": [
+        ".codex/tasks/README.md",
+        ".codex/tasks/liquisto/README.md",
+        ".codex/tasks/liquisto/contract_architecture_test_gate.toml",
+        ".codex/tasks/liquisto/dependency_lock_sbom_license_gate.toml",
+        ".codex/tasks/liquisto/follow_up_grounding_gate.toml",
+        ".codex/tasks/liquisto/release_deploy_readiness_gate.toml",
+        ".codex/tasks/liquisto/runtime_bugfix_repro_test_gate.toml",
+        ".codex/tasks/liquisto/secret_guard_regression_gate.toml",
+        ".codex/tasks/liquisto/security_gate_regression.toml"
+      ]
+    },
+    {
+      "id": "codex_skills",
+      "title": "Codex Skills",
+      "description": "Deterministic execution playbooks for recurring task classes.",
+      "files": [
+        ".codex/skills/README.md",
+        ".codex/skills/liquisto/README.md",
+        ".codex/skills/liquisto/departments/README.md",
+        ".codex/skills/liquisto/followup/README.md",
+        ".codex/skills/liquisto/security/README.md",
+        ".codex/skills/liquisto/supervisor/README.md",
+        ".codex/skills/liquisto/synthesis/README.md",
+        ".codex/skills/liquisto/testing/README.md",
+        ".codex/skills/shared/README.md",
+        ".codex/skills/shared/incident/README.md",
+        ".codex/skills/shared/refactor/README.md",
+        ".codex/skills/shared/review/README.md"
+      ]
+    }
+  ],
+  "all_files": [
+    ".codex/README.md",
+    ".codex/config/README.md",
+    ".codex/config/profiles/liquisto_deep.toml",
+    ".codex/config/profiles/liquisto_fast.toml",
+    ".codex/config/profiles/liquisto_standard.toml",
+    ".codex/config/routing/model_routing.toml",
+    ".codex/config/routing/tool_routing.toml",
+    ".codex/policies/README.md",
+    ".codex/policies/liquisto/README.md",
+    ".codex/policies/liquisto/data_governance.md",
+    ".codex/policies/liquisto/heuristic_promotion_policy.md",
+    ".codex/policies/liquisto/memory_retention.md",
+    ".codex/policies/liquisto/memory_topology.md",
+    ".codex/policies/liquisto/prompt_budget_policy.md",
+    ".codex/policies/liquisto/secret_policy.md",
+    ".codex/policies/liquisto/tool_allowlist.md",
+    ".codex/skills/README.md",
+    ".codex/skills/liquisto/README.md",
+    ".codex/skills/liquisto/departments/README.md",
+    ".codex/skills/liquisto/followup/README.md",
+    ".codex/skills/liquisto/security/README.md",
+    ".codex/skills/liquisto/supervisor/README.md",
+    ".codex/skills/liquisto/synthesis/README.md",
+    ".codex/skills/liquisto/testing/README.md",
+    ".codex/skills/shared/README.md",
+    ".codex/skills/shared/incident/README.md",
+    ".codex/skills/shared/refactor/README.md",
+    ".codex/skills/shared/review/README.md",
+    ".codex/tasks/README.md",
+    ".codex/tasks/liquisto/README.md",
+    ".codex/tasks/liquisto/contract_architecture_test_gate.toml",
+    ".codex/tasks/liquisto/dependency_lock_sbom_license_gate.toml",
+    ".codex/tasks/liquisto/follow_up_grounding_gate.toml",
+    ".codex/tasks/liquisto/release_deploy_readiness_gate.toml",
+    ".codex/tasks/liquisto/runtime_bugfix_repro_test_gate.toml",
+    ".codex/tasks/liquisto/secret_guard_regression_gate.toml",
+    ".codex/tasks/liquisto/security_gate_regression.toml"
+  ]
+}
