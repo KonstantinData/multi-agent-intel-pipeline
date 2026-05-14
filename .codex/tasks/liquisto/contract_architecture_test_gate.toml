@@ -5,6 +5,11 @@ intent = "Require architecture tests and affected contract tests when orchestrat
 owner = "liquisto/runtime-review"
 risk_level = "high"
 
+[boundary]
+codex_layer = true
+part_of_liquisto_runtime = false
+touches_app_runtime = true
+
 [trigger]
 paths = [
   "src/orchestration/contracts.py",

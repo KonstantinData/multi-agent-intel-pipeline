@@ -5,6 +5,11 @@ intent = "For bugfixes in src/**, require a minimal reproducible failing test fi
 owner = "liquisto/runtime-review"
 risk_level = "medium"
 
+[boundary]
+codex_layer = true
+part_of_liquisto_runtime = false
+touches_app_runtime = true
+
 [trigger]
 paths = [
   "src/**",

@@ -5,6 +5,11 @@ intent = "For requirements.txt changes, enforce lock refresh, dependency policy 
 owner = "liquisto/security-governance"
 risk_level = "high"
 
+[boundary]
+codex_layer = true
+part_of_liquisto_runtime = false
+touches_app_runtime = false
+
 [trigger]
 paths = [
   "requirements.txt",
