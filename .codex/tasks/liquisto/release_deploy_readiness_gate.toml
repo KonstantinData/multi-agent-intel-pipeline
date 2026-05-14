@@ -5,6 +5,11 @@ intent = "Before deploy, enforce attestation/SBOM validity, image digest consist
 owner = "liquisto/security-governance"
 risk_level = "high"
 
+[boundary]
+codex_layer = true
+part_of_liquisto_runtime = false
+touches_app_runtime = true
+
 [trigger]
 paths = [
   ".github/workflows/release-attestation.yml",
