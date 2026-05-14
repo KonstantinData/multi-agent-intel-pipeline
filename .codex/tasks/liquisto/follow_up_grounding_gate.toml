@@ -1,0 +1,67 @@
+id = "follow_up_grounding_gate_pre_pr"
+name = "Follow-up Grounding Gate"
+scope_fit = "both"
+intent = "For follow-up and memory changes, enforce documented evidence-priority grounding from run-brain artifacts before pipeline_data and department packages."
+owner = "liquisto/runtime-review"
+risk_level = "high"
+
+[trigger]
+paths = [
+  "src/orchestration/follow_up.py",
+  "src/memory/**",
+]
+
+[local_commands]
+required = [
+  "pytest -q tests/architecture",
+  "pytest -q tests/meeting_readiness tests/golden tests/test_query_*.py tests/smoke",
+]
+conditional = [
+  "pytest -q -m integration",
+]
+
+[grounding_requirements]
+must_hold = [
+  "Primary evidence source for follow-up answers remains run-brain artifacts.",
+  "Secondary evidence source remains finalized pipeline_data.",
+  "Fallback evidence source remains department packages.",
+  "Follow-up artifacts remain persisted in follow_up_history/export path.",
+]
+
+[acceptance_criteria]
+must_pass = [
+  "All local_commands.required commands pass.",
+  "Grounding priority order is unchanged or explicitly tightened (never weakened).",
+  "When cross-module routing/storage behavior changed, integration tests pass.",
+]
+failure_policy = "Run automatic remediation and re-check loops until follow-up grounding and selected tests pass."
+
+[execution]
+mode = "auto_fix_then_recheck"
+max_auto_fix_cycles = 5
+require_manual_intervention = false
+
+[auto_remediation]
+strategy = [
+  "Detect whether failures are from grounding-order drift, routing, or persistence regressions.",
+  "Apply minimal fixes that restore run-brain-first grounding and documented fallback order.",
+  "Re-run failed tests first, then full required suite, then conditional integration when selected.",
+  "Repeat until acceptance criteria pass or max_auto_fix_cycles is reached.",
+]
+hard_blockers = [
+  "Follow-up behavior depends on unavailable external runtime components not provisionable in-session.",
+  "Deterministic grounding assertions cannot be evaluated due to missing fixture data/contracts.",
+  "Repository constraints prevent updating required tests or follow-up modules.",
+]
+escalation_rule = "Ask user only when a hard_blocker is hit; otherwise continue autonomously."
+
+[evidence]
+canonical_runtime_file = "src/orchestration/follow_up.py"
+canonical_ci_workflow = ".github/workflows/compliance-security-ai.yml"
+canonical_runtime_contract_job = "runtime-contract-tests"
+canonical_integration_job = "integration-tests"
+related_docs = [
+  "AGENTS.md",
+  "README.md",
+  "docs/drawio/target_runtime_architecture.md",
+]
