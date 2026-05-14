@@ -29,6 +29,18 @@ python preflight.py
 
 # 5. Start the UI
 streamlit run ui/app.py
+
+### Local Pre-PR Gate Run
+
+Before opening a PR, run the local compliance gate pipeline:
+
+```bash
+python .codex/scripts/run_pre_pr_gates.py --fail-fast
+```
+
+This mirrors the named gates in `.github/workflows/compliance-security-ai.yml` and writes a report to:
+
+`artifacts/pre_pr_gate_report.json`
 ```
 
 ## Architecture
@@ -229,6 +241,18 @@ uv pip compile requirements.txt --python-version 3.12 --output-file requirements
 ```bash
 pip install pre-commit
 pre-commit install     # runs Ruff + Bandit automatically on every git commit
+```
+
+### Local pre-push hook (enforce pre-PR gates)
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The `pre-push` hook runs:
+
+```bash
+python .codex/scripts/run_pre_pr_gates.py --fail-fast
 ```
 
 Manual single-file check:

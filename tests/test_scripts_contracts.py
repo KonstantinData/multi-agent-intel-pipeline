@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -31,6 +32,13 @@ import validate_dependency_policy as val_dep_policy  # noqa: E402
 import validate_ruleset_config as val_ruleset  # noqa: E402
 import validate_sbom as val_sbom  # noqa: E402
 import validate_secret_scan as val_secret_scan  # noqa: E402
+
+_PRE_PR_GATES_PATH = ROOT / ".codex" / "scripts" / "run_pre_pr_gates.py"
+_PRE_PR_GATES_SPEC = importlib.util.spec_from_file_location("pre_pr_gates", _PRE_PR_GATES_PATH)
+assert _PRE_PR_GATES_SPEC and _PRE_PR_GATES_SPEC.loader is not None
+pre_pr_gates = importlib.util.module_from_spec(_PRE_PR_GATES_SPEC)
+sys.modules[_PRE_PR_GATES_SPEC.name] = pre_pr_gates
+_PRE_PR_GATES_SPEC.loader.exec_module(pre_pr_gates)
 
 
 def test_ai_bom_roundtrip(tmp_path: Path) -> None:
@@ -972,3 +980,37 @@ def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:
         "Conflict resolver: security-architect > ai-compliance-owner > release-manager"
         in text
     )
+
+
+def test_pre_pr_gates_cover_required_workflow_levels() -> None:
+    required = {
+        "lint",
+        "type-check",
+        "bandit-sast",
+        "dependency-lock-gate",
+        "dependency-vuln-gate",
+        "secret-scan",
+        "governance-gates",
+        "policy-as-code-gate",
+        "scorecard-policy-gate",
+        "actions-hardening-gate",
+        "dependency-policy-gate",
+        "dependency-diff-gate",
+        "vuln-scan-gate",
+        "script-contract-tests",
+        "architecture-tests",
+        "runtime-contract-tests",
+        "integration-tests",
+        "ai-bom-gate",
+        "sbom-gate",
+        "provenance-gate",
+    }
+    names = {gate.name for gate in pre_pr_gates.build_gates("origin/main")}
+    assert required.issubset(names)
+
+
+def test_pre_push_hook_invokes_codex_pre_pr_runner() -> None:
+    hook_path = ROOT / ".githooks" / "pre-push"
+    assert hook_path.is_file()
+    text = hook_path.read_text(encoding="utf-8")
+    assert "python .codex/scripts/run_pre_pr_gates.py --fail-fast" in text
