@@ -52,7 +52,7 @@ def build_gates(base_ref: str) -> list[Gate]:
                 "python scripts/validate_secret_scan.py detect-secrets .secrets.scan.json",
                 (
                     "docker run --rm --platform linux/amd64 "
-                    "-v \"$PWD:/repo\" -w /repo "
+                    "-v \"%cd%:/repo\" -w /repo "
                     f"{GITLEAKS_IMAGE} detect --source . --config .gitleaks.toml "
                     "--report-format json --report-path .gitleaks.report.json --redact"
                 ),
@@ -74,12 +74,12 @@ def build_gates(base_ref: str) -> list[Gate]:
                 "python scripts/validate_actions_bom.py bom/actions/actions-bom.json",
                 (
                     "docker run --rm --platform linux/amd64 "
-                    "-v \"$PWD:/project\" -w /project "
+                    "-v \"%cd%:/project\" -w /project "
                     f"{CONFTEST_IMAGE} verify -p policies/rego"
                 ),
                 (
                     "docker run --rm --platform linux/amd64 "
-                    "-v \"$PWD:/project\" -w /project "
+                    "-v \"%cd%:/project\" -w /project "
                     f"{CONFTEST_IMAGE} test .github/workflows .github/rulesets -p policies/rego"
                 ),
             ),
@@ -99,14 +99,14 @@ def build_gates(base_ref: str) -> list[Gate]:
             (
                 "python scripts/generate_trivyignore.py",
                 (
-                    "docker run --rm --platform linux/amd64 -v \"$PWD:/project\" "
+                    "docker run --rm --platform linux/amd64 -v \"%cd%:/project\" "
                     f"{TRIVY_IMAGE} fs /project --exit-code 1 --severity HIGH,CRITICAL "
                     "--ignore-unfixed --ignorefile /project/.trivyignore --scanners vuln "
                     "--skip-dirs '.git' --skip-dirs '.mypy_cache' --skip-dirs '.ruff_cache' "
                     "--skip-dirs '.pytest_cache' --skip-dirs 'bom'"
                 ),
                 (
-                    "docker run --rm --platform linux/amd64 -v \"$PWD:/project\" "
+                    "docker run --rm --platform linux/amd64 -v \"%cd%:/project\" "
                     f"{TRIVY_IMAGE} config /project --exit-code 1 --severity HIGH,CRITICAL "
                     "--misconfig-scanners dockerfile --skip-dirs '.git' --skip-dirs 'bom'"
                 ),
