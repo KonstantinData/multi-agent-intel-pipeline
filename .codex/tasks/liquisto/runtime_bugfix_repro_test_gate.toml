@@ -1,0 +1,78 @@
+id = "runtime_bugfix_repro_test_gate_pre_pr"
+name = "Runtime Bugfix With Reproducible Minimal Test"
+scope_fit = "runtime_workflow"
+intent = "For bugfixes in src/**, require a minimal reproducible failing test first, then fix, then risk-based test suites."
+owner = "liquisto/runtime-review"
+risk_level = "medium"
+
+[trigger]
+paths = [
+  "src/**",
+]
+
+[workflow_order]
+required_sequence = [
+  "create_or_update_minimal_repro_test",
+  "run_repro_test_and_confirm_failure",
+  "apply_bugfix_in_src",
+  "re_run_repro_test_and_confirm_pass",
+  "run_risk_based_test_suites",
+]
+
+[local_commands]
+required = [
+  "pytest -q tests/architecture",
+]
+conditional = [
+  "pytest -q tests/meeting_readiness tests/golden tests/test_query_*.py tests/smoke",
+  "pytest -q -m integration",
+]
+
+[suite_selection]
+architecture_when = [
+  "Always for src/** bugfixes.",
+]
+runtime_contract_when = [
+  "When bugfix touches orchestration flow, meeting readiness, query behavior, or runtime contracts.",
+]
+integration_when = [
+  "When bugfix changes cross-module runtime behavior, storage boundaries, or external interaction paths.",
+]
+
+[acceptance_criteria]
+must_pass = [
+  "A minimal reproducible test exists and fails before fix.",
+  "The same reproducible test passes after fix.",
+  "pytest -q tests/architecture passes.",
+  "Runtime-contract and integration suites pass when selected by suite_selection.",
+]
+failure_policy = "Run automatic remediation and re-check loops until repro and selected test suites pass."
+
+[execution]
+mode = "auto_fix_then_recheck"
+max_auto_fix_cycles = 5
+require_manual_intervention = false
+
+[auto_remediation]
+strategy = [
+  "If no minimal repro test exists, create one targeting the observed failure mode.",
+  "Apply minimal bugfix in src/** to satisfy repro test without broad refactor.",
+  "Re-run repro test first, then architecture suite, then selected broader suites.",
+  "Repeat until acceptance criteria pass or max_auto_fix_cycles is reached.",
+]
+hard_blockers = [
+  "Failure cannot be reproduced deterministically in-session.",
+  "Required runtime dependencies or services unavailable and cannot be provisioned.",
+  "Repository constraints prevent adding or updating required tests.",
+]
+escalation_rule = "Ask user only when a hard_blocker is hit; otherwise continue autonomously."
+
+[evidence]
+canonical_ci_workflow = ".github/workflows/compliance-security-ai.yml"
+canonical_architecture_job = "architecture-tests"
+canonical_runtime_contract_job = "runtime-contract-tests"
+canonical_integration_job = "integration-tests"
+related_docs = [
+  "README.md",
+  "AGENTS.md",
+]

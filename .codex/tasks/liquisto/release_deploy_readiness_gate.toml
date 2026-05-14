@@ -1,0 +1,90 @@
+id = "release_deploy_readiness_gate_pre_deploy"
+name = "Release and Deploy Readiness Check"
+scope_fit = "both"
+intent = "Before deploy, enforce attestation/SBOM validity, image digest consistency, docker-compose runtime variable completeness, and no security-gate bypass."
+owner = "liquisto/security-governance"
+risk_level = "high"
+
+[trigger]
+paths = [
+  ".github/workflows/release-attestation.yml",
+  ".github/workflows/deploy.yml",
+  ".github/workflows/compliance-security-ai.yml",
+  ".github/rulesets/main-protection.json",
+  "docker-compose.yml",
+  "Dockerfile",
+  "scripts/generate_release_attestation.py",
+  "scripts/validate_sbom.py",
+  "scripts/validate_audit_schema.py",
+]
+
+[local_commands]
+required = [
+  "python scripts/generate_sbom.py --mode files --output bom/sbom/sbom.json",
+  "python scripts/validate_sbom.py bom/sbom/sbom.json",
+  "python scripts/generate_release_attestation.py --sbom bom/sbom/sbom.json --output bom/attestations/release-attestation.json",
+  "python scripts/validate_audit_schema.py release-attestation --path bom/attestations/release-attestation.json",
+  "python scripts/check_github_actions_hardening.py",
+  "python scripts/validate_ruleset_config.py",
+]
+conditional = [
+  "gh attestation verify <image_uri> -R <owner/repo>",
+  "gh attestation verify <image_uri> -R <owner/repo> --predicate-type https://cyclonedx.org/bom",
+]
+
+[consistency_checks]
+required = [
+  "Attestation artifact exists and schema validation passes.",
+  "SBOM artifact exists and schema validation passes.",
+  "Image digest format in release attestation is sha256:<64hex>.",
+  "docker-compose.yml requires runtime env vars for image tag and database/api credentials.",
+  "Branch ruleset still requires security pipeline status checks (no bypass).",
+]
+
+[compose_runtime_requirements]
+must_exist = [
+  "LIQUISTO_IMAGE_TAG",
+  "OPENAI_API_KEY",
+  "LIQUISTO_POSTGRES_DSN",
+  "LIQUISTO_AUTH_POSTGRES_DSN",
+  "LIQUISTO_STORAGE_PROFILE",
+]
+
+[acceptance_criteria]
+must_pass = [
+  "All local_commands.required commands pass.",
+  "consistency_checks.required are satisfied in the same change set.",
+  "No deploy workflow path bypasses release-attestation success requirement.",
+  "No branch protection change removes required security contexts.",
+]
+failure_policy = "Run automatic remediation and re-check loops until release/deploy readiness checks pass."
+
+[execution]
+mode = "auto_fix_then_recheck"
+max_auto_fix_cycles = 5
+require_manual_intervention = false
+
+[auto_remediation]
+strategy = [
+  "Classify failure into attestation, SBOM, digest, compose-env, or security-gate bypass category.",
+  "Apply minimal workflow/config/script fix aligned to repository governance.",
+  "Re-run failed check first, then re-run full required command set.",
+  "Repeat until acceptance criteria pass or max_auto_fix_cycles is reached.",
+]
+hard_blockers = [
+  "Missing GitHub/OIDC permissions or credentials required to validate attestations.",
+  "Unavailable registry/image reference required for digest attestation verification.",
+  "Repository permission constraints that prevent updating protected workflow/ruleset files.",
+]
+escalation_rule = "Ask user only when a hard_blocker is hit; otherwise continue autonomously."
+
+[evidence]
+canonical_release_workflow = ".github/workflows/release-attestation.yml"
+canonical_deploy_workflow = ".github/workflows/deploy.yml"
+canonical_security_workflow = ".github/workflows/compliance-security-ai.yml"
+canonical_ruleset = ".github/rulesets/main-protection.json"
+related_docs = [
+  "docs/target_server.md",
+  "docs/server-setup.md",
+  "README.md",
+]

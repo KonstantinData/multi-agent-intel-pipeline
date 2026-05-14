@@ -1,0 +1,72 @@
+id = "dependency_lock_sbom_license_gate_pre_pr"
+name = "Dependency Change Lock SBOM License Gate"
+scope_fit = "security_pipeline"
+intent = "For requirements.txt changes, enforce lock refresh, dependency policy validation, and SBOM/AI-BOM consistency."
+owner = "liquisto/security-governance"
+risk_level = "high"
+
+[trigger]
+paths = [
+  "requirements.txt",
+]
+
+[local_commands]
+required = [
+  "uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock",
+  "python scripts/validate_dependency_policy.py",
+  "python scripts/generate_ai_bom.py --output bom/ai-bom/ai-bom.json",
+  "python scripts/validate_ai_bom.py bom/ai-bom/ai-bom.json",
+  "python scripts/generate_sbom.py --mode files --output bom/sbom/sbom.json",
+  "python scripts/validate_sbom.py bom/sbom/sbom.json",
+]
+conditional = [
+  "python scripts/dependency_diff.py <base_requirements.lock> requirements.lock --output bom/actions/dependency-diff.json",
+]
+
+[consistency_checks]
+required = [
+  "requirements.lock reflects requirements.txt changes.",
+  "Dependency policy validation passes for lockfile and allowed registries/licenses.",
+  "Generated AI-BOM validates successfully.",
+  "Generated SBOM validates successfully.",
+]
+optional = [
+  "Dependency diff artifact is generated for review when a base lockfile is available.",
+]
+
+[acceptance_criteria]
+must_pass = [
+  "All local_commands.required commands pass.",
+  "requirements.lock is regenerated and consistent with requirements.txt.",
+  "AI-BOM and SBOM validation both pass in the same change set.",
+]
+failure_policy = "Run automatic remediation and re-check loops until all lock, policy, and BOM checks pass."
+
+[execution]
+mode = "auto_fix_then_recheck"
+max_auto_fix_cycles = 5
+require_manual_intervention = false
+
+[auto_remediation]
+strategy = [
+  "Classify failures into lock, dependency policy, AI-BOM, or SBOM categories.",
+  "Apply minimal dependency/config changes needed to satisfy failing gate.",
+  "Re-run only failed command first, then re-run full required command set.",
+  "Repeat until acceptance criteria pass or max_auto_fix_cycles is reached.",
+]
+hard_blockers = [
+  "Missing packaging toolchain that cannot be provisioned in-session.",
+  "Dependency policy violation requiring explicit governance exception.",
+  "Repository permission constraints that prevent lock or BOM artifact updates.",
+]
+escalation_rule = "Ask user only when a hard_blocker is hit; otherwise continue autonomously."
+
+[evidence]
+canonical_ci_workflow = ".github/workflows/compliance-security-ai.yml"
+canonical_dependency_policy_job = "dependency-policy-gate"
+canonical_ai_bom_job = "ai-bom-gate"
+canonical_sbom_job = "sbom-gate"
+related_docs = [
+  "README.md",
+  "docs/en/security/threat-model.md",
+]

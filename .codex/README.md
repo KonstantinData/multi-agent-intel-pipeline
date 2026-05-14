@@ -13,6 +13,7 @@ It is process-oriented and does not replace code or architecture as source of tr
 ## Level-5 Components
 
 - `config/`: runtime profiles and routing strategy.
+- `tasks/`: executable task definitions with triggers, commands, and acceptance checks.
 - `skills/`: explicit playbooks for recurring task classes.
 - `memory/`: procedural memory and anti-pattern history.
 - `eval/`: replay, scorecards, and regression baselines.
