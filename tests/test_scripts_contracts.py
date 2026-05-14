@@ -1013,7 +1013,7 @@ def test_pre_push_hook_invokes_codex_pre_pr_runner() -> None:
     hook_path = ROOT / ".githooks" / "pre-push"
     assert hook_path.is_file()
     text = hook_path.read_text(encoding="utf-8")
-    assert "python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume" in text
+    assert "python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume --resume-from-changes" in text
 
 
 def test_pre_pr_gate_resume_starts_at_last_failed_gate() -> None:
@@ -1040,3 +1040,73 @@ def test_pre_pr_gate_resume_starts_at_last_failed_gate() -> None:
     )
     assert start == "bandit-sast"
     report.unlink(missing_ok=True)
+
+
+def test_pre_pr_gate_change_scope_maps_python_to_lint() -> None:
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._resolve_start_from_changes(
+        gates,
+        ["src/orchestration/supervisor_loop.py", "README.md"],
+    )
+    assert start == "lint"
+
+
+def test_pre_pr_gate_change_scope_maps_codex_to_script_contract_tests() -> None:
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._resolve_start_from_changes(
+        gates,
+        [".codex/scripts/run_pre_pr_gates.py"],
+    )
+    assert start == "script-contract-tests"
+
+
+def test_pre_pr_gate_resolve_earliest_start_prefers_changed_scope() -> None:
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._min_gate(gates, "vuln-scan-gate", "lint")
+    assert start == "lint"
+
+
+def test_pre_pr_gate_status_prints_running_state(capsys: pytest.CaptureFixture[str]) -> None:
+    progress = ROOT / "artifacts" / "pre_pr_gate_status_running_test.json"
+    progress.parent.mkdir(parents=True, exist_ok=True)
+    progress.write_text(
+        json.dumps(
+            {
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "current_gate": "vuln-scan-gate",
+                "current_gate_index": 13,
+                "total_gates": 20,
+                "current_command_index": 2,
+                "current_command_total": 3,
+                "command": "docker run ... trivy",
+            }
+        ),
+        encoding="utf-8",
+    )
+    pre_pr_gates._print_status(progress)
+    out = capsys.readouterr().out
+    assert "status: running" in out
+    assert "gate: vuln-scan-gate (13/20)" in out
+    progress.unlink(missing_ok=True)
+
+
+def test_pre_pr_gate_status_prints_completed_state(capsys: pytest.CaptureFixture[str]) -> None:
+    progress = ROOT / "artifacts" / "pre_pr_gate_status_completed_test.json"
+    progress.parent.mkdir(parents=True, exist_ok=True)
+    progress.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "pipeline_result": "failure",
+                "failed_gates": {"vuln-scan-gate": "failure"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    pre_pr_gates._print_status(progress)
+    out = capsys.readouterr().out
+    assert "status: completed" in out
+    assert "pipeline_result: failure" in out
+    assert "vuln-scan-gate: failure" in out
+    progress.unlink(missing_ok=True)

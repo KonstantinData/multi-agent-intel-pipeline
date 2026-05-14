@@ -252,13 +252,25 @@ git config core.hooksPath .githooks
 The `pre-push` hook runs:
 
 ```bash
-python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume
+python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume --resume-from-changes
 ```
 
 Progress and resume state are written to:
 
 - `artifacts/pre_pr_gate_progress.json`
 - `artifacts/pre_pr_gate_report.json`
+
+Live status snapshot (any time, in a second terminal):
+
+```bash
+python .codex/scripts/run_pre_pr_gates.py --status
+```
+
+During execution, each gate prints live status as:
+
+- `=== [gate_index/total] gate-name ===`
+- `[gate-name step/steps] $ <command>`
+- `[SUCCESS|FAILURE] gate-name (seconds)`
 
 Manual single-file check:
 
