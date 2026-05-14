@@ -18,7 +18,7 @@ def test_secret_guard_accepts_safe_prompt_payload() -> None:
 
 
 def test_secret_guard_blocks_openai_key_and_redacts_error_content() -> None:
-    leaked = "sk-1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    leaked = "sk-1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # pragma: allowlist secret
     payload = [{"role": "user", "content": f"api_key={leaked}"}]
     with pytest.raises(PromptSecretLeakError) as exc_info:
         assert_no_secrets_in_payload(payload, context="unit_test_leak_payload")
@@ -31,7 +31,7 @@ def test_secret_guard_blocks_openai_key_and_redacts_error_content() -> None:
 def test_secret_guard_blocks_private_key_block() -> None:
     with pytest.raises(PromptSecretLeakError):
         assert_no_secrets_in_text(
-            "-----BEGIN PRIVATE KEY-----\nMIIB...\n-----END PRIVATE KEY-----",
+            "-----BEGIN PRIVATE KEY-----\nMIIB...\n-----END PRIVATE KEY-----",  # pragma: allowlist secret
             context="unit_test_private_key",
         )
 
