@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -21,9 +21,9 @@ import check_workflow_needs_result as needs_checker  # noqa: E402
 import dependency_diff as dep_diff  # noqa: E402
 import generate_actions_bom as gen_actions_bom  # noqa: E402
 import generate_ai_bom as gen_ai_bom  # noqa: E402
+import generate_instruction_index as gen_instruction_index  # noqa: E402
 import generate_release_attestation as gen_attestation  # noqa: E402
 import generate_sbom as gen_sbom  # noqa: E402
-import generate_instruction_index as gen_instruction_index  # noqa: E402
 import generate_trivyignore as gen_trivyignore  # noqa: E402
 import validate_actions_bom as val_actions_bom  # noqa: E402
 import validate_ai_bom as val_ai_bom  # noqa: E402
