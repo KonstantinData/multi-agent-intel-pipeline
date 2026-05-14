@@ -1,0 +1,9 @@
+name = "liquisto_deep"
+intent = "High-confidence changes for architecture, runtime behavior, and security"
+reasoning_effort = "high"
+max_context_blocks = 20
+max_retrieved_heuristics = 5
+require_full_test_suite = true
+require_architecture_tests = true
+token_budget_soft = 28000
+token_budget_hard = 42000

@@ -14,6 +14,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import check_github_actions_hardening as hardening  # noqa: E402
+import check_no_dotenv_files as check_no_dotenv_files  # noqa: E402
 import check_scorecard_policy as scorecard_policy  # noqa: E402
 import check_workflow_needs_result as needs_checker  # noqa: E402
 import dependency_diff as dep_diff  # noqa: E402
@@ -100,6 +101,24 @@ def test_workflow_hardening_detects_placeholder(tmp_path: Path) -> None:
     failures = hardening.check_workflow_hardening([wf])
     assert failures
     assert any("placeholder pattern" in f or "disallowed pattern" in f for f in failures)
+
+
+def test_no_dotenv_gate_rejects_tracked_env_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        check_no_dotenv_files,
+        "_tracked_files",
+        lambda: ["src/app.py", ".env", "docs/readme.md"],
+    )
+    assert check_no_dotenv_files.find_forbidden_dotenv_files() == [".env"]
+
+
+def test_no_dotenv_gate_accepts_clean_file_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        check_no_dotenv_files,
+        "_tracked_files",
+        lambda: ["src/app.py", "docs/readme.md"],
+    )
+    assert check_no_dotenv_files.find_forbidden_dotenv_files() == []
 
 
 def test_workflow_hardening_detects_unpinned_action(tmp_path: Path) -> None:

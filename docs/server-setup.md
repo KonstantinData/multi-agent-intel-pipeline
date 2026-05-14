@@ -150,6 +150,8 @@ In the GitHub repository under **Settings → Secrets and variables → Actions*
 | `HETZNER_USER` | `root` |
 | `HETZNER_SSH_KEY` | Full private key content including header and footer lines |
 | `OPENAI_API_KEY` | OpenAI API key (already present) |
+| `LIQUISTO_POSTGRES_DSN` | PostgreSQL DSN for runtime + auth (primary) |
+| `LIQUISTO_AUTH_POSTGRES_DSN` | Optional dedicated auth DSN; if empty, runtime DSN is used |
 
 ---
 

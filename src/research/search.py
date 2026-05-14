@@ -7,6 +7,7 @@ from src.config.settings import (
     get_openai_timeout_seconds,
     get_search_model,
 )
+from src.security.secret_guard import assert_no_secrets_in_text
 
 
 def perform_search(query: str, *, max_results: int = 5, timeout: int = 20) -> list[dict[str, str]]:
@@ -20,6 +21,7 @@ def perform_search(query: str, *, max_results: int = 5, timeout: int = 20) -> li
     if not query.strip():
         return []
     try:
+        assert_no_secrets_in_text(query, context="research_search_query")
         from openai import OpenAI
 
         api_key = get_openai_api_key()

@@ -33,6 +33,10 @@ from src.exporters.json_export import export_follow_up
 from src.models.schemas import FollowUpAnswer
 from src.orchestration.envelope import resolve_raw_package
 from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
+from src.storage.run_artifacts import (
+    load_latest_run_artifact_json,
+    should_use_postgres_run_artifacts,
+)
 from src.utils import dedup_safe as _dedup_safe
 
 logger = logging.getLogger(__name__)
@@ -50,9 +54,20 @@ def load_run_artifact(run_id: str) -> dict[str, Any]:
     - pipeline_data  (final PipelineData)
     - run_context    (full run brain including department_run_states)
     """
-    run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
-    pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
-    run_context = json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
+    if should_use_postgres_run_artifacts():
+        pipeline_data = load_latest_run_artifact_json(
+            run_id=run_id,
+            artifact_type="pipeline_data",
+        )
+        run_context = load_latest_run_artifact_json(
+            run_id=run_id,
+            artifact_type="run_context",
+        )
+        run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)
+    else:
+        run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
+        pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
+        run_context = json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
     logger.info(
         "load_run_artifact: run_id=%s departments=%s",
         run_id,

@@ -1,0 +1,9 @@
+name = "liquisto_standard"
+intent = "Balanced quality and cost for daily engineering work"
+reasoning_effort = "medium"
+max_context_blocks = 12
+max_retrieved_heuristics = 3
+require_full_test_suite = false
+require_architecture_tests = true
+token_budget_soft = 14000
+token_budget_hard = 24000

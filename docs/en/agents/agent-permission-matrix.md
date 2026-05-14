@@ -76,8 +76,8 @@ refinement only to coding specialists.
 
 | Memory area | Contents | Writers | Readers |
 | --- | --- | --- | --- |
-| Run brain in `run_context.json` | Case-specific artifacts, packages, evidence, gaps, decisions, usage, follow-ups | Supervisor loop, department runtime, report runtime, exporter | Follow-up resolver, UI, export layer |
-| `memory_snapshot.json` | Exported short-term memory snapshot | exporter | operators, tests, follow-up diagnostics |
+| Run brain in `run_artifacts` (`run_context`) | Case-specific artifacts, packages, evidence, gaps, decisions, usage, follow-ups | Supervisor loop, department runtime, report runtime, exporter | Follow-up resolver, UI, export layer |
+| `memory_snapshot` artifact | Exported short-term memory snapshot | exporter | operators, tests, follow-up diagnostics |
 | Long-term process memory | Scrubbed process patterns only | `consolidate_role_patterns()` after successful usable runs | active retrievable roles at run start |
 
 ## Guardrails

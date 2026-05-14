@@ -205,9 +205,11 @@ __marimo__/
 
 # Project-specific
 artifacts/
+data/users.db
 OAI_CONFIG_LIST
 .DS_Store
 **/.DS_Store
+tmp/
 tmp/pdfs/
 tmp/docs/
 

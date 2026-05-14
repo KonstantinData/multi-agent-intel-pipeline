@@ -79,6 +79,13 @@
       "reviewed_at": "2026-05-13"
     },
     {
+      "package": "psycopg[binary]",
+      "owner": "@liquisto/runtime-review",
+      "purpose": "PostgreSQL adapter (psycopg3) with binary wheel support for runtime DB access",
+      "risk_tier": "high",
+      "reviewed_at": "2026-05-14"
+    },
+    {
       "package": "reportlab",
       "owner": "@liquisto/runtime-review",
       "purpose": "PDF report generation (DE + EN briefings)",

@@ -114,6 +114,10 @@ pillow==12.2.0
     #   streamlit
 protobuf==6.33.6
     # via streamlit
+psycopg==3.3.4
+    # via -r requirements.txt
+psycopg-binary==3.3.4
+    # via psycopg
 pyarrow==24.0.0
     # via streamlit
 pycparser==3.0
@@ -190,6 +194,7 @@ typing-extensions==4.15.0
     #   anyio
     #   fast-depends
     #   openai
+    #   psycopg
     #   pydantic
     #   pydantic-core
     #   referencing

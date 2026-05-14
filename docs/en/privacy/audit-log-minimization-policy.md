@@ -20,14 +20,14 @@ data, or reusable company-specific facts.
 
 | Data | Where stored | Reason |
 | --- | --- | --- |
-| Intake `company_name` and `web_domain` | `run_meta.json`, `run_context.json` | Run identification and follow-up |
-| Normalized supervisor brief | `run_context.json` | Reproducibility of department assignments |
-| Department packages | `run_context.json`, `memory_snapshot.json` | Evidence traceability |
+| Intake `company_name` and `web_domain` | `run_meta`, `run_context` | Run identification and follow-up |
+| Normalized supervisor brief | `run_context` | Reproducibility of department assignments |
+| Department packages | `run_context`, `memory_snapshot` | Evidence traceability |
 | Task, review, and decision artifacts | `department_run_states` | Explain retry, acceptance, gaps, and judge outcomes |
-| Evidence packet claims and source URLs | `memory_snapshot.json`, `pipeline_data.json` | Briefing support |
-| Answer matrix and readiness state | `run_context.json`, `pipeline_data.json` | Meeting-readiness audit |
-| Token/search/page-fetch usage counters | `usage_totals`, `run_meta.json` | Cost and operational monitoring |
-| Follow-up questions and answers | `follow_up_history.json` | Historical Q&A trace |
+| Evidence packet claims and source URLs | `memory_snapshot`, `pipeline_data` | Briefing support |
+| Answer matrix and readiness state | `run_context`, `pipeline_data` | Meeting-readiness audit |
+| Token/search/page-fetch usage counters | `usage_totals`, `run_meta` | Cost and operational monitoring |
+| Follow-up questions and answers | `follow_up_history` | Historical Q&A trace |
 
 ## Disallowed Audit Data
 
@@ -47,7 +47,7 @@ The runtime must not intentionally store:
 
 | Store | May contain case facts? | Retention intent |
 | --- | --- | --- |
-| Run brain under `artifacts/runs/<run_id>/` | yes | Case-specific audit, export, and follow-up |
+| Run brain in `run_artifacts` (`run_context`, `pipeline_data`, `memory_snapshot`) | yes | Case-specific audit, export, and follow-up |
 | Long-term process memory | no | Scrubbed process patterns only |
 
 `src/memory/consolidation.py` enforces the long-term boundary by replacing
@@ -56,7 +56,7 @@ placeholders.
 
 ## Checkpoints
 
-Checkpoints may duplicate parts of `run_context.json` for crash recovery. They
+Checkpoints may duplicate parts of `run_context` for crash recovery. They
 must follow the same minimization rules as final run exports.
 
 Required checkpoint phases include:

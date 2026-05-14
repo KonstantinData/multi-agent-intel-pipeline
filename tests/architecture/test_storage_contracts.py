@@ -70,7 +70,11 @@ def test_production_env_config_redacts_database_url(monkeypatch: pytest.MonkeyPa
     assert raw_database_url not in repr(cfg.snapshot())
 
 
-def test_production_storage_with_dsn_still_requires_enabled_migrated_store(tmp_path: Path) -> None:
+def test_production_storage_with_dsn_reports_connection_failure_when_backend_unreachable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LIQUISTO_POSTGRES_DSN", "postgresql://runtime.invalid/liquisto")
     cfg = RuntimeStorageConfig(
         profile="production",
         run_state_backend="postgres",
@@ -88,8 +92,7 @@ def test_production_storage_with_dsn_still_requires_enabled_migrated_store(tmp_p
     with pytest.raises(StorageHealthcheckError) as exc_info:
         stores.healthcheck_required()
 
-    assert exc_info.value.error_code == "postgres_pgvector_store_disabled"
-    assert "schema migration" in str(exc_info.value)
+    assert exc_info.value.error_code == "postgres_connection_failed"
 
 
 def test_retrieve_strategies_accepts_long_term_memory_protocol() -> None:

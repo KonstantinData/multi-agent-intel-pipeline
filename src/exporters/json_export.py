@@ -23,6 +23,11 @@ from src.orchestration.run_paths import (
     resolve_path_within_runs_root,
     validate_run_id,
 )
+from src.storage.run_artifacts import (
+    append_follow_up_history,
+    should_use_postgres_run_artifacts,
+    upsert_run_artifact_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +145,6 @@ def export_run(
         raise ValueError("run_dir must end with run_id.")
     runs_root = requested_run_dir.parent
     safe_run_dir = _ensure_within_runs_dir(safe_run_id, runs_root)
-    safe_run_dir.path.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).isoformat()
 
     run_meta = {
@@ -157,14 +161,32 @@ def export_run(
     }
 
     chat_history = [{"name": item.get("agent", "Agent"), "content": item.get("content", "")} for item in messages]
-
-    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_meta.json", runs_root), run_meta, runs_root)
-    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json", runs_root), chat_history, runs_root)
     sanitized_pipeline_data = _sanitize_pipeline_data_for_status(
         status=status,
         pipeline_data=pipeline_data,
         run_context=run_context,
     )
+
+    if should_use_postgres_run_artifacts():
+        upsert_run_artifact_json(run_id=safe_run_id, artifact_type="run_meta", payload=run_meta)
+        upsert_run_artifact_json(run_id=safe_run_id, artifact_type="chat_history", payload=chat_history)
+        upsert_run_artifact_json(
+            run_id=safe_run_id,
+            artifact_type="pipeline_data",
+            payload=sanitized_pipeline_data,
+        )
+        upsert_run_artifact_json(run_id=safe_run_id, artifact_type="run_context", payload=run_context)
+        upsert_run_artifact_json(
+            run_id=safe_run_id,
+            artifact_type="memory_snapshot",
+            payload=run_context.get("short_term_memory", {}),
+        )
+        return
+
+    safe_run_dir.path.mkdir(parents=True, exist_ok=True)
+
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_meta.json", runs_root), run_meta, runs_root)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json", runs_root), chat_history, runs_root)
     atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/pipeline_data.json", runs_root), sanitized_pipeline_data, runs_root)
     atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_context.json", runs_root), run_context, runs_root)
     atomic_write_json(
@@ -191,6 +213,13 @@ def export_run(
 
 def export_follow_up(run_id: str, follow_up_answer: dict[str, Any], *, runs_root: Path | None = None) -> None:
     """Append follow-up answer history; expects sanitized path only."""
+    if should_use_postgres_run_artifacts():
+        append_follow_up_history(
+            run_id=validate_run_id(run_id),
+            follow_up_answer=follow_up_answer,
+        )
+        return
+
     effective_root: Path = (runs_root if runs_root is not None else RUNS_DIR).resolve(strict=False)
     safe_run_id = validate_run_id(run_id)
     safe_run_dir = _ensure_within_runs_dir(safe_run_id, effective_root)

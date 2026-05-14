@@ -72,8 +72,8 @@ variables, CI secrets, or local `.env` files and must not be copied into:
 
 | Store | Allowed data |
 | --- | --- |
-| `artifacts/runs/<run_id>/` | Case-specific data required for audit, report export, and follow-up |
-| `artifacts/memory/long_term_memory.json` | Scrubbed process patterns only |
+| `run_artifacts` / `run_checkpoints` (PostgreSQL) | Case-specific data required for audit, report export, and follow-up |
+| `memory_patterns` (PostgreSQL) | Scrubbed process patterns only |
 | `bom/*` | Inventory and release metadata only |
 | CI reports | Test and gate results only |
 
@@ -87,4 +87,4 @@ Before adding retention automation, preserve:
 
 - ability to answer follow-ups while the run is retained;
 - audit integrity of exported reports;
-- file-lock safety for `follow_up_history.json`.
+- append safety for `follow_up_history` updates.

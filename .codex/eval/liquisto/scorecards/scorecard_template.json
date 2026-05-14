@@ -1,0 +1,12 @@
+{
+  "task_id": "gt-0001",
+  "run_id": "example-run",
+  "profile": "liquisto_standard",
+  "status": "pass",
+  "first_pass_success": true,
+  "defect_escape": false,
+  "tokens_total": 0,
+  "time_seconds": 0,
+  "rework_turns": 0,
+  "notes": "template"
+}

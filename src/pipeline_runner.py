@@ -79,6 +79,10 @@ from src.orchestration.task_router import build_synthesis_assignments
 from src.research.normalize import IntakeErrorCode, NormalizedDomainResult, normalize_domain_result
 from src.research.ssrf_guard import SSRFBlockedError, resolve_and_validate_host
 from src.storage.contracts import StorageHealthcheckError
+from src.storage.run_artifacts import (
+    load_latest_run_artifact_json,
+    should_use_postgres_run_artifacts,
+)
 from src.storage.runtime_stores import create_runtime_stores
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -93,6 +97,7 @@ class InitialRunState:
     intake: IntakeRequest
     agents: RuntimeAgents
     memory_store: Any
+    run_state_store: Any
     run_context: RunContext
     messages: list[dict[str, Any]]
     budget_tracker: PhaseBudgetTracker
@@ -142,11 +147,23 @@ class FinalizationResult:
     department_packages: dict[str, Any]
 
 
-def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> dict[str, Any]:
+def _next_checkpoint_sequence(run_context: RunContext) -> int:
+    current = int(run_context.resolution_state.get("checkpoint_sequence", 0) or 0)
+    sequence = current + 1
+    run_context.resolution_state["checkpoint_sequence"] = sequence
+    return sequence
+
+
+def _write_checkpoint(
+    run_dir: Path,
+    phase: str,
+    run_context: RunContext,
+    *,
+    run_id: str = "",
+    run_state_store: Any | None = None,
+) -> dict[str, Any]:
     """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
     run_context.resolution_state["last_checkpoint"] = phase
-    cp_dir = run_dir / "checkpoints"
-    cp_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": STEP1_HANDOFF_SCHEMA_VERSION,
         "phase": phase,
@@ -155,16 +172,32 @@ def _write_checkpoint(run_dir: Path, phase: str, run_context: RunContext) -> dic
     }
     content_hash = stable_json_hash(payload)
     payload["checkpoint_hash"] = content_hash
-    path = cp_dir / f"{phase}.json"
-    tmp_path = cp_dir / f"{phase}.json.tmp"
-    tmp_path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8",
-    )
-    tmp_path.replace(path)
+    sequence = _next_checkpoint_sequence(run_context)
+
+    if should_use_postgres_run_artifacts():
+        path_text = f"postgres://run_checkpoints/{run_id or run_context.run_id}/{phase}/{sequence}"
+    else:
+        cp_dir = run_dir / "checkpoints"
+        cp_dir.mkdir(parents=True, exist_ok=True)
+        path = cp_dir / f"{phase}.json"
+        tmp_path = cp_dir / f"{phase}.json.tmp"
+        tmp_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8",
+        )
+        tmp_path.replace(path)
+        path_text = str(path)
+
+    if run_state_store is not None and run_id:
+        run_state_store.write_checkpoint(
+            run_id=run_id,
+            phase=phase,
+            sequence=sequence,
+            run_context_snapshot=payload,
+        )
     return CheckpointInfo(
         checkpoint_id=phase,
         phase=phase,
-        path=str(path),
+        path=path_text,
         content_hash=content_hash,
         written=True,
     ).as_dict()
@@ -384,6 +417,7 @@ def _initialize_run(
     )
     stores.healthcheck_required()
     memory_store = stores.long_term_memory
+    run_state_store = stores.run_state
     run_context = RunContext(
         run_id=run_id,
         intake={
@@ -401,6 +435,15 @@ def _initialize_run(
     )
     _record_phase(run_context, "initialized")
     run_context.resolution_state["storage"] = stores.snapshot()
+    run_state_store.create_run(
+        run_id=run_id,
+        intake={
+            "company_name": intake.company_name,
+            "web_domain": intake.web_domain,
+            "normalized_domain": normalized_domain,
+        },
+        phase="initialized",
+    )
     initial_retrieval_context = RetrievalContext(
         run_id=run_id,
         company_name=intake.company_name,
@@ -461,6 +504,7 @@ def _initialize_run(
         intake=intake,
         agents=agents,
         memory_store=memory_store,
+        run_state_store=run_state_store,
         run_context=run_context,
         messages=[],
         budget_tracker=PhaseBudgetTracker(),
@@ -620,12 +664,22 @@ def resume_pipeline(
     plan and answer matrix, then re-evaluates the finalization gate.
     """
     # Resume works from persisted artifacts; no department rerun happens here.
-    run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
+    if should_use_postgres_run_artifacts():
+        run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR)
+        run_context_payload = load_latest_run_artifact_json(
+            run_id=run_id,
+            artifact_type="run_context",
+        )
+        pipeline_data = load_latest_run_artifact_json(
+            run_id=run_id,
+            artifact_type="pipeline_data",
+        )
+    else:
+        run_dir = resolve_run_dir(run_id, runs_root=RUNS_DIR, must_exist=True)
+        run_context_payload = json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
+        pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
 
-    run_context = RunContext.from_snapshot(
-        json.loads((run_dir / "run_context.json").read_text(encoding="utf-8"))
-    )
-    pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
+    run_context = RunContext.from_snapshot(run_context_payload)
 
     if run_context.status != SELECTION_REQUIRED_RUN_STATUS:
         # Only selection-paused runs can enter this resume path.
@@ -872,7 +926,13 @@ def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) 
     state.messages.append(first_event)
     checkpoint_info: dict[str, Any]
     try:
-        checkpoint_info = _write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
+        checkpoint_info = _write_checkpoint(
+            state.run_dir,
+            "after_supervisor_brief",
+            state.run_context,
+            run_id=state.run_id,
+            run_state_store=state.run_state_store,
+        )
     except Exception as exc:
         checkpoint_info = CheckpointInfo(
             checkpoint_id="after_supervisor_brief",
@@ -899,7 +959,13 @@ def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) 
     state.run_context.resolution_state["step1_handoff"] = handoff.as_dict()
     if handoff_allows_department_routing(handoff):
         try:
-            checkpoint_info = _write_checkpoint(state.run_dir, "after_supervisor_brief", state.run_context)
+            checkpoint_info = _write_checkpoint(
+                state.run_dir,
+                "after_supervisor_brief",
+                state.run_context,
+                run_id=state.run_id,
+                run_state_store=state.run_state_store,
+            )
             handoff = build_step1_handoff(
                 run_context=state.run_context,
                 supervisor_message=supervisor_message,
@@ -982,7 +1048,13 @@ def _run_first_pass(
             "remaining_public_gaps": [],
         },
     }
-    _write_checkpoint(state.run_dir, "after_first_pass", state.run_context)
+    _write_checkpoint(
+        state.run_dir,
+        "after_first_pass",
+        state.run_context,
+        run_id=state.run_id,
+        run_state_store=state.run_state_store,
+    )
     return FirstPassResult(
         sections=sections,
         department_packages=department_packages,
@@ -1060,7 +1132,13 @@ def _run_auto_close_if_required(
         .get("usage_totals", {}).get("total_tokens", 0) or 0
     ) - first_pass.first_pass_tokens
     state.budget_tracker.record_phase_tokens("closure", max(closure_tokens, 0))
-    _write_checkpoint(state.run_dir, "after_closure", state.run_context)
+    _write_checkpoint(
+        state.run_dir,
+        "after_closure",
+        state.run_context,
+        run_id=state.run_id,
+        run_state_store=state.run_state_store,
+    )
     return AutoCloseResult(triggered=True, payload=auto_close_result)
 
 
@@ -1216,7 +1294,13 @@ def _run_synthesis_phase(
             "target_section": assignment.target_section,
             "status": synthesis_task_status,
         })
-    _write_checkpoint(state.run_dir, "after_synthesis", state.run_context)
+    _write_checkpoint(
+        state.run_dir,
+        "after_synthesis",
+        state.run_context,
+        run_id=state.run_id,
+        run_state_store=state.run_state_store,
+    )
     return SynthesisPhaseResult(
         sections=first_pass.sections,
         department_packages=first_pass.department_packages,
@@ -1481,7 +1565,13 @@ def _assemble_report_and_export(
     finalization.pipeline_data["report_package"] = report_package
     state.messages.extend(report_messages)
     state.run_context.resolution_state["budget_tracker"] = state.budget_tracker.snapshot()
-    _write_checkpoint(state.run_dir, "after_finalization", state.run_context)
+    _write_checkpoint(
+        state.run_dir,
+        "after_finalization",
+        state.run_context,
+        run_id=state.run_id,
+        run_state_store=state.run_state_store,
+    )
 
     elapsed_seconds = round(perf_counter() - state.start_time, 3)
     memory_snapshot = state.run_context.short_term_memory.snapshot()

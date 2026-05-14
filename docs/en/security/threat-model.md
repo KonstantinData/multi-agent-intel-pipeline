@@ -14,8 +14,8 @@ run artifacts, memory, CI/CD governance, and generated reports.
 | Asset | Why it matters |
 | --- | --- |
 | `OPENAI_API_KEY` and other credentials | Enables external model/API access |
-| Run artifacts under `artifacts/runs/<run_id>/` | Contain case-specific company, contact, evidence, and report data |
-| Long-term memory under `artifacts/memory/` | Must contain process patterns only |
+| Run artifacts in PostgreSQL (`run_artifacts`, `run_checkpoints`) | Contain case-specific company, contact, evidence, and report data |
+| Long-term memory in PostgreSQL (`memory_patterns`) | Must contain process patterns only |
 | Knowledge base YAML files | Influence source selection, query strategy, and acceptance gates |
 | Department artifacts | Authoritative evidence/review/decision history |
 | Generated PDFs | Operator-facing briefing output |
@@ -30,7 +30,7 @@ run artifacts, memory, CI/CD governance, and generated reports.
 | Runtime to external model APIs | Data disclosure and generated-output reliability |
 | Department chats to artifacts | Chat text could be misread as authoritative state |
 | Run brain to long-term memory | Case facts could leak into reusable memory |
-| Local artifacts to reports | Sensitive or low-confidence data could be overexposed |
+| Persisted run artifacts to reports | Sensitive or low-confidence data could be overexposed |
 | Repository to CI/CD | Dependency, secret, or workflow supply-chain risk |
 
 ## Main Threats and Controls
@@ -91,7 +91,7 @@ release-attestation artifact.
 ## Residual Risks
 
 - Public data may be outdated or wrong even when cited.
-- Local artifact directories are not encrypted by the application.
+- Persisted run artifacts are not application-layer encrypted by default.
 - Retention deletion is not automated.
 - External model service behavior depends on account/vendor configuration.
 - Generated PDFs may be copied outside the controlled artifact directory.

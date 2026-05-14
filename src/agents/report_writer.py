@@ -19,6 +19,7 @@ from src.orchestration.report_knowledge import (
     load_report_quality_gates,
     load_report_rules,
 )
+from src.security.secret_guard import assert_no_secrets_in_payload
 
 logger = logging.getLogger(__name__)
 
@@ -422,6 +423,10 @@ class ReportWriterAgent:
                 },
             },
         }
+        assert_no_secrets_in_payload(
+            params["messages"],
+            context=f"report_writer:{language}",
+        )
         temperature = resolve_model_temperature(model_name, 0.2)
         if temperature is not None:
             params["temperature"] = temperature
