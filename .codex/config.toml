@@ -12,4 +12,3 @@ approval_policy = "untrusted"
 
 [instruction_index]
 json = ".codex/config/instruction_index.json"
-md = ".codex/config/instruction_index.md"
