@@ -1,5 +1,0 @@
-{
-  "name": "multi-agent-intel-pipeline",
-  "compatibility_date": "2026-05-14",
-  "main": "path/to/worker-entry.ts"
-}

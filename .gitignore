@@ -224,3 +224,8 @@ test_real.py
 
 # Claude Code local session data
 .claude/
+
+# Node / Cloudflare worker artifacts
+**/node_modules/
+**/.wrangler/
+**/.dev.vars
