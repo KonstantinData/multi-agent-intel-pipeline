@@ -65,6 +65,13 @@ def test_sbom_roundtrip(tmp_path: Path) -> None:
     val_sbom.validate_sbom(out)
 
 
+def test_generate_sbom_parses_universal_lock_lines() -> None:
+    parsed = gen_sbom._parse_locked_requirement_line(
+        "cffi==2.0.0 ; platform_python_implementation != 'PyPy' and sys_platform == 'linux'"
+    )
+    assert parsed == ("cffi", "2.0.0")
+
+
 def test_release_attestation_roundtrip(tmp_path: Path) -> None:
     ai_bom = tmp_path / "ai-bom.json"
     sbom = tmp_path / "sbom.json"
