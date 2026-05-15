@@ -126,7 +126,11 @@ def build_gates(base_ref: str) -> list[Gate]:
         Gate(
             "runtime-contract-tests",
             (
-                "pytest -q tests/meeting_readiness tests/golden tests/test_query_*.py tests/smoke --junitxml=reports/runtime-contracts.xml",
+                (
+                    "pytest -q tests/meeting_readiness tests/golden "
+                    "tests/test_query_migration.py tests/test_query_consistency.py tests/smoke "
+                    "--junitxml=reports/runtime-contracts.xml"
+                ),
             ),
         ),
         Gate("integration-tests", ("pytest -q -m integration --junitxml=reports/integration.xml",)),
