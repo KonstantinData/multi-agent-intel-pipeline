@@ -153,14 +153,10 @@ def build_gates(base_ref: str) -> list[Gate]:
             (
                 (
                     "python -c \"from pathlib import Path;import hashlib;"
-                    "root=Path('.');out=root/'bom/attestations/compliance-manifest.sha256';"
+                    "out=Path('bom/attestations/compliance-manifest.sha256');"
                     "out.parent.mkdir(parents=True,exist_ok=True);"
-                    "targets=[Path('.github/workflows/compliance-security-ai.yml'),Path('requirements.txt'),Path('requirements.lock')];"
-                    "lines=[];"
-                    "for p in targets:"
-                    " data=p.read_bytes();"
-                    " lines.append(f'{hashlib.sha256(data).hexdigest()}  {p.as_posix()}');"
-                    "out.write_text('\\\\n'.join(lines)+'\\\\n',encoding='utf-8')\""
+                    "targets=['.github/workflows/compliance-security-ai.yml','requirements.txt','requirements.lock'];"
+                    "out.write_text(''.join(f'{hashlib.sha256(Path(p).read_bytes()).hexdigest()}  {p}\\\\n' for p in targets),encoding='utf-8')\""
                 ),
             ),
         ),
