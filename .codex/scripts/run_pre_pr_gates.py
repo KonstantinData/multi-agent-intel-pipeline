@@ -41,7 +41,7 @@ def build_gates(base_ref: str) -> list[Gate]:
         Gate(
             "dependency-lock-gate",
             (
-                "uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock",
+                "uv pip compile requirements.txt --python-version 3.12 --universal --output-file requirements.lock",
                 "git diff --exit-code requirements.lock",
             ),
         ),

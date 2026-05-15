@@ -233,7 +233,7 @@ Dependency policy:
 - Regenerate the lockfile after dependency changes with:
 
 ```bash
-uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock
+uv pip compile requirements.txt --python-version 3.12 --universal --output-file requirements.lock
 ```
 
 ### Local pre-commit checks
