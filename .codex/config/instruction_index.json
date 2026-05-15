@@ -11,6 +11,7 @@
   "required_startup_message": "Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden (Instruction-Index, Policies, Config/Routing, Tasks, Skills). Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede Abweichung sofort mit Begründung.",
   "required_files": [
     ".codex/README.md",
+    ".codex/config.toml",
     ".codex/policies/README.md",
     ".codex/policies/liquisto/README.md",
     ".codex/policies/liquisto/secret_policy.md",
@@ -33,7 +34,8 @@
       "title": "Codex Core Layer",
       "description": "Operating-layer objective, precedence, and trust model.",
       "files": [
-        ".codex/README.md"
+        ".codex/README.md",
+        ".codex/config.toml"
       ]
     },
     {
@@ -103,6 +105,7 @@
   ],
   "all_files": [
     ".codex/README.md",
+    ".codex/config.toml",
     ".codex/config/README.md",
     ".codex/config/profiles/liquisto_deep.toml",
     ".codex/config/profiles/liquisto_fast.toml",

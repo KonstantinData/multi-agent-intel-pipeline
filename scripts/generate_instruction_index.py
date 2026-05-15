@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Minimal non-negotiable .codex app-level entry points.
 REQUIRED_FILES = (
     ".codex/README.md",
+    ".codex/config.toml",
     ".codex/policies/README.md",
     ".codex/policies/liquisto/README.md",
     ".codex/policies/liquisto/secret_policy.md",
@@ -34,7 +35,10 @@ INSTRUCTION_GROUPS: tuple[dict[str, Any], ...] = (
         "id": "codex_core",
         "title": "Codex Core Layer",
         "description": "Operating-layer objective, precedence, and trust model.",
-        "globs": (".codex/README.md",),
+        "globs": (
+            ".codex/README.md",
+            ".codex/config.toml",
+        ),
     },
     {
         "id": "codex_policies",

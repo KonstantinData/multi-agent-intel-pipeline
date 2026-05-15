@@ -21,6 +21,7 @@ Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und ver
 Operating-layer objective, precedence, and trust model.
 
 - [.codex/README.md](.codex/README.md)
+- [.codex/config.toml](.codex/config.toml)
 
 ### Codex Policies
 
