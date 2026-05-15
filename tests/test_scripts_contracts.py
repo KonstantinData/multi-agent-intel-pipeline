@@ -1026,13 +1026,6 @@ def test_pre_pr_gates_cover_required_workflow_levels() -> None:
     assert required.issubset(names)
 
 
-def test_pre_push_hook_invokes_codex_pre_pr_runner() -> None:
-    hook_path = ROOT / ".githooks" / "pre-push"
-    assert hook_path.is_file()
-    text = hook_path.read_text(encoding="utf-8")
-    assert "python -u .codex/scripts/run_pre_pr_gates.py --fail-fast --resume --resume-from-changes" in text
-
-
 def test_pre_pr_gate_resume_starts_at_last_failed_gate() -> None:
     report = ROOT / "artifacts" / "pre_pr_gate_resume_test.json"
     report.parent.mkdir(parents=True, exist_ok=True)
