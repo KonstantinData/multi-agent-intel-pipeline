@@ -1,0 +1,64 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "liquisto-app-memory-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-15",
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "vars": {
+    "APP_ENV": "dev"
+  },
+  "env": {
+    "dev": {
+      "name": "liquisto-app-memory-worker-dev",
+      "vars": {
+        "APP_ENV": "dev"
+      },
+      "d1_databases": [
+        {
+          "binding": "MEMORY_DB",
+          "database_name": "liquisto-app-memory-dev",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "staging": {
+      "name": "liquisto-app-memory-worker-staging",
+      "vars": {
+        "APP_ENV": "staging"
+      },
+      "d1_databases": [
+        {
+          "binding": "MEMORY_DB",
+          "database_name": "liquisto-app-memory-staging",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "liquisto-app-memory-worker-prod",
+      "vars": {
+        "APP_ENV": "production"
+      },
+      "d1_databases": [
+        {
+          "binding": "MEMORY_DB",
+          "database_name": "liquisto-app-memory-prod",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}
