@@ -28,6 +28,25 @@ def test_secret_guard_blocks_openai_key_and_redacts_error_content() -> None:
     assert leaked not in message
 
 
+def test_secret_guard_blocks_project_scoped_openai_key() -> None:
+    leaked = "sk-proj-1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"  # pragma: allowlist secret
+    with pytest.raises(PromptSecretLeakError) as exc_info:
+        assert_no_secrets_in_text(
+            f"candidate token: {leaked}",
+            context="unit_test_project_scoped_openai_key",
+        )
+    message = str(exc_info.value)
+    assert "openai_api_key" in message
+    assert leaked not in message
+
+
+def test_secret_guard_blocks_raw_openai_key_without_assignment_prefix() -> None:
+    leaked = "sk-proj-abcDEF1234567890_ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # pragma: allowlist secret
+    payload = [{"role": "user", "content": f"Please summarize this string: {leaked}"}]
+    with pytest.raises(PromptSecretLeakError):
+        assert_no_secrets_in_payload(payload, context="unit_test_raw_openai_key")
+
+
 def test_secret_guard_blocks_private_key_block() -> None:
     with pytest.raises(PromptSecretLeakError):
         assert_no_secrets_in_text(

@@ -29,6 +29,18 @@ python preflight.py
 
 # 5. Start the UI
 streamlit run ui/app.py
+
+### Local Pre-PR Gate Run
+
+Before opening a PR, run the local compliance gate pipeline:
+
+```bash
+python .codex/scripts/run_pre_pr_gates.py --fail-fast
+```
+
+This mirrors the named gates in `.github/workflows/compliance-security-ai.yml` and writes a report to:
+
+`artifacts/pre_pr_gate_report.json`
 ```
 
 ## Architecture
@@ -221,7 +233,7 @@ Dependency policy:
 - Regenerate the lockfile after dependency changes with:
 
 ```bash
-uv pip compile requirements.txt --python-version 3.12 --output-file requirements.lock
+uv pip compile requirements.txt --python-version 3.12 --universal --output-file requirements.lock
 ```
 
 ### Local pre-commit checks
@@ -230,6 +242,12 @@ uv pip compile requirements.txt --python-version 3.12 --output-file requirements
 pip install pre-commit
 pre-commit install     # runs Ruff + Bandit automatically on every git commit
 ```
+
+During execution, each gate prints live status as:
+
+- `=== [gate_index/total] gate-name ===`
+- `[gate-name step/steps] $ <command>`
+- `[SUCCESS|FAILURE] gate-name (seconds)`
 
 Manual single-file check:
 

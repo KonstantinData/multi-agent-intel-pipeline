@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ import check_workflow_needs_result as needs_checker  # noqa: E402
 import dependency_diff as dep_diff  # noqa: E402
 import generate_actions_bom as gen_actions_bom  # noqa: E402
 import generate_ai_bom as gen_ai_bom  # noqa: E402
+import generate_instruction_index as gen_instruction_index  # noqa: E402
 import generate_release_attestation as gen_attestation  # noqa: E402
 import generate_sbom as gen_sbom  # noqa: E402
 import generate_trivyignore as gen_trivyignore  # noqa: E402
@@ -30,6 +32,13 @@ import validate_dependency_policy as val_dep_policy  # noqa: E402
 import validate_ruleset_config as val_ruleset  # noqa: E402
 import validate_sbom as val_sbom  # noqa: E402
 import validate_secret_scan as val_secret_scan  # noqa: E402
+
+_PRE_PR_GATES_PATH = ROOT / ".codex" / "scripts" / "run_pre_pr_gates.py"
+_PRE_PR_GATES_SPEC = importlib.util.spec_from_file_location("pre_pr_gates", _PRE_PR_GATES_PATH)
+assert _PRE_PR_GATES_SPEC and _PRE_PR_GATES_SPEC.loader is not None
+pre_pr_gates = importlib.util.module_from_spec(_PRE_PR_GATES_SPEC)
+sys.modules[_PRE_PR_GATES_SPEC.name] = pre_pr_gates
+_PRE_PR_GATES_SPEC.loader.exec_module(pre_pr_gates)
 
 
 def test_ai_bom_roundtrip(tmp_path: Path) -> None:
@@ -54,6 +63,13 @@ def test_sbom_roundtrip(tmp_path: Path) -> None:
     out = tmp_path / "sbom.json"
     gen_sbom.write_sbom(out, sbom_data)
     val_sbom.validate_sbom(out)
+
+
+def test_generate_sbom_parses_universal_lock_lines() -> None:
+    parsed = gen_sbom._parse_locked_requirement_line(
+        "cffi==2.0.0 ; platform_python_implementation != 'PyPy' and sys_platform == 'linux'"
+    )
+    assert parsed == ("cffi", "2.0.0")
 
 
 def test_release_attestation_roundtrip(tmp_path: Path) -> None:
@@ -191,6 +207,53 @@ def test_repository_structure_allows_german_docs(tmp_path: Path) -> None:
     de_doc.write_text("ok", encoding="utf-8")
 
     val_audit.validate_repository_structure(tmp_path)
+
+
+def test_instruction_index_contains_required_entries() -> None:
+    index = gen_instruction_index.build_instruction_index(ROOT)
+    failures = gen_instruction_index.validate_instruction_index(index, ROOT)
+    assert not failures
+    assert "required_startup_message" in index
+    assert "Pflicht-Startmeldung:" in index["required_startup_message"]
+    all_files = set(index["all_files"])
+    assert ".codex/README.md" in all_files
+    assert ".codex/policies/README.md" in all_files
+    assert ".codex/config/README.md" in all_files
+    assert ".codex/policies/liquisto/secret_policy.md" in all_files
+    assert ".codex/config/profiles/liquisto_standard.toml" in all_files
+
+
+def test_instruction_index_validation_fails_when_required_file_missing(tmp_path: Path) -> None:
+    (tmp_path / ".codex").mkdir(parents=True)
+    (tmp_path / ".codex" / "policies" / "liquisto").mkdir(parents=True)
+    (tmp_path / ".codex" / "config" / "profiles").mkdir(parents=True)
+    (tmp_path / ".codex" / "config" / "routing").mkdir(parents=True)
+    (tmp_path / ".codex" / "tasks" / "liquisto").mkdir(parents=True)
+    (tmp_path / ".codex" / "skills" / "liquisto" / "supervisor").mkdir(parents=True)
+    (tmp_path / ".codex" / "skills" / "shared" / "review").mkdir(parents=True)
+    # .codex/README.md intentionally missing.
+    (tmp_path / ".codex" / "policies" / "README.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "README.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "secret_policy.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "tool_allowlist.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "policies" / "liquisto" / "prompt_budget_policy.md").write_text("p", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "README.md").write_text("c", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "profiles" / "liquisto_fast.toml").write_text("name='f'", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "profiles" / "liquisto_standard.toml").write_text("name='s'", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "profiles" / "liquisto_deep.toml").write_text("name='d'", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "routing" / "model_routing.toml").write_text("x=1", encoding="utf-8")
+    (tmp_path / ".codex" / "config" / "routing" / "tool_routing.toml").write_text("x=1", encoding="utf-8")
+    (tmp_path / ".codex" / "tasks" / "README.md").write_text("t", encoding="utf-8")
+    (tmp_path / ".codex" / "tasks" / "liquisto" / "README.md").write_text("t", encoding="utf-8")
+    (tmp_path / ".codex" / "tasks" / "liquisto" / "sample.toml").write_text("id='x'", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "README.md").write_text("s", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "liquisto" / "README.md").write_text("s", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "liquisto" / "supervisor" / "README.md").write_text("x", encoding="utf-8")
+    (tmp_path / ".codex" / "skills" / "shared" / "review" / "README.md").write_text("x", encoding="utf-8")
+
+    index = gen_instruction_index.build_instruction_index(tmp_path)
+    failures = gen_instruction_index.validate_instruction_index(index, tmp_path)
+    assert any(".codex/README.md" in failure for failure in failures)
 
 
 def test_validate_ai_bom_rejects_missing_models(tmp_path: Path) -> None:
@@ -338,6 +401,23 @@ def test_secret_scan_validators_accept_clean_reports(tmp_path: Path) -> None:
 
     val_secret_scan.validate_detect_secrets(detect_report)
     val_secret_scan.validate_gitleaks(gitleaks_report)
+
+
+def test_secret_scan_validator_ignores_generated_artifact_paths(tmp_path: Path) -> None:
+    detect_report = tmp_path / "detect.json"
+    detect_report.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "artifacts/pre_pr_gate_report.json": [{"type": "Secret", "line_number": 1}],
+                    "bom/actions/actions-bom.json": [{"type": "Secret", "line_number": 2}],
+                    "bom/attestations/compliance-manifest.sha256": [{"type": "Secret", "line_number": 3}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    val_secret_scan.validate_detect_secrets(detect_report)
 
 
 def test_gitleaks_validator_fails_clearly_when_report_missing(tmp_path: Path) -> None:
@@ -924,3 +1004,126 @@ def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:
         "Conflict resolver: security-architect > ai-compliance-owner > release-manager"
         in text
     )
+
+
+def test_pre_pr_gates_cover_required_workflow_levels() -> None:
+    required = {
+        "lint",
+        "type-check",
+        "bandit-sast",
+        "dependency-lock-gate",
+        "dependency-vuln-gate",
+        "secret-scan",
+        "governance-gates",
+        "policy-as-code-gate",
+        "scorecard-policy-gate",
+        "actions-hardening-gate",
+        "dependency-policy-gate",
+        "dependency-diff-gate",
+        "vuln-scan-gate",
+        "script-contract-tests",
+        "architecture-tests",
+        "runtime-contract-tests",
+        "integration-tests",
+        "ai-bom-gate",
+        "sbom-gate",
+        "provenance-gate",
+    }
+    names = {gate.name for gate in pre_pr_gates.build_gates("origin/main")}
+    assert required.issubset(names)
+
+
+def test_pre_pr_gate_resume_starts_at_last_failed_gate() -> None:
+    report = ROOT / "artifacts" / "pre_pr_gate_resume_test.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(
+            {
+                "gates": [
+                    {"name": "lint", "result": "success"},
+                    {"name": "type-check", "result": "success"},
+                    {"name": "bandit-sast", "result": "failure"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._resolve_resume_start(
+        gates=gates,
+        explicit_start="",
+        resume=True,
+        report_path=report,
+    )
+    assert start == "bandit-sast"
+    report.unlink(missing_ok=True)
+
+
+def test_pre_pr_gate_change_scope_maps_python_to_lint() -> None:
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._resolve_start_from_changes(
+        gates,
+        ["src/orchestration/supervisor_loop.py", "README.md"],
+    )
+    assert start == "lint"
+
+
+def test_pre_pr_gate_change_scope_maps_codex_to_script_contract_tests() -> None:
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._resolve_start_from_changes(
+        gates,
+        [".codex/scripts/run_pre_pr_gates.py"],
+    )
+    assert start == "script-contract-tests"
+
+
+def test_pre_pr_gate_resolve_earliest_start_prefers_changed_scope() -> None:
+    gates = pre_pr_gates.build_gates("origin/main")
+    start = pre_pr_gates._min_gate(gates, "vuln-scan-gate", "lint")
+    assert start == "lint"
+
+
+def test_pre_pr_gate_status_prints_running_state(capsys: pytest.CaptureFixture[str]) -> None:
+    progress = ROOT / "artifacts" / "pre_pr_gate_status_running_test.json"
+    progress.parent.mkdir(parents=True, exist_ok=True)
+    progress.write_text(
+        json.dumps(
+            {
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "current_gate": "vuln-scan-gate",
+                "current_gate_index": 13,
+                "total_gates": 20,
+                "current_command_index": 2,
+                "current_command_total": 3,
+                "command": "docker run ... trivy",
+            }
+        ),
+        encoding="utf-8",
+    )
+    pre_pr_gates._print_status(progress)
+    out = capsys.readouterr().out
+    assert "status: running" in out
+    assert "gate: vuln-scan-gate (13/20)" in out
+    progress.unlink(missing_ok=True)
+
+
+def test_pre_pr_gate_status_prints_completed_state(capsys: pytest.CaptureFixture[str]) -> None:
+    progress = ROOT / "artifacts" / "pre_pr_gate_status_completed_test.json"
+    progress.parent.mkdir(parents=True, exist_ok=True)
+    progress.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "pipeline_result": "failure",
+                "failed_gates": {"vuln-scan-gate": "failure"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    pre_pr_gates._print_status(progress)
+    out = capsys.readouterr().out
+    assert "status: completed" in out
+    assert "pipeline_result: failure" in out
+    assert "vuln-scan-gate: failure" in out
+    progress.unlink(missing_ok=True)

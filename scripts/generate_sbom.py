@@ -38,20 +38,36 @@ def _purl(name: str, version: str) -> str:
     return f"pkg:pypi/{_normalise_package_name(name)}@{version}"
 
 
+def _parse_locked_requirement_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    payload = stripped.split(" #", 1)[0].strip()
+    if ";" in payload:
+        payload = payload.split(";", 1)[0].strip()
+    match = PINNED_REQUIREMENT.fullmatch(payload)
+    if match is None:
+        raise SystemExit(f"{LOCK_FILE} must contain exact pins only: {stripped}")
+    return match.groups()
+
+
 def _read_locked_top_level(repo_root: Path) -> dict[str, str]:
     lock_path = repo_root / LOCK_FILE
     if not lock_path.is_file():
         return {}
     locked: dict[str, str] = {}
     for raw_line in lock_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
+        parsed = _parse_locked_requirement_line(raw_line)
+        if parsed is None:
             continue
-        match = PINNED_REQUIREMENT.fullmatch(line)
-        if match is None:
-            raise SystemExit(f"{LOCK_FILE} must contain exact pins only: {line}")
-        name, version = match.groups()
-        locked[_normalise_package_name(name)] = version
+        name, version = parsed
+        normalized = _normalise_package_name(name)
+        existing = locked.get(normalized)
+        if existing is not None and existing != version:
+            raise SystemExit(
+                f"{LOCK_FILE} contains conflicting versions for {name}: {existing} vs {version}"
+            )
+        locked[normalized] = version
     return locked
 
 

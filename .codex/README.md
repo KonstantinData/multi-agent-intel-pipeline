@@ -18,6 +18,7 @@ It is process-oriented and does not replace code or architecture as source of tr
 - `memory/`: procedural memory and anti-pattern history.
 - `eval/`: replay, scorecards, and regression baselines.
 - `policies/`: guardrails for data, secrets, tools, and budgets.
+- `scripts/`: executable app-level helpers (for example local gate runners).
 - `automations/`: scheduled consolidation and maintenance jobs.
 - `telemetry/`: metrics for quality, failures, and token efficiency.
 

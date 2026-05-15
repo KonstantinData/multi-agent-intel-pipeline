@@ -13,6 +13,7 @@ EXCLUDED_PARTS = {
     ".pytest_cache",
     ".ruff_cache",
     ".venv",
+    "artifacts",
     "venv",
     "runs",
     "reports",
@@ -30,7 +31,12 @@ def _is_excluded_path(path: str) -> bool:
     parts = set(normalized.split("/"))
     if parts & EXCLUDED_PARTS:
         return True
-    return normalized.startswith("bom/sbom/") or normalized.startswith("bom/ai-bom/")
+    return (
+        normalized.startswith("bom/sbom/")
+        or normalized.startswith("bom/ai-bom/")
+        or normalized.startswith("bom/actions/")
+        or normalized.startswith("bom/attestations/")
+    )
 
 
 def validate_detect_secrets(path: Path) -> None:
