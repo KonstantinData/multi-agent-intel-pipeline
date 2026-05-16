@@ -1,0 +1,87 @@
+{
+  "version": "2026-05-16.1",
+  "optimizer": {
+    "min_repeat_failures_for_optimizer": 4
+  },
+  "rules": [
+    {
+      "id": "SEC-001",
+      "category": "security",
+      "severity": "critical",
+      "blocking": true,
+      "applies_to": {
+        "filetypes": [".py", ".yaml", ".yml", ".json", ".toml", ".env"],
+        "purposes": ["runtime_code", "config", "tests"],
+        "risk_levels": ["medium", "high"]
+      },
+      "check": {
+        "type": "regex_forbidden",
+        "pattern": "(?i)(api[_-]?key|secret|password|token)\\s*[:=]\\s*['\\\"][^'\\\"]+['\\\"]"
+      },
+      "fix_hint": "Keine Geheimnisse im Klartext speichern. Secret-Manager oder sichere Umgebungsvariablen verwenden."
+    },
+    {
+      "id": "PRIV-001",
+      "category": "privacy",
+      "severity": "high",
+      "blocking": true,
+      "applies_to": {
+        "filetypes": [".py"],
+        "purposes": ["runtime_code"],
+        "risk_levels": ["high"]
+      },
+      "check": {
+        "type": "regex_forbidden",
+        "pattern": "(?i)log(ger)?\\.(info|debug|warning|error|critical)\\([^\\n]*(email|phone|ssn|iban)"
+      },
+      "fix_hint": "Personenbezogene Daten in Log-Nachrichten entfernen oder maskieren."
+    },
+    {
+      "id": "GOV-001",
+      "category": "governance",
+      "severity": "medium",
+      "blocking": true,
+      "applies_to": {
+        "filetypes": [".md"],
+        "purposes": ["public_docs", "internal_docs"],
+        "risk_levels": ["low", "medium", "high"]
+      },
+      "check": {
+        "type": "regex_required",
+        "pattern": "^#\\s+.+"
+      },
+      "fix_hint": "Dokumente brauchen eine klare Titelüberschrift der Ebene eins."
+    },
+    {
+      "id": "FMT-001",
+      "category": "format",
+      "severity": "medium",
+      "blocking": true,
+      "applies_to": {
+        "filetypes": [".py"],
+        "purposes": ["runtime_code", "tests"],
+        "risk_levels": ["low", "medium", "high"]
+      },
+      "check": {
+        "type": "python_module_docstring"
+      },
+      "fix_hint": "Am Dateianfang eine kurze Modulbeschreibung als Zeichenkette ergänzen."
+    },
+    {
+      "id": "QUAL-001",
+      "category": "quality",
+      "severity": "medium",
+      "blocking": true,
+      "applies_to": {
+        "filetypes": [".py"],
+        "purposes": ["runtime_code", "tests"],
+        "risk_levels": ["low", "medium", "high"]
+      },
+      "check": {
+        "type": "regex_required",
+        "pattern": "from __future__ import annotations"
+      },
+      "fix_hint": "Zukunfts-Annotationen in Python-Dateien einheitlich aktivieren."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+python .codex/compliance/scripts/check_compliance_policies.py \
+  --strict \
+  --changed-only \
+  --purpose runtime_code \
+  --risk-level medium
