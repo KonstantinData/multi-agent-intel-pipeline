@@ -32,12 +32,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      APP_MEMORY_DB_ID_DEV: ${{ secrets.APP_MEMORY_DB_ID_DEV }}
-      APP_MEMORY_DB_ID_STAGING: ${{ secrets.APP_MEMORY_DB_ID_STAGING }}
-      APP_MEMORY_DB_ID_PRODUCTION: ${{ secrets.APP_MEMORY_DB_ID_PRODUCTION }}
-      APP_MEMORY_INGEST_API_TOKEN_DEV: ${{ secrets.APP_MEMORY_INGEST_API_TOKEN_DEV }}
-      APP_MEMORY_INGEST_API_TOKEN_STAGING: ${{ secrets.APP_MEMORY_INGEST_API_TOKEN_STAGING }}
-      APP_MEMORY_INGEST_API_TOKEN_PRODUCTION: ${{ secrets.APP_MEMORY_INGEST_API_TOKEN_PRODUCTION }}
+      APP_MEMORY_INGEST_API_TOKEN: ${{ secrets.APP_MEMORY_INGEST_API_TOKEN }}
       TARGET_ENV: ${{ github.event.inputs.environment }}
     steps:
       - name: Checkout
@@ -56,17 +51,7 @@ jobs:
           test -n "${CLOUDFLARE_API_TOKEN}" || { echo "Missing CLOUDFLARE_API_TOKEN" >&2; exit 1; }
           test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo "Missing CLOUDFLARE_ACCOUNT_ID" >&2; exit 1; }
           case "${TARGET_ENV}" in
-            dev)
-              test -n "${APP_MEMORY_DB_ID_DEV}" || { echo "Missing APP_MEMORY_DB_ID_DEV" >&2; exit 1; }
-              test -n "${APP_MEMORY_INGEST_API_TOKEN_DEV}" || { echo "Missing APP_MEMORY_INGEST_API_TOKEN_DEV" >&2; exit 1; }
-              ;;
-            staging)
-              test -n "${APP_MEMORY_DB_ID_STAGING}" || { echo "Missing APP_MEMORY_DB_ID_STAGING" >&2; exit 1; }
-              test -n "${APP_MEMORY_INGEST_API_TOKEN_STAGING}" || { echo "Missing APP_MEMORY_INGEST_API_TOKEN_STAGING" >&2; exit 1; }
-              ;;
-            production)
-              test -n "${APP_MEMORY_DB_ID_PRODUCTION}" || { echo "Missing APP_MEMORY_DB_ID_PRODUCTION" >&2; exit 1; }
-              test -n "${APP_MEMORY_INGEST_API_TOKEN_PRODUCTION}" || { echo "Missing APP_MEMORY_INGEST_API_TOKEN_PRODUCTION" >&2; exit 1; }
+            dev|staging|production)
               ;;
             *)
               echo "Unsupported TARGET_ENV=${TARGET_ENV}" >&2
@@ -77,6 +62,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve D1 database_id from Cloudflare
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > d1_list.json
+          node -e '
+            const fs = require("fs");
+            const env = process.env.TARGET_ENV;
+            const dbNameByEnv = {
+              dev: "liquisto-app-memory-dev",
+              staging: "liquisto-app-memory-staging",
+              production: "liquisto-app-memory-prod"
+            };
+            const targetDbName = dbNameByEnv[env];
+            const rows = JSON.parse(fs.readFileSync("d1_list.json", "utf8"));
+            const hit = rows.find((r) => r.name === targetDbName);
+            if (!hit || !hit.uuid) {
+              console.error(`D1 database not found for env=${env} name=${targetDbName}`);
+              process.exit(1);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, `\nRESOLVED_APP_MEMORY_DB_ID=${hit.uuid}\n`);
+            console.log(`Resolved ${targetDbName} => ${hit.uuid}`);
+          '
+
       - name: Configure wrangler database_id for target environment
         run: |
           node -e '
@@ -84,12 +92,7 @@ jobs:
             const env = process.env.TARGET_ENV;
             const path = "wrangler.jsonc";
             const data = JSON.parse(fs.readFileSync(path, "utf8"));
-            const dbIds = {
-              dev: process.env.APP_MEMORY_DB_ID_DEV,
-              staging: process.env.APP_MEMORY_DB_ID_STAGING,
-              production: process.env.APP_MEMORY_DB_ID_PRODUCTION
-            };
-            data.env[env].d1_databases[0].database_id = dbIds[env];
+            data.env[env].d1_databases[0].database_id = process.env.RESOLVED_APP_MEMORY_DB_ID;
             fs.writeFileSync(path, JSON.stringify(data, null, 2));
           '
 
@@ -106,15 +109,20 @@ jobs:
 
       - name: Set INGEST_API_TOKEN secret in worker environment
         run: |
+          if [ -z "${APP_MEMORY_INGEST_API_TOKEN}" ]; then
+            echo "APP_MEMORY_INGEST_API_TOKEN not set in GitHub secrets. Skipping secret update."
+            echo "Worker keeps existing INGEST_API_TOKEN value in Cloudflare."
+            exit 0
+          fi
           case "${TARGET_ENV}" in
             dev)
-              echo "${APP_MEMORY_INGEST_API_TOKEN_DEV}" | npx wrangler secret put INGEST_API_TOKEN --env dev
+              echo "${APP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env dev
               ;;
             staging)
-              echo "${APP_MEMORY_INGEST_API_TOKEN_STAGING}" | npx wrangler secret put INGEST_API_TOKEN --env staging
+              echo "${APP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env staging
               ;;
             production)
-              echo "${APP_MEMORY_INGEST_API_TOKEN_PRODUCTION}" | npx wrangler secret put INGEST_API_TOKEN --env production
+              echo "${APP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env production
               ;;
           esac
 
