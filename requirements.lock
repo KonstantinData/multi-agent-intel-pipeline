@@ -18,8 +18,6 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
-bcrypt==4.3.0
-    # via -r requirements.txt
 blinker==1.9.0
     # via streamlit
 cachetools==7.1.2
