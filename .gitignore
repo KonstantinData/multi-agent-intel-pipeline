@@ -226,7 +226,11 @@ test_real.py
 .claude/
 
 # CODEX Code local session data
-.codex/
+.codex/*
+!.codex/compliance/
+!.codex/compliance/**
+.codex/compliance/**/__pycache__/
+.codex/compliance/**/*.pyc
 .cache/
 
 # Node / Cloudflare worker artifacts
