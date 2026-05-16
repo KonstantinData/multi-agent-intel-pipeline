@@ -225,6 +225,10 @@ test_real.py
 # Claude Code local session data
 .claude/
 
+# CODEX Code local session data
+.codex/
+.cache/
+
 # Node / Cloudflare worker artifacts
 **/node_modules/
 **/.wrangler/
