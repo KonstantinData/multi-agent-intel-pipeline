@@ -240,7 +240,8 @@ uv pip compile requirements.txt --python-version 3.12 --universal --output-file 
 
 ```bash
 pip install pre-commit
-pre-commit install     # runs Ruff + Bandit automatically on every git commit
+pre-commit install     # runs compliance-policy-check on every git commit
+pre-commit run --all-files
 ```
 
 During execution, each gate prints live status as:

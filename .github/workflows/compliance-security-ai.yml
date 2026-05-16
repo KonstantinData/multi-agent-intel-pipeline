@@ -43,8 +43,69 @@ jobs:
       - name: Run Ruff
         run: ruff check src scripts tests
 
-  type-check:
+  compliance-policy-check:
     needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Resolve relevant files for compliance check
+        id: compliance_files
+        run: |
+          set -euo pipefail
+          raw_files=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1
+            mapfile -t raw_files < <(git diff --name-only --diff-filter=ACMRTUXB "origin/${{ github.base_ref }}...HEAD")
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              mapfile -t raw_files < <(git diff-tree --no-commit-id --name-only -r "${{ github.sha }}")
+            else
+              mapfile -t raw_files < <(git diff --name-only --diff-filter=ACMRTUXB "${{ github.event.before }}" "${{ github.sha }}")
+            fi
+          else
+            mapfile -t raw_files < <(git ls-files)
+          fi
+
+          files=()
+          for file in "${raw_files[@]}"; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.py|*.md|*.yml|*.yaml|*.json|*.toml)
+                files+=("$file")
+                ;;
+            esac
+          done
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s\n' "${files[@]}" > /tmp/compliance-files.txt
+          echo "count=${#files[@]}" >> "$GITHUB_OUTPUT"
+      - name: Run compliance policy check
+        if: steps.compliance_files.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          mapfile -t files < /tmp/compliance-files.txt
+          python .codex/compliance/scripts/check_compliance_policies.py \
+            --strict \
+            --purpose runtime_code \
+            --risk-level medium \
+            --skip-ruff \
+            --skip-bandit \
+            "${files[@]}"
+
+  type-check:
+    needs: compliance-policy-check
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -506,6 +567,7 @@ jobs:
   pipeline-status:
     needs:
       - lint
+      - compliance-policy-check
       - type-check
       - bandit-sast
       - dependency-lock-gate

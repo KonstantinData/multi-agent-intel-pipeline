@@ -1009,6 +1009,7 @@ def test_init_multi_role_task_generates_current_task(tmp_path: Path) -> None:
 def test_pre_pr_gates_cover_required_workflow_levels() -> None:
     required = {
         "lint",
+        "compliance-policy-check",
         "type-check",
         "bandit-sast",
         "dependency-lock-gate",
@@ -1041,6 +1042,7 @@ def test_pre_pr_gate_resume_starts_at_last_failed_gate() -> None:
             {
                 "gates": [
                     {"name": "lint", "result": "success"},
+                    {"name": "compliance-policy-check", "result": "success"},
                     {"name": "type-check", "result": "success"},
                     {"name": "bandit-sast", "result": "failure"},
                 ]

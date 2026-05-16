@@ -45,6 +45,15 @@ Sicherheits-, Datenschutz-, Format- und Qualitätsregeln.
 
 ## Schnellstart
 
+Lokaler Standard-Trigger:
+
+```powershell
+pip install pre-commit
+pre-commit install
+```
+
+Manueller Einzel-Lauf:
+
 ```powershell
 python .codex/compliance/scripts/check_compliance_policies.py `
   --strict `

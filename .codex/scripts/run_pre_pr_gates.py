@@ -36,6 +36,12 @@ def build_gates(base_ref: str) -> list[Gate]:
     base_lock = "artifacts/base_requirements.lock"
     return [
         Gate("lint", ("ruff check src scripts tests",)),
+        Gate(
+            "compliance-policy-check",
+            (
+                "python .codex/compliance/scripts/check_compliance_policies.py --strict --changed-only --purpose runtime_code --risk-level medium",
+            ),
+        ),
         Gate("type-check", ("mypy",)),
         Gate("bandit-sast", ("bandit -q -r src scripts -x tests",)),
         Gate(
@@ -352,7 +358,7 @@ def _resolve_start_from_changes(gates: list[Gate], changed_files: list[str]) -> 
         return "governance-gates"
     if any(path.startswith("knowledge/") for path in files):
         return "runtime-contract-tests"
-    if any(path.startswith(".codex/") or path.startswith(".githooks/") for path in files):
+    if any(path.startswith(".codex/") or path == ".pre-commit-config.yaml" for path in files):
         return "script-contract-tests"
 
     known_gate_names = {gate.name for gate in gates}
