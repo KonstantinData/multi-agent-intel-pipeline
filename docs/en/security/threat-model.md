@@ -52,6 +52,8 @@ run artifacts, memory, CI/CD governance, and generated reports.
 
 The `compliance-security-ai` workflow includes:
 
+- compliance policy check (`.codex/compliance/scripts/check_compliance_policies.py`)
+  with integrated Ruff and Bandit checks on relevant changed files;
 - Ruff linting for `src`, `scripts`, and `tests`;
 - MyPy type check for `src`, `scripts`, and `tests`;
 - Bandit SAST for `src` and `scripts`;
@@ -71,8 +73,10 @@ The `compliance-security-ai` workflow includes:
 - OCI image SBOM generation with Syft and CycloneDX validation;
 - compliance manifest attestation on non-PR runs.
 
-A `.pre-commit-config.yaml` runs Ruff and Bandit locally on every `git commit`
-(same scope as CI). Activate with `pip install pre-commit && pre-commit install`.
+A `.pre-commit-config.yaml` runs `compliance-policy-check` locally on every
+`git commit`. The compliance checker executes policy checks plus integrated Ruff
+and Bandit checks on changed Python files. Activate with
+`pip install pre-commit && pre-commit install`.
 
 Additional workflows cover dependency review, mandatory CodeQL, and release
 attestation. Release attestations bind SLSA provenance and the CycloneDX SBOM

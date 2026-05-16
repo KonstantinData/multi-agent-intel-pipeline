@@ -201,13 +201,14 @@ committed.
 
 **File:** [.github/workflows/compliance-security-ai.yml](../../../.github/workflows/compliance-security-ai.yml)
 
-The main security pipeline. Every push and pull request runs 21 sequential gates.
+The main security pipeline. Every push and pull request runs 22 sequential gates.
 No gate is optional. All gates must pass before the `pipeline-status` aggregator
 job succeeds, and `pipeline-status` is a required status check on the main branch.
 
 | Gate | Tool | What it checks |
 | --- | --- | --- |
 | `lint` | Ruff | Code style and import hygiene on `src`, `scripts`, `tests` |
+| `compliance-policy-check` | Compliance checker + Ruff + Bandit | Unified policy checks for relevant changed files (`.py`, `.md`, `.yml`, `.yaml`, `.json`, `.toml`) |
 | `type-check` | MyPy (strict) | Type correctness across `src`, `scripts`, `tests` |
 | `bandit-sast` | Bandit | Python security issues in `src` and `scripts` (excludes `tests`) |
 | `dependency-lock-gate` | uv | `requirements.txt` to `requirements.lock` drift — fails if lock is stale |
@@ -240,8 +241,9 @@ job succeeds, and `pipeline-status` is a required status check on the main branc
 | [deploy.yml](../../../.github/workflows/deploy.yml) | After Release Attestation succeeds | Deploys to Hetzner via SSH; only triggers on `conclusion == 'success'`; uses digest-pinned SSH action and CI secrets (`HETZNER_HOST`, `HETZNER_USER`, `HETZNER_SSH_KEY`) |
 
 **Local pre-commit hooks** (`pip install pre-commit && pre-commit install`) run
-Ruff and Bandit on every `git commit` with the same scope as CI, catching issues
-before they reach the pipeline.
+`compliance-policy-check` on every `git commit`. That unified checker applies
+policy validation and integrated Ruff/Bandit checks for changed Python files,
+catching issues before they reach the pipeline.
 
 ---
 
@@ -262,7 +264,7 @@ Defines the GitHub Ruleset applied to the `main` branch. Key rules:
   - All review threads must be resolved before merge.
   - Allowed merge methods: merge commit and squash only (rebase is disabled).
 - **Required status checks** (all must pass; no dismissal allowed):
-  - `pipeline-status` (aggregates all 21 compliance-security-ai gates)
+  - `pipeline-status` (aggregates all 22 compliance-security-ai gates)
   - `codeql / analyze`
   - `dependency-review`
   - `compliance-security-ai / policy-as-code-gate`
