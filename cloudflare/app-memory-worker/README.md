@@ -68,6 +68,25 @@ npm run deploy:staging
 npm run deploy:prod
 ```
 
+## GitHub Actions deployment
+
+Workflow: `.github/workflows/deploy-app-memory-worker.yml`
+
+Required repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `APP_MEMORY_DB_ID_DEV`
+- `APP_MEMORY_DB_ID_STAGING`
+- `APP_MEMORY_DB_ID_PRODUCTION`
+- `APP_MEMORY_INGEST_API_TOKEN_DEV`
+- `APP_MEMORY_INGEST_API_TOKEN_STAGING`
+- `APP_MEMORY_INGEST_API_TOKEN_PRODUCTION`
+
+Run the workflow manually and select `dev`, `staging`, or `production`.
+The workflow applies migrations, updates `INGEST_API_TOKEN`, and deploys
+`liquisto-app-memory-worker` for the selected environment.
+
 ## Operational defaults
 
 - `upload_source_maps: true`
