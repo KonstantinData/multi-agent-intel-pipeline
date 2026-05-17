@@ -1,14 +1,12 @@
 model = "gpt-5.3-codex"
-approval_policy = "on-request"
+approval_policy = "never"
 
 [profiles.deep-review]
-model = "gpt-5.3-codex"
 model_reasoning_effort = "high"
 approval_policy = "never"
 
 [profiles.lightweight]
-model = "gpt-5.3-codex"
-approval_policy = "untrusted"
+approval_policy = "never"
 
 [instruction_index]
 json = ".codex/config/instruction_index.json"
