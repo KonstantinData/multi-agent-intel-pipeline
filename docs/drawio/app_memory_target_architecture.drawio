@@ -1,0 +1,217 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram id="maip-app-memory-target" name="App Memory Target Architecture">
+    <mxGraphModel dx="1951" dy="1014" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=28;fontStyle=1;fontColor=#0f172a;" value="MAIP App Memory Target Architecture" vertex="1">
+          <mxGeometry height="38" width="900" x="40" y="24" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=13;fontColor=#475569;" value="D1 is metadata source of truth · R2 stores scrubbed objects · Vectorize is rebuildable semantic projection · Hetzner stores runtime artifacts only" vertex="1">
+          <mxGeometry height="24" width="1680" x="40" y="64" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_hetzner" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#fdba74;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="980" width="380" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_local" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0f9ff;strokeColor=#7dd3fc;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="980" width="440" x="440" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_cloudflare" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7fef9;strokeColor=#86efac;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="980" width="860" x="900" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_runtime" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#a5b4fc;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="980" width="360" x="1780" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane_rules" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff1f2;strokeColor=#fda4af;strokeWidth=1;" value="" vertex="1">
+          <mxGeometry height="270" width="2100" x="40" y="1130" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_hetzner" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#ea580c;fontColor=#7c2d12;fontSize=14;fontStyle=1;align=left;spacingLeft=10;" value="Hetzner Runtime Artifact Store" vertex="1">
+          <mxGeometry height="36" width="380" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_local" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#0284c7;fontColor=#0c4a6e;fontSize=14;fontStyle=1;align=left;spacingLeft=10;" value="Local Processing Layer" vertex="1">
+          <mxGeometry height="36" width="440" x="440" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_cloudflare" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontColor=#14532d;fontSize=14;fontStyle=1;align=left;spacingLeft=10;" value="Cloudflare MAIP App Memory" vertex="1">
+          <mxGeometry height="36" width="860" x="900" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_runtime" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4f46e5;fontColor=#312e81;fontSize=14;fontStyle=1;align=left;spacingLeft=10;" value="Future Runtime Retrieval" vertex="1">
+          <mxGeometry height="36" width="360" x="1780" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="hdr_rules" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontColor=#881337;fontSize=14;fontStyle=1;align=left;spacingLeft=10;" value="Non-Negotiable Boundaries" vertex="1">
+          <mxGeometry height="36" width="2100" x="40" y="1130" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime_artifacts" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fed7aa;strokeColor=#ea580c;strokeWidth=2;fontSize=12;fontColor=#7c2d12;align=left;spacing=8;" value="&lt;b&gt;Runtime artifacts only&lt;/b&gt;&#xa;Concrete run output by run_id&#xa;&#xa;Examples:&#xa;intake, department states, task artifacts, evidence packets, reviews, decisions, packages, synthesis, reports, follow-up history, checkpoints" vertex="1">
+          <mxGeometry height="240" width="320" x="70" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime_boundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=12;fontColor=#7c2d12;align=left;spacing=8;" value="&lt;b&gt;Boundary&lt;/b&gt;&#xa;May contain customer-specific facts.&#xa;Does not persist into Cloudflare app memory.&#xa;&#xa;Follow-up answers for concrete runs continue to use these artifacts." vertex="1">
+          <mxGeometry height="150" width="320" x="70" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="local_read" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=12;fontColor=#0c4a6e;align=left;spacing=8;" value="&lt;b&gt;Temporary artifact read&lt;/b&gt;&#xa;Local jobs may read Hetzner artifacts for processing.&#xa;No durable raw copy by default." vertex="1">
+          <mxGeometry height="90" width="360" x="480" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="local_scrub" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#0284c7;strokeWidth=2;fontSize=12;fontColor=#0c4a6e;align=left;spacing=8;" value="&lt;b&gt;Scrubber + policy gates&lt;/b&gt;&#xa;PII scan · company/domain/person scan · URL scan · prompt/secret scan · schema validation · policy version assignment" vertex="1">
+          <mxGeometry height="125" width="360" x="480" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="local_extract" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=12;fontColor=#0c4a6e;align=left;spacing=8;" value="&lt;b&gt;Candidate extractor&lt;/b&gt;&#xa;Produces scrubbed learning candidates only.&#xa;&#xa;Examples: query patterns, critic heuristics, judge principles, failure modes, report-quality patterns." vertex="1">
+          <mxGeometry height="135" width="360" x="480" y="485" as="geometry" />
+        </mxCell>
+        <mxCell id="local_eval" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=12;fontColor=#0c4a6e;align=left;spacing=8;" value="&lt;b&gt;Evaluation + embedding preparation&lt;/b&gt;&#xa;Deduplication · offline evaluation · embedding batch preparation · dry-run backfills · reproducible manifests" vertex="1">
+          <mxGeometry height="110" width="360" x="480" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_inputs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0284c7;fontSize=12;fontColor=#0c4a6e;align=left;spacing=8;" value="&lt;b&gt;Operations inputs&lt;/b&gt;&#xa;Operator, CI, deploy jobs, smoke tests, healthchecks, migrations, incidents" vertex="1">
+          <mxGeometry height="95" width="360" x="480" y="830" as="geometry" />
+        </mxCell>
+        <mxCell id="worker_api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;strokeWidth=2;fontSize=12;fontColor=#14532d;align=left;spacing=8;" value="&lt;b&gt;MAIP Memory Worker API&lt;/b&gt;&#xa;Bearer auth via INGEST_API_TOKEN&#xa;&#xa;Endpoints: /v1/events, /v1/learning/candidates, /reviews, /patterns/:accept, /v1/retrieval/query, /v1/ops/events" vertex="1">
+          <mxGeometry height="155" width="360" x="940" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#bbf7d0;strokeColor=#16a34a;strokeWidth=2;fontSize=12;fontColor=#14532d;align=center;spacing=8;" value="&lt;b&gt;D1: source of truth&lt;/b&gt;&#xa;Metadata · lifecycle · audit · relationships&#xa;&#xa;Tables: memory_events, memory_objects, learning_candidates, pattern_reviews, accepted_patterns, retrieval_events, ops_events" vertex="1">
+          <mxGeometry height="230" width="250" x="950" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="DoYS_m_EHshTnAONSAj_-1" edge="1" parent="1" source="r2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="vectorize" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#cffafe;strokeColor=#06b6d4;strokeWidth=2;fontSize=12;fontColor=#155e75;align=center;spacing=8;" value="&lt;b&gt;R2: scrubbed objects&lt;/b&gt;&#xa;Candidate JSON · accepted pattern bodies · reviews · snapshots · manifests · evaluation reports&#xa;&#xa;No raw runtime artifacts." vertex="1">
+          <mxGeometry height="230" width="230" x="1235" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="vectorize" parent="1" style="shape=cylinder3d;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ede9fe;strokeColor=#7c3aed;strokeWidth=2;fontSize=12;fontColor=#4c1d95;align=center;spacing=8;" value="&lt;b&gt;Vectorize: semantic projection&lt;/b&gt;&#xa;Accepted patterns only&#xa;&#xa;Metadata: pattern_id, role, scope, pattern_type, status, schema_version, policy_version, content_hash&#xa;&#xa;Rebuildable from D1 + R2" vertex="1">
+          <mxGeometry height="230" width="230" x="1500" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="ops_brain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;strokeWidth=2;fontSize=12;fontColor=#78350f;align=left;spacing=8;" value="&lt;b&gt;Operations Brain&lt;/b&gt;&#xa;Deployment observations · migration history · healthchecks · CI/review gates · incident notes · maintenance notes · architecture working knowledge" vertex="1">
+          <mxGeometry height="125" width="360" x="940" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="improvement_brain" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;strokeWidth=2;fontSize=12;fontColor=#14532d;align=left;spacing=8;" value="&lt;b&gt;Runtime Improvement Brain&lt;/b&gt;&#xa;Scrubbed, reviewed learning extracted from runtime artifacts.&#xa;&#xa;Accepted patterns improve future runtime outputs." vertex="1">
+          <mxGeometry height="125" width="360" x="1370" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="cloudflare_envs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0fdf4;strokeColor=#16a34a;fontSize=12;fontColor=#14532d;align=left;spacing=8;" value="&lt;b&gt;Remote environments&lt;/b&gt;&#xa;dev · staging · production&#xa;&#xa;Each has its own D1, R2, Vectorize index and Worker secret." vertex="1">
+          <mxGeometry height="100" width="400" x="1130" y="910" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime_retrieval" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4f46e5;strokeWidth=2;fontSize=12;fontColor=#312e81;align=left;spacing=8;" value="&lt;b&gt;Runtime retrieval policy&lt;/b&gt;&#xa;Reads accepted patterns only.&#xa;&#xa;Filters: role, scope, pattern_type, schema_version, policy_version." vertex="1">
+          <mxGeometry height="135" width="290" x="1815" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="future_runs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=12;fontColor=#312e81;align=left;spacing=8;" value="&lt;b&gt;Future runtime runs&lt;/b&gt;&#xa;Use retrieved process patterns to improve output quality.&#xa;&#xa;Concrete follow-up answers still come from Hetzner runtime artifacts." vertex="1">
+          <mxGeometry height="140" width="290" x="1815" y="425" as="geometry" />
+        </mxCell>
+        <mxCell id="retrieval_audit" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#4f46e5;fontSize=12;fontColor=#312e81;align=left;spacing=8;" value="&lt;b&gt;Retrieval audit&lt;/b&gt;&#xa;retrieval_events logs correlation_id, role, scope, query_hash, policy_version, result_count, metadata_json.&#xa;&#xa;No raw prompt text or customer facts." vertex="1">
+          <mxGeometry height="150" width="290" x="1815" y="625" as="geometry" />
+        </mxCell>
+        <mxCell id="rule_no_raw" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;strokeWidth=2;fontSize=12;fontColor=#881337;align=left;spacing=8;" value="&lt;b&gt;No raw runtime artifacts in Cloudflare&lt;/b&gt;&#xa;No evidence, reports, domains, URLs, people, email addresses, target-company facts, or concrete run conclusions as reusable memory." vertex="1">
+          <mxGeometry height="120" width="470" x="70" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="rule_d1_wins" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;fontColor=#881337;align=left;spacing=8;" value="&lt;b&gt;D1 wins over Vectorize&lt;/b&gt;&#xa;Vectorize is a rebuildable index, not durable truth. Every vector must map back to D1 metadata and R2 content hash." vertex="1">
+          <mxGeometry height="120" width="430" x="575" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="rule_no_raw_events" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;fontColor=#881337;align=left;spacing=8;" value="&lt;b&gt;No raw events as runtime context&lt;/b&gt;&#xa;Retrieval must not use raw memory_events, proposed candidates, rejected candidates, deprecated patterns, ops events, or unreviewed R2 objects." vertex="1">
+          <mxGeometry height="120" width="490" x="1040" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="rule_canonical" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe4e6;strokeColor=#e11d48;fontSize=12;fontColor=#881337;align=left;spacing=8;" value="&lt;b&gt;Does not override canonical sources&lt;/b&gt;&#xa;Code, tests, contracts, YAML policy/query files, and canonical architecture docs remain authoritative." vertex="1">
+          <mxGeometry height="120" width="520" x="1565" y="1200" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_artifacts_local" edge="1" parent="1" source="runtime_artifacts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#0284c7;fontColor=#0284c7;fontSize=10;endArrow=block;" target="local_read" value="temporary read">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_read_scrub" edge="1" parent="1" source="local_read" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#0284c7;endArrow=block;" target="local_scrub" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_scrub_extract" edge="1" parent="1" source="local_scrub" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#0284c7;fontColor=#0284c7;fontSize=10;endArrow=block;" target="local_extract" value="scrubbed only">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_extract_eval" edge="1" parent="1" source="local_extract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#0284c7;endArrow=block;" target="local_eval" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_local_worker" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#16a34a;fontColor=#16a34a;fontSize=10;endArrow=block;" value="POST scrubbed candidates&amp;nbsp;&lt;div&gt;/ reviews&amp;nbsp;&lt;/div&gt;&lt;div&gt;/ accepted patterns&lt;/div&gt;">
+          <mxGeometry relative="1" x="-0.0511" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="860" y="706" />
+              <mxPoint x="920" y="258" />
+            </Array>
+            <mxPoint x="840" y="706" as="sourcePoint" />
+            <mxPoint x="940" y="258" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_ops_worker" edge="1" parent="1" source="ops_inputs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#d97706;fontColor=#78350f;fontSize=10;endArrow=block;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" target="worker_api" value="POST&amp;nbsp;&lt;div&gt;ops events&lt;/div&gt;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="910" y="878" />
+              <mxPoint x="910" y="301" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_worker_d1" edge="1" parent="1" source="worker_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#16a34a;fontColor=#14532d;fontSize=10;endArrow=block;exitX=0.261;exitY=0.997;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.339;entryY=0.001;entryDx=0;entryDy=0;entryPerimeter=0;" target="d1" value="metadata + lifecycle + audit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_worker_r2" edge="1" parent="1" source="worker_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#06b6d4;fontColor=#155e75;fontSize=10;endArrow=block;" target="r2" value="scrubbed object bodies">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_worker_vector" edge="1" parent="1" source="worker_api" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#7c3aed;fontColor=#4c1d95;fontSize=10;endArrow=block;" target="vectorize" value="accepted pattern vectors only">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_d1_r2" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#0f766e;fontColor=#0f766e;fontSize=10;endArrow=none;dashed=1;" target="r2" value="object_id + content_hash">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_d1_vector" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#7c3aed;fontColor=#4c1d95;fontSize=10;endArrow=none;dashed=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.279;entryY=-0.008;entryDx=0;entryDy=0;entryPerimeter=0;" target="vectorize" value="vector_id + metadata confirmation">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1138" y="400" />
+              <mxPoint x="1564" y="400" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_d1_ops" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#d97706;fontColor=#78350f;fontSize=10;endArrow=block;entryX=0.375;entryY=0.02;entryDx=0;entryDy=0;entryPerimeter=0;" target="ops_brain" value="ops_events + memory_events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_d1_improvement" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=1;strokeColor=#16a34a;fontColor=#14532d;fontSize=10;endArrow=block;exitX=0.797;exitY=1.004;exitDx=0;exitDy=0;exitPerimeter=0;" target="improvement_brain" value="learning_candidates + reviews + accepted_patterns">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1149" y="690" />
+              <mxPoint x="1550" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_vector_retrieval" edge="1" parent="1" source="vectorize" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#7c3aed;fontColor=#4c1d95;fontSize=10;endArrow=block;exitX=0.75;exitY=0;exitDx=0;exitDy=0;" value="semantic candidates">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1672" y="390" />
+              <mxPoint x="1880" y="390" />
+            </Array>
+            <mxPoint x="1880" y="365" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_d1_retrieval" edge="1" parent="1" source="d1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#16a34a;fontColor=#14532d;fontSize=10;endArrow=block;" target="runtime_retrieval" value="D1 confirmation">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1210" y="535" />
+              <mxPoint x="1210" y="670" />
+              <mxPoint x="1760" y="670" />
+              <mxPoint x="1760" y="298" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_retrieval_runs" edge="1" parent="1" source="runtime_retrieval" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#4f46e5;fontColor=#312e81;fontSize=10;endArrow=block;entryX=0.627;entryY=0.015;entryDx=0;entryDy=0;entryPerimeter=0;exitX=0.624;exitY=1.014;exitDx=0;exitDy=0;exitPerimeter=0;" target="future_runs" value="accepted patterns only">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_retrieval_audit" edge="1" parent="1" source="runtime_retrieval" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#4f46e5;fontColor=#312e81;fontSize=10;endArrow=block;exitX=0.344;exitY=0.998;exitDx=0;exitDy=0;exitPerimeter=0;" target="retrieval_audit" value="write&amp;nbsp;&lt;div&gt;retrieval_&lt;span style=&quot;background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); color: light-dark(rgb(49, 46, 129), rgb(189, 186, 255));&quot;&gt;events&lt;/span&gt;&lt;/div&gt;">
+          <mxGeometry relative="1" x="0.4845" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="1915" y="410" />
+              <mxPoint x="1800" y="410" />
+              <mxPoint x="1800" y="700" />
+            </Array>
+            <mxPoint x="1915" y="370" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge_followup_hetzner" edge="1" parent="1" source="future_runs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#ea580c;fontColor=#7c2d12;fontSize=10;endArrow=block;dashed=1;" target="runtime_artifacts" value="concrete follow-up evidence remains here">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="2160" y="495" />
+              <mxPoint x="2160" y="1040" />
+              <mxPoint x="20" y="1040" />
+              <mxPoint x="20" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

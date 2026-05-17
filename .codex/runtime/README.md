@@ -16,9 +16,9 @@ architecture source of truth.
 ## Runtime Memory Target
 
 - Provider: Cloudflare
-- Worker service: `liquisto-app-memory-worker`
-- Worker environment: `runtime_dev`
-- D1 database: `liquisto-runtime-memory-dev`
+- Worker service: `maip-memory-worker`
+- Worker environments: `dev`, `staging`, `prod`
+- D1 databases: `maip-memory-dev`, `maip-memory-staging`, `maip-memory-prod`
 - D1 binding: `MEMORY_DB`
 
 Remote Cloudflare actions require explicit approval and credentials:
@@ -83,19 +83,27 @@ Escalate if confidence is below `0.6`, or below `0.75` for high-risk changes.
 ## Memory Rules
 
 Allowed event classes are defined in `runtime_memory_reference.json`.
+Codex operating-layer learning events are defined in `learning_event_schema.json`
+and recorded through `.codex/scripts/record_learning_event.py`.
 
 Never store secrets, raw tokens, passwords, private keys, customer facts as
 process memory, or run-specific conclusions as reusable long-term truth.
 
-## Local Runtime Memory Emitter
+## Local Learning Event Recorder
 
-For a reproducible local runtime-memory smoke emit, use:
+Hooks and PR lifecycle tooling write append-only events locally before optional
+remote sync:
 
 ```powershell
-python scripts/emit_runtime_memory_events.py --kind runtime_task_started --payload-json '{"note":"manual-smoke"}'
+python .codex/scripts/record_learning_event.py record `
+  --event-type compliance_check_completed `
+  --area learning `
+  --source manual_smoke `
+  --correlation-id manual-smoke `
+  --payload-json '{"status":"manual"}'
 ```
 
 Requirements:
 
-- `APP_MEMORY_INGEST_API_TOKEN` must be set in the current shell session.
-- Worker must be reachable (default target is the `runtime_dev` worker URL).
+- Remote sync is optional and requires `MAIP_MEMORY_BASE_URL` and `MAIP_MEMORY_INGEST_API_TOKEN`.
+- If remote sync is unavailable, events remain in `artifacts/codex-learning/outbox/*.jsonl`.

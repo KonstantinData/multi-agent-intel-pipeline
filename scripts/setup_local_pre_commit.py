@@ -53,36 +53,37 @@ def _ensure_pre_commit_available() -> None:
 def _install_pre_commit() -> None:
     pre_commit_exe = shutil.which("pre-commit")
     if pre_commit_exe:
+        for hook_type in ("pre-commit", "pre-push"):
+            _run(
+                [
+                    "pre-commit",
+                    "install",
+                    "--hook-type",
+                    hook_type,
+                    "--install-hooks",
+                ]
+            )
+        return
+    for hook_type in ("pre-commit", "pre-push"):
         _run(
             [
-                "pre-commit",
+                sys.executable,
+                "-m",
+                "pre_commit",
                 "install",
                 "--hook-type",
-                "pre-commit",
+                hook_type,
                 "--install-hooks",
             ]
         )
-        return
-    _run(
-        [
-            sys.executable,
-            "-m",
-            "pre_commit",
-            "install",
-            "--hook-type",
-            "pre-commit",
-            "--install-hooks",
-        ]
-    )
 
 
-def _verify_hook_file() -> Path:
-    hook_path = ROOT / ".git" / "hooks" / "pre-commit"
-    if not hook_path.is_file():
-        raise SystemExit(
-            f"pre-commit hook not found at expected path: {hook_path.as_posix()}"
-        )
-    return hook_path
+def _verify_hook_files() -> list[Path]:
+    hook_paths = [ROOT / ".git" / "hooks" / name for name in ("pre-commit", "pre-push")]
+    missing = [path.as_posix() for path in hook_paths if not path.is_file()]
+    if missing:
+        raise SystemExit(f"Git hook(s) not found at expected path(s): {missing}")
+    return hook_paths
 
 
 def _run_compliance_hook() -> None:
@@ -134,10 +135,11 @@ def main() -> None:
 
     _ensure_pre_commit_available()
     _install_pre_commit()
-    hook_path = _verify_hook_file()
+    hook_paths = _verify_hook_files()
 
     hooks_path_after = _get_local_hooks_path()
-    print(f"pre-commit hook installed: {hook_path.as_posix()}")
+    for hook_path in hook_paths:
+        print(f"git hook installed: {hook_path.as_posix()}")
     print(f"local core.hooksPath after setup: {hooks_path_after or '<default .git/hooks>'}")
 
     if args.run_check:

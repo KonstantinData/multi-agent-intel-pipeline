@@ -1,0 +1,49 @@
+{
+  "schema_version": "2026-05-17.1",
+  "description": "Codex operating-layer learning events shared by Git hooks, local gates, PR watchers, and MAIP memory ingestion.",
+  "allowed_areas": [
+    "governance",
+    "learning",
+    "ci",
+    "operations",
+    "tests"
+  ],
+  "allowed_event_types": [
+    "git_branch_guard_failed",
+    "compliance_check_completed",
+    "pre_pr_gate_completed",
+    "pr_check_failed",
+    "pr_fix_attempt_started",
+    "pr_fix_attempt_completed",
+    "pr_recheck_completed",
+    "pr_recovered",
+    "learning_pattern_candidate_created",
+    "learning_pattern_accepted"
+  ],
+  "required_fields": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "area",
+    "source",
+    "run_id",
+    "correlation_id",
+    "status",
+    "created_at",
+    "payload"
+  ],
+  "storage_model": {
+    "local_outbox": "artifacts/codex-learning/outbox/*.jsonl",
+    "local_sent_index": "artifacts/codex-learning/sent_event_ids.json",
+    "maip_endpoint": "/v1/events",
+    "d1": "event metadata, status, correlation ids",
+    "r2": "large logs and reports when promoted by a later worker flow",
+    "vectorize": "accepted scrubbed patterns only"
+  },
+  "reliability_rules": [
+    "Always append locally before attempting remote sync.",
+    "Remote sync is best-effort unless a caller explicitly requests strict sync.",
+    "Event IDs are used for dedupe during outbox flush.",
+    "Payloads sent to MAIP memory must avoid secrets, URLs, customer facts, and raw logs."
+  ]
+}

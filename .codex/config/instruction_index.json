@@ -112,6 +112,7 @@
       "files": [
         ".codex/runtime/README.md",
         ".codex/runtime/autonomous_runtime_prompt.md",
+        ".codex/runtime/learning_event_schema.json",
         ".codex/runtime/runtime_memory_reference.json"
       ]
     }
@@ -136,6 +137,7 @@
     ".codex/policies/liquisto/tool_allowlist.md",
     ".codex/runtime/README.md",
     ".codex/runtime/autonomous_runtime_prompt.md",
+    ".codex/runtime/learning_event_schema.json",
     ".codex/runtime/runtime_memory_reference.json",
     ".codex/skills/README.md",
     ".codex/skills/liquisto/README.md",

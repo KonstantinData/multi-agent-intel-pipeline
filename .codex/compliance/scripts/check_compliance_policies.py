@@ -10,6 +10,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPLIANCE_SRC = Path(__file__).resolve().parents[1] / "src"
+LEARNING_RECORDER = REPO_ROOT / ".codex" / "scripts" / "record_learning_event.py"
 if str(COMPLIANCE_SRC) not in sys.path:
     sys.path.insert(0, str(COMPLIANCE_SRC))
 if str(REPO_ROOT) not in sys.path:
@@ -106,6 +107,101 @@ def _run_tool(command: list[str]) -> dict[str, Any]:
     }
 
 
+def _record_learning_event(
+    *,
+    event_type: str,
+    payload: dict[str, Any],
+    run_id: str,
+    status: str,
+    correlation_suffix: str = "",
+) -> None:
+    if not LEARNING_RECORDER.is_file():
+        return
+    correlation_id = run_id or "compliance-local"
+    if correlation_suffix:
+        correlation_id = f"{correlation_id}-{correlation_suffix}"
+    subprocess.run(  # nosec B603 - fixed local recorder invocation
+        [
+            sys.executable,
+            str(LEARNING_RECORDER),
+            "record",
+            "--event-type",
+            event_type,
+            "--area",
+            "learning",
+            "--source",
+            "compliance_policy_check",
+            "--status",
+            status,
+            "--correlation-id",
+            correlation_id,
+            "--run-id",
+            run_id or "compliance-local",
+            "--payload-json",
+            json.dumps(payload, ensure_ascii=False),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _record_report_learning_events(*, report: dict[str, Any], run_id: str, status: str) -> None:
+    summary_payload = {
+        "policy_version": report.get("policy_version"),
+        "files_checked": report.get("files_checked", 0),
+        "blocking_violation_count": report.get("blocking_violation_count", 0),
+        "failed_tool_checks_count": report.get("failed_tool_checks_count", 0),
+        "pattern_count": len(report.get("patterns", [])),
+        "proposal_count": len(report.get("proposals", [])),
+        "proposal_validation_count": len(report.get("proposal_validations", [])),
+        "status": status,
+    }
+    _record_learning_event(
+        event_type="compliance_check_completed",
+        payload=summary_payload,
+        run_id=run_id,
+        status=status,
+    )
+
+    proposals = report.get("proposals", [])
+    if proposals:
+        _record_learning_event(
+            event_type="learning_pattern_candidate_created",
+            payload={
+                "policy_version": report.get("policy_version"),
+                "proposal_count": len(proposals),
+                "proposal_ids": [
+                    str(item.get("proposal_id", ""))
+                    for item in proposals
+                    if isinstance(item, dict) and item.get("proposal_id")
+                ][:25],
+            },
+            run_id=run_id,
+            status="proposed",
+            correlation_suffix="candidates",
+        )
+
+    accepted = [
+        item
+        for item in report.get("proposal_validations", [])
+        if isinstance(item, dict) and item.get("verdict") == "accepted"
+    ]
+    if accepted:
+        _record_learning_event(
+            event_type="learning_pattern_accepted",
+            payload={
+                "policy_version": report.get("policy_version"),
+                "accepted_count": len(accepted),
+                "proposal_ids": [str(item.get("proposal_id", "")) for item in accepted if item.get("proposal_id")][:25],
+            },
+            run_id=run_id,
+            status="accepted",
+            correlation_suffix="accepted-patterns",
+        )
+
+
 def main() -> int:
     from compliance import (
         build_compliance_patterns,
@@ -177,6 +273,7 @@ def main() -> int:
             _write_json(Path(args.output_path), report)
         else:
             sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        _record_report_learning_events(report=report, run_id=args.run_id, status="passed")
         return 0
 
     artifacts: list[Any] = []
@@ -256,6 +353,9 @@ def main() -> int:
         _write_json(Path(args.output_path), report)
     else:
         sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+
+    status = "failed" if blocking_violations or failed_tool_checks else "passed"
+    _record_report_learning_events(report=report, run_id=args.run_id, status=status)
 
     if args.strict and (blocking_violations or failed_tool_checks):
         return 1

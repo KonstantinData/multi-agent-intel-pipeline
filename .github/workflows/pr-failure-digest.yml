@@ -47,7 +47,6 @@ jobs:
             exit 0
           fi
 
-          RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
           WORKFLOW_NAME="$(jq -r '.workflow_run.name // "unknown"' "$GITHUB_EVENT_PATH")"
           CONCLUSION="$(jq -r '.workflow_run.conclusion // "unknown"' "$GITHUB_EVENT_PATH")"
 
@@ -86,23 +85,23 @@ jobs:
 
           rm -f "$COMMENT_FILE"
 
-      - name: Emit failure event to app memory (non-blocking)
+      - name: Emit failure event to MAIP memory (non-blocking)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.event.workflow_run.id }}
-          APP_MEMORY_INGEST_API_TOKEN: ${{ secrets.APP_MEMORY_INGEST_API_TOKEN }}
-          APP_MEMORY_BASE_URL: ${{ vars.APP_MEMORY_WORKER_BASE_URL }}
+          MAIP_MEMORY_INGEST_API_TOKEN: ${{ secrets.MAIP_MEMORY_INGEST_API_TOKEN }}
+          MAIP_MEMORY_BASE_URL: ${{ vars.MAIP_MEMORY_WORKER_BASE_URL }}
         run: |
           set -euo pipefail
 
-          if [ -z "${APP_MEMORY_INGEST_API_TOKEN:-}" ]; then
-            echo "APP_MEMORY_INGEST_API_TOKEN not configured; skip memory emit."
+          if [ -z "${MAIP_MEMORY_INGEST_API_TOKEN:-}" ]; then
+            echo "MAIP_MEMORY_INGEST_API_TOKEN not configured; skip memory emit."
             exit 0
           fi
 
-          BASE_URL="${APP_MEMORY_BASE_URL:-https://liquisto-app-memory-worker-runtime-dev.still-butterfly-bbff.workers.dev}"
+          BASE_URL="${MAIP_MEMORY_BASE_URL:-https://maip-memory-worker-dev.still-butterfly-bbff.workers.dev}"
           PR_NUMBER="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
           if [ -z "$PR_NUMBER" ]; then
             echo "No PR number in workflow_run payload; skip memory emit."
@@ -116,7 +115,7 @@ jobs:
           BRANCH_NAME="$(jq -r '.workflow_run.head_branch // ""' "$GITHUB_EVENT_PATH")"
 
           FAILED_JOBS_JSON="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate --jq \
-            '[.jobs[] | select((.conclusion=="failure") or (.conclusion=="cancelled") or (.conclusion=="timed_out") or (.conclusion=="action_required")) | {name: .name, conclusion: .conclusion, url: .html_url}]' || echo '[]')"
+            '[.jobs[] | select((.conclusion=="failure") or (.conclusion=="cancelled") or (.conclusion=="timed_out") or (.conclusion=="action_required")) | {name: .name, conclusion: .conclusion}]' || echo '[]')"
 
           EVENT_FILE="$(mktemp)"
           jq -n \
@@ -125,22 +124,20 @@ jobs:
             --arg workflow_name "$WORKFLOW_NAME" \
             --arg workflow_conclusion "$CONCLUSION" \
             --arg workflow_run_id "$RUN_ID" \
-            --arg workflow_run_url "$RUN_URL" \
             --arg head_sha "$HEAD_SHA" \
             --arg head_branch "$BRANCH_NAME" \
             --argjson failed_jobs "$FAILED_JOBS_JSON" \
             '{
-              run_id: ("pr-" + $pr_number + "-ci-" + $workflow_run_id),
-              department: "ci",
-              kind: "runtime_evaluation_completed",
+              area: "ci",
+              event_type: "pr_check_failed",
               source: "github_actions_pr_failure_digest",
+              correlation_id: ("pr-" + $pr_number + "-ci-" + $workflow_run_id),
               payload: {
                 repository: $repo,
                 pr_number: ($pr_number | tonumber),
                 workflow_name: $workflow_name,
                 workflow_conclusion: $workflow_conclusion,
                 workflow_run_id: $workflow_run_id,
-                workflow_run_url: $workflow_run_url,
                 head_sha: $head_sha,
                 head_branch: $head_branch,
                 failed_jobs: $failed_jobs
@@ -149,10 +146,10 @@ jobs:
 
           curl --silent --show-error --fail \
             -X POST \
-            -H "Authorization: Bearer ${APP_MEMORY_INGEST_API_TOKEN}" \
+            -H "Authorization: Bearer ${MAIP_MEMORY_INGEST_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data-binary @"$EVENT_FILE" \
-            "${BASE_URL%/}/v1/memory/events" >/dev/null
+            "${BASE_URL%/}/v1/events" >/dev/null
 
-          echo "Failure event stored in app memory worker."
+          echo "Failure event stored in MAIP memory worker."
           rm -f "$EVENT_FILE"
