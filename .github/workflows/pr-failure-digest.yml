@@ -1,0 +1,158 @@
+name: pr-failure-digest
+
+on:
+  workflow_run:
+    workflows:
+      - compliance-security-ai
+      - codeql
+      - dependency-review
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+concurrency:
+  group: pr-failure-digest-${{ github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  post-failure-digest:
+    if: >-
+      ${{
+        github.event.workflow_run.event == 'pull_request' &&
+        (
+          github.event.workflow_run.conclusion == 'failure' ||
+          github.event.workflow_run.conclusion == 'cancelled' ||
+          github.event.workflow_run.conclusion == 'timed_out' ||
+          github.event.workflow_run.conclusion == 'action_required'
+        )
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Comment PR with failed checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR associated with this workflow run."
+            exit 0
+          fi
+
+          RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
+          WORKFLOW_NAME="$(jq -r '.workflow_run.name // "unknown"' "$GITHUB_EVENT_PATH")"
+          CONCLUSION="$(jq -r '.workflow_run.conclusion // "unknown"' "$GITHUB_EVENT_PATH")"
+
+          FAILED_JOBS="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate --jq \
+            '.jobs[] | select((.conclusion=="failure") or (.conclusion=="cancelled") or (.conclusion=="timed_out") or (.conclusion=="action_required")) | "- \(.name): \(.html_url)"' || true)"
+
+          if [ -z "$FAILED_JOBS" ]; then
+            FAILED_JOBS="- Keine fehlgeschlagenen Job-Details gefunden."
+          fi
+
+          COMMENT_FILE="$(mktemp)"
+          {
+            echo "<!-- pr-failure-digest -->"
+            echo "### Automated CI Failure Digest"
+            echo
+            echo "- Workflow: \`$WORKFLOW_NAME\`"
+            echo "- Conclusion: \`$CONCLUSION\`"
+            echo "- Run: $RUN_URL"
+            echo
+            echo "**Failed Jobs**"
+            echo "$FAILED_JOBS"
+            echo
+            echo "_Automatisch erstellt, damit Fixes sofort gestartet werden können._"
+          } > "$COMMENT_FILE"
+
+          EXISTING_ID="$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --jq \
+            '.[] | select(.user.login=="github-actions[bot]" and (.body | contains("<!-- pr-failure-digest -->"))) | .id' | tail -n1 || true)"
+
+          if [ -n "$EXISTING_ID" ]; then
+            gh api "repos/$REPO/issues/comments/$EXISTING_ID" --method PATCH --field "body=@$COMMENT_FILE" >/dev/null
+            echo "Updated failure digest comment #$EXISTING_ID on PR #$PR_NUMBER."
+          else
+            gh api "repos/$REPO/issues/$PR_NUMBER/comments" --method POST --field "body=@$COMMENT_FILE" >/dev/null
+            echo "Created failure digest comment on PR #$PR_NUMBER."
+          fi
+
+          rm -f "$COMMENT_FILE"
+
+      - name: Emit failure event to app memory (non-blocking)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          APP_MEMORY_INGEST_API_TOKEN: ${{ secrets.APP_MEMORY_INGEST_API_TOKEN }}
+          APP_MEMORY_BASE_URL: ${{ vars.APP_MEMORY_WORKER_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${APP_MEMORY_INGEST_API_TOKEN:-}" ]; then
+            echo "APP_MEMORY_INGEST_API_TOKEN not configured; skip memory emit."
+            exit 0
+          fi
+
+          BASE_URL="${APP_MEMORY_BASE_URL:-https://liquisto-app-memory-worker-runtime-dev.still-butterfly-bbff.workers.dev}"
+          PR_NUMBER="$(jq -r '.workflow_run.pull_requests[0].number // empty' "$GITHUB_EVENT_PATH")"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR number in workflow_run payload; skip memory emit."
+            exit 0
+          fi
+
+          RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
+          WORKFLOW_NAME="$(jq -r '.workflow_run.name // "unknown"' "$GITHUB_EVENT_PATH")"
+          CONCLUSION="$(jq -r '.workflow_run.conclusion // "unknown"' "$GITHUB_EVENT_PATH")"
+          HEAD_SHA="$(jq -r '.workflow_run.head_sha // ""' "$GITHUB_EVENT_PATH")"
+          BRANCH_NAME="$(jq -r '.workflow_run.head_branch // ""' "$GITHUB_EVENT_PATH")"
+
+          FAILED_JOBS_JSON="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate --jq \
+            '[.jobs[] | select((.conclusion=="failure") or (.conclusion=="cancelled") or (.conclusion=="timed_out") or (.conclusion=="action_required")) | {name: .name, conclusion: .conclusion, url: .html_url}]' || echo '[]')"
+
+          EVENT_FILE="$(mktemp)"
+          jq -n \
+            --arg repo "$REPO" \
+            --arg pr_number "$PR_NUMBER" \
+            --arg workflow_name "$WORKFLOW_NAME" \
+            --arg workflow_conclusion "$CONCLUSION" \
+            --arg workflow_run_id "$RUN_ID" \
+            --arg workflow_run_url "$RUN_URL" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg head_branch "$BRANCH_NAME" \
+            --argjson failed_jobs "$FAILED_JOBS_JSON" \
+            '{
+              run_id: ("pr-" + $pr_number + "-ci-" + $workflow_run_id),
+              department: "ci",
+              kind: "runtime_evaluation_completed",
+              source: "github_actions_pr_failure_digest",
+              payload: {
+                repository: $repo,
+                pr_number: ($pr_number | tonumber),
+                workflow_name: $workflow_name,
+                workflow_conclusion: $workflow_conclusion,
+                workflow_run_id: $workflow_run_id,
+                workflow_run_url: $workflow_run_url,
+                head_sha: $head_sha,
+                head_branch: $head_branch,
+                failed_jobs: $failed_jobs
+              }
+            }' > "$EVENT_FILE"
+
+          curl --silent --show-error --fail \
+            -X POST \
+            -H "Authorization: Bearer ${APP_MEMORY_INGEST_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary @"$EVENT_FILE" \
+            "${BASE_URL%/}/v1/memory/events" >/dev/null
+
+          echo "Failure event stored in app memory worker."
+          rm -f "$EVENT_FILE"

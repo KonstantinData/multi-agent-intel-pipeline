@@ -86,3 +86,16 @@ Allowed event classes are defined in `runtime_memory_reference.json`.
 
 Never store secrets, raw tokens, passwords, private keys, customer facts as
 process memory, or run-specific conclusions as reusable long-term truth.
+
+## Local Runtime Memory Emitter
+
+For a reproducible local runtime-memory smoke emit, use:
+
+```powershell
+python scripts/emit_runtime_memory_events.py --kind runtime_task_started --payload-json '{"note":"manual-smoke"}'
+```
+
+Requirements:
+
+- `APP_MEMORY_INGEST_API_TOKEN` must be set in the current shell session.
+- Worker must be reachable (default target is the `runtime_dev` worker URL).
