@@ -50,7 +50,16 @@ const ALLOWED_EVENT_TYPES = new Set([
   "pattern_deprecated",
   "manual_review_required",
   "manual_review_accepted",
-  "manual_review_rejected"
+  "manual_review_rejected",
+  "git_branch_guard_failed",
+  "compliance_check_completed",
+  "pre_pr_gate_completed",
+  "pr_check_failed",
+  "pr_fix_attempt_started",
+  "pr_fix_attempt_completed",
+  "pr_recheck_completed",
+  "pr_recovered",
+  "learning_pattern_candidate_created"
 ]);
 const ALLOWED_CANDIDATE_TYPES = new Set([
   "query_strategy_candidate",

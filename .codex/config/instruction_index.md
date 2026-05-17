@@ -86,4 +86,5 @@ Runtime-specific references and external memory backend bindings.
 
 - [.codex/runtime/README.md](.codex/runtime/README.md)
 - [.codex/runtime/autonomous_runtime_prompt.md](.codex/runtime/autonomous_runtime_prompt.md)
+- [.codex/runtime/learning_event_schema.json](.codex/runtime/learning_event_schema.json)
 - [.codex/runtime/runtime_memory_reference.json](.codex/runtime/runtime_memory_reference.json)
