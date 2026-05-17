@@ -28,7 +28,10 @@ python -m keyring set liquisto-department-runtime OPENAI_API_KEY
 python preflight.py
 
 # 5. Start the UI
-streamlit run ui/app.py
+python -m streamlit run ui/app.py
+# or (recommended on Windows without activation):
+.\.venv\Scripts\python.exe launcher.py
+```
 
 ### Local Pre-PR Gate Run
 

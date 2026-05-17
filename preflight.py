@@ -5,9 +5,8 @@ import os
 import socket
 import sys
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
 
 ROOT = Path(__file__).resolve().parent
 STREAMLIT_PORT = 8501
@@ -30,6 +29,18 @@ def _load_openai_api_key() -> tuple[str, str]:
 
 def _model_api_credential_status() -> str:
     _key, _source = _load_openai_api_key()
+    return "configured"
+
+
+def _auth_postgres_dsn_status() -> str:
+    sys.path.insert(0, str(ROOT))
+    from ui.auth.db import _postgres_dsn
+
+    dsn = _postgres_dsn().strip()
+    if not dsn:
+        raise ValueError(
+            "missing (set LIQUISTO_AUTH_POSTGRES_DSN / LIQUISTO_POSTGRES_DSN / DATABASE_URL in env or keyring)",
+        )
     return "configured"
 
 
@@ -90,6 +101,7 @@ def main() -> int:
         ("streamlit", "streamlit"),
         ("openai", "openai"),
         ("pydantic", "pydantic"),
+        ("psycopg", "psycopg"),
         ("python-dotenv", "dotenv"),
         ("keyring", "keyring"),
         ("reportlab", "reportlab"),
@@ -119,6 +131,7 @@ def main() -> int:
 
     print("\n4. Environment")
     check("Model API credential", _model_api_credential_status, counters)
+    check("Auth PostgreSQL DSN", _auth_postgres_dsn_status, counters)
 
     print("\n5. Import chain — Core (no AG2 required)")
     sys.path.insert(0, str(ROOT))
@@ -147,7 +160,7 @@ def main() -> int:
 
     def _validate_strategies() -> str:
         sys.path.insert(0, str(ROOT))
-        from src.research.query_resolver import validate_all_strategies, clear_strategy_cache
+        from src.research.query_resolver import clear_strategy_cache, validate_all_strategies
         clear_strategy_cache()
         errors = validate_all_strategies()
         if errors:

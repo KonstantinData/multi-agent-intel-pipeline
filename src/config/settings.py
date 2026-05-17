@@ -120,6 +120,51 @@ def _keyring_lookup(service: str, account: str) -> str:
         return ""
 
 
+def _keyring_service_name() -> str:
+    return os.getenv("LIQUISTO_KEYRING_SERVICE", DEFAULT_KEYRING_SERVICE).strip() or DEFAULT_KEYRING_SERVICE
+
+
+def _resolve_secret_with_keyring(*, env_keys: tuple[str, ...], keyring_accounts: tuple[str, ...]) -> tuple[str, str]:
+    for key in env_keys:
+        value = os.getenv(key, "").strip()
+        if value:
+            return value, "environment"
+
+    service = _keyring_service_name()
+    for account in keyring_accounts:
+        value = _keyring_lookup(service, account)
+        if value:
+            return value, f"keyring:{service}/{account}"
+
+    return "", ""
+
+
+def resolve_postgres_dsn() -> tuple[str, str]:
+    """Resolve runtime PostgreSQL DSN (env first, keyring second)."""
+    return _resolve_secret_with_keyring(
+        env_keys=("LIQUISTO_POSTGRES_DSN", "DATABASE_URL"),
+        keyring_accounts=("LIQUISTO_POSTGRES_DSN", "DATABASE_URL"),
+    )
+
+
+def get_postgres_dsn() -> str:
+    value, _source = resolve_postgres_dsn()
+    return value
+
+
+def resolve_auth_postgres_dsn() -> tuple[str, str]:
+    """Resolve auth PostgreSQL DSN (dedicated auth DSN first)."""
+    return _resolve_secret_with_keyring(
+        env_keys=("LIQUISTO_AUTH_POSTGRES_DSN", "LIQUISTO_POSTGRES_DSN", "DATABASE_URL"),
+        keyring_accounts=("LIQUISTO_AUTH_POSTGRES_DSN", "LIQUISTO_POSTGRES_DSN", "DATABASE_URL"),
+    )
+
+
+def get_auth_postgres_dsn() -> str:
+    value, _source = resolve_auth_postgres_dsn()
+    return value
+
+
 def resolve_openai_api_key() -> tuple[str, str]:
     """Resolve the OpenAI API key and the source used.
 
@@ -133,7 +178,7 @@ def resolve_openai_api_key() -> tuple[str, str]:
     if process_value:
         return process_value, "environment"
 
-    service = os.getenv("LIQUISTO_KEYRING_SERVICE", DEFAULT_KEYRING_SERVICE).strip() or DEFAULT_KEYRING_SERVICE
+    service = _keyring_service_name()
     account = (
         os.getenv("OPENAI_API_KEY_KEYRING_ACCOUNT", DEFAULT_OPENAI_KEYRING_ACCOUNT).strip()
         or DEFAULT_OPENAI_KEYRING_ACCOUNT

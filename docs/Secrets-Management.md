@@ -29,6 +29,35 @@ Die Reihenfolge ist strikt:
 Sobald eine Quelle einen nicht-leeren Wert liefert, wird diese Quelle verwendet.
 Nachrangige Quellen werden dann nicht mehr fuer den API-Key verwendet.
 
+## PostgreSQL-DSN-Prioritaet (Runtime + Auth)
+
+PostgreSQL-DSNs werden ebenfalls als Secret behandelt und ueber dieselbe
+Prioritaetslogik aufgeloest: zuerst Prozess-/Deployment-Environment, danach
+OS-Keyring.
+
+Runtime-DSN (`resolve_postgres_dsn()`):
+
+1. `LIQUISTO_POSTGRES_DSN`
+2. `DATABASE_URL`
+3. Keyring-Account `LIQUISTO_POSTGRES_DSN`
+4. Keyring-Account `DATABASE_URL`
+
+Auth-DSN (`resolve_auth_postgres_dsn()`):
+
+1. `LIQUISTO_AUTH_POSTGRES_DSN`
+2. `LIQUISTO_POSTGRES_DSN`
+3. `DATABASE_URL`
+4. Keyring-Account `LIQUISTO_AUTH_POSTGRES_DSN`
+5. Keyring-Account `LIQUISTO_POSTGRES_DSN`
+6. Keyring-Account `DATABASE_URL`
+
+Keyring-Beispiele:
+
+```powershell
+python -m keyring set liquisto-department-runtime LIQUISTO_POSTGRES_DSN
+python -m keyring set liquisto-department-runtime LIQUISTO_AUTH_POSTGRES_DSN
+```
+
 ## Prozess- und Deployment-Secrets
 
 Die bevorzugte Quelle ist die Prozess-Umgebungsvariable:

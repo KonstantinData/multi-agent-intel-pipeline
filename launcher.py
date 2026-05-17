@@ -3,14 +3,43 @@ from __future__ import annotations
 
 import argparse
 import os
+import socket
 import subprocess
 import sys
 import time
-import socket
 import webbrowser
+from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 PYTHON = sys.executable
+ROOT = Path(__file__).resolve().parent
+
+
+def _repo_python_candidates() -> list[Path]:
+    return [
+        ROOT / ".venv" / "Scripts" / "python.exe",
+        ROOT / "venv" / "Scripts" / "python.exe",
+    ]
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    try:
+        return a.samefile(b)
+    except Exception:
+        return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
+
+
+def _maybe_reexec_with_repo_python(argv: list[str]) -> None:
+    current = Path(sys.executable).resolve()
+    for candidate in _repo_python_candidates():
+        if not candidate.is_file():
+            continue
+        target = candidate.resolve()
+        if _same_path(current, target):
+            return
+        print(f"[bootstrap] Re-launching with repo interpreter: {target}", flush=True)
+        cmd = [str(target), str(ROOT / "launcher.py"), *argv]
+        raise SystemExit(subprocess.run(cmd, check=False).returncode)
 
 
 def port_free(port):
@@ -39,6 +68,20 @@ def wait_for_server(port, timeout=30):
     return False
 
 
+def _streamlit_command(port: int) -> list[str]:
+    streamlit_exe = Path(PYTHON).with_name("streamlit.exe")
+    if os.name == "nt" and streamlit_exe.is_file():
+        return [
+            str(streamlit_exe),
+            "run", "ui/app.py",
+            "--server.headless", "true", "--server.port", str(port),
+        ]
+    return [
+        PYTHON, "-m", "streamlit", "run", "ui/app.py",
+        "--server.headless", "true", "--server.port", str(port),
+    ]
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch the Streamlit UI for the Liquisto pipeline.")
     parser.add_argument(
@@ -56,6 +99,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(argv or sys.argv[1:])
+    _maybe_reexec_with_repo_python(argv)
+
     args = parse_args(argv)
     port = args.port
     url = f"http://localhost:{port}"
@@ -82,12 +128,9 @@ def main(argv: list[str] | None = None) -> int:
     print("  All checks passed.")
 
     # Step 3: Start Streamlit
-    print(f"\n[3/4] Starting Streamlit server...")
+    print("\n[3/4] Starting Streamlit server...")
     popen_kwargs = {
-        "args": [
-            PYTHON, "-m", "streamlit", "run", "ui/app.py",
-            "--server.headless", "true", "--server.port", str(port),
-        ],
+        "args": _streamlit_command(port),
         "stdout": subprocess.PIPE,
         "stderr": subprocess.STDOUT,
     }
@@ -105,9 +148,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Server is running on {url}")
 
     # Step 4: Open browser
-    print(f"\n[4/4] Opening browser...")
+    print("\n[4/4] Opening browser...")
     webbrowser.open(url)
-    print(f"  Browser opened.")
+    print("  Browser opened.")
 
     print("\n" + "=" * 60)
     print(f"  Streamlit running at {url}")

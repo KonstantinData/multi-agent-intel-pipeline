@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.config.settings import get_postgres_dsn
 from src.memory.long_term_store import FileLongTermMemoryStore
 from src.storage.contracts import RuntimeStorageConfig, RuntimeStores, StorageHealth
 
@@ -102,10 +102,7 @@ class FailedLongTermMemoryStore:
 
 
 def _resolve_postgres_dsn() -> str:
-    return (
-        os.getenv("LIQUISTO_POSTGRES_DSN", "").strip()
-        or os.getenv("DATABASE_URL", "").strip()
-    )
+    return get_postgres_dsn().strip()
 
 
 def _connect_pg(dsn: str) -> Any:
