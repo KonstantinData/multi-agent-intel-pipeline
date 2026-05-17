@@ -5,6 +5,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
+from src.config.settings import get_postgres_dsn
+
 STORAGE_SCHEMA_VERSION = "2026-05-12.1"
 
 
@@ -49,11 +51,7 @@ class RuntimeStorageConfig:
     @classmethod
     def from_env(cls) -> RuntimeStorageConfig:
         profile = os.getenv("LIQUISTO_STORAGE_PROFILE", "local_dev").strip().lower() or "local_dev"
-        postgres_dsn = (
-            os.getenv("LIQUISTO_POSTGRES_DSN")
-            or os.getenv("DATABASE_URL")
-            or ""
-        )
+        postgres_dsn = get_postgres_dsn().strip()
         if profile == "production":
             return cls(
                 profile=profile,

@@ -1,3 +1,4 @@
+"""Architecture tests for runtime storage contracts."""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -58,6 +59,7 @@ def test_production_storage_without_dsn_fails_fast(tmp_path: Path) -> None:
 
 
 def test_production_env_config_redacts_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.config.settings._keyring_lookup", lambda service, account: "")
     monkeypatch.setenv("LIQUISTO_STORAGE_PROFILE", "production")
     raw_database_url = "postgresql://example.internal/db"
     monkeypatch.setenv("DATABASE_URL", raw_database_url)
@@ -68,6 +70,22 @@ def test_production_env_config_redacts_database_url(monkeypatch: pytest.MonkeyPa
     assert cfg.memory_backend == "postgres_pgvector"
     assert cfg.run_state_backend == "postgres"
     assert raw_database_url not in repr(cfg.snapshot())
+
+
+def test_production_env_config_reads_keyring_dsn_when_env_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LIQUISTO_STORAGE_PROFILE", "production")
+    monkeypatch.delenv("LIQUISTO_POSTGRES_DSN", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        "src.config.settings._keyring_lookup",
+        lambda service, account: "postgresql://runtime-keyring-db" if account == "LIQUISTO_POSTGRES_DSN" else "",
+    )
+
+    cfg = RuntimeStorageConfig.from_env()
+
+    assert cfg.postgres_dsn_present is True
+    assert cfg.memory_backend == "postgres_pgvector"
+    assert cfg.run_state_backend == "postgres"
 
 
 def test_production_storage_with_dsn_reports_connection_failure_when_backend_unreachable(

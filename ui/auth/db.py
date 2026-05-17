@@ -1,21 +1,20 @@
 """PostgreSQL user store and audit log for Liquisto auth."""
 from __future__ import annotations
 
-import os
+import sys
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Generator
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 _MAX_FAILED_ATTEMPTS = 5
 _LOCKOUT_MINUTES = 15
 
 
 def _postgres_dsn() -> str:
-    return (
-        os.getenv("LIQUISTO_AUTH_POSTGRES_DSN", "").strip()
-        or os.getenv("LIQUISTO_POSTGRES_DSN", "").strip()
-        or os.getenv("DATABASE_URL", "").strip()
-    )
+    from src.config.settings import get_auth_postgres_dsn
+
+    return get_auth_postgres_dsn().strip()
 
 
 def _require_postgres_dsn() -> str:
@@ -24,7 +23,7 @@ def _require_postgres_dsn() -> str:
         return dsn
     raise RuntimeError(
         "PostgreSQL auth backend requires LIQUISTO_AUTH_POSTGRES_DSN, "
-        "LIQUISTO_POSTGRES_DSN, or DATABASE_URL.",
+        "LIQUISTO_POSTGRES_DSN, or DATABASE_URL (env or OS keyring).",
     )
 
 
@@ -34,7 +33,9 @@ def _connect_postgres() -> Any:
         from psycopg.rows import dict_row
     except Exception as exc:  # pragma: no cover - dependency guard
         raise RuntimeError(
-            "PostgreSQL auth backend requires package `psycopg`.",
+            "PostgreSQL auth backend requires package `psycopg`. "
+            f"Active interpreter: {sys.executable}. "
+            "Install dependencies with `pip install -r requirements.lock` in the repo venv.",
         ) from exc
     return psycopg.connect(_require_postgres_dsn(), row_factory=dict_row, autocommit=False)
 
@@ -230,7 +231,7 @@ def record_login_failure(user_id: int, email: str) -> None:
         ).fetchone()
         attempts = int((row or {}).get("failed_login_attempts", 0) or 0)
         if attempts >= _MAX_FAILED_ATTEMPTS:
-            locked = datetime.now(timezone.utc) + timedelta(minutes=_LOCKOUT_MINUTES)
+            locked = datetime.now(UTC) + timedelta(minutes=_LOCKOUT_MINUTES)
             conn.execute(
                 "UPDATE users SET locked_until = %s WHERE id = %s",
                 (locked.isoformat(), user_id),
@@ -253,7 +254,7 @@ def get_audit_log(limit: int = 200) -> list[dict]:
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _normalize_row(row: Any) -> dict | None:
@@ -262,7 +263,7 @@ def _normalize_row(row: Any) -> dict | None:
     payload = dict(row)
     for key, value in list(payload.items()):
         if isinstance(value, datetime):
-            payload[key] = value.astimezone(timezone.utc).isoformat()
+            payload[key] = value.astimezone(UTC).isoformat()
     return payload
 
 
