@@ -12,7 +12,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
@@ -23,7 +23,7 @@ DEFAULT_BASE_URL = "https://liquisto-app-memory-worker-runtime-dev.still-butterf
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -139,6 +139,10 @@ def _http_json(
     token: str | None = None,
     body_obj: dict[str, Any] | None = None,
 ) -> tuple[int, Any]:
+    parsed_url = parse.urlparse(url)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        raise SystemExit(f"Unsupported URL for HTTP request: {url}")
+
     headers = {"content-type": "application/json; charset=utf-8"}
     if token:
         headers["authorization"] = f"Bearer {token}"
@@ -147,7 +151,7 @@ def _http_json(
         body_bytes = json.dumps(body_obj, ensure_ascii=False).encode("utf-8")
     req = request.Request(url=url, method=method, headers=headers, data=body_bytes)
     try:
-        with request.urlopen(req, timeout=30) as response:
+        with request.urlopen(req, timeout=30) as response:  # nosec B310
             raw = response.read().decode("utf-8")
             return response.status, json.loads(raw) if raw else {}
     except error.HTTPError as exc:
