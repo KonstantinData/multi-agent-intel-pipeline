@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - dev
+          - runtime_dev
           - staging
           - production
 
@@ -51,7 +52,7 @@ jobs:
           test -n "${CLOUDFLARE_API_TOKEN}" || { echo "Missing CLOUDFLARE_API_TOKEN" >&2; exit 1; }
           test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo "Missing CLOUDFLARE_ACCOUNT_ID" >&2; exit 1; }
           case "${TARGET_ENV}" in
-            dev|staging|production)
+            dev|runtime_dev|staging|production)
               ;;
             *)
               echo "Unsupported TARGET_ENV=${TARGET_ENV}" >&2
@@ -71,6 +72,7 @@ jobs:
             const env = process.env.TARGET_ENV;
             const dbNameByEnv = {
               dev: "liquisto-app-memory-dev",
+              runtime_dev: "liquisto-runtime-memory-dev",
               staging: "liquisto-app-memory-staging",
               production: "liquisto-app-memory-prod"
             };
@@ -103,6 +105,7 @@ jobs:
         run: |
           case "${TARGET_ENV}" in
             dev) npx wrangler d1 migrations apply liquisto-app-memory-dev --remote --env dev ;;
+            runtime_dev) npx wrangler d1 migrations apply liquisto-runtime-memory-dev --remote --env runtime_dev ;;
             staging) npm run d1:migrate:staging ;;
             production) npm run d1:migrate:prod ;;
           esac
@@ -118,6 +121,9 @@ jobs:
             dev)
               echo "${APP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env dev
               ;;
+            runtime_dev)
+              echo "${APP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env runtime_dev
+              ;;
             staging)
               echo "${APP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env staging
               ;;
@@ -130,6 +136,7 @@ jobs:
         run: |
           case "${TARGET_ENV}" in
             dev) npx wrangler deploy --env dev ;;
+            runtime_dev) npx wrangler deploy --env runtime_dev ;;
             staging) npm run deploy:staging ;;
             production) npm run deploy:prod ;;
           esac

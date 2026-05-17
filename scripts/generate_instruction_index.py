@@ -28,6 +28,8 @@ REQUIRED_FILES = (
     ".codex/tasks/liquisto/README.md",
     ".codex/skills/README.md",
     ".codex/skills/liquisto/README.md",
+    ".codex/runtime/README.md",
+    ".codex/runtime/runtime_memory_reference.json",
 )
 
 INSTRUCTION_GROUPS: tuple[dict[str, Any], ...] = (
@@ -79,6 +81,15 @@ INSTRUCTION_GROUPS: tuple[dict[str, Any], ...] = (
             ".codex/skills/shared/**/README.md",
         ),
     },
+    {
+        "id": "codex_runtime_reference",
+        "title": "Codex Runtime References",
+        "description": "Runtime-specific references and external memory backend bindings.",
+        "globs": (
+            ".codex/runtime/*.md",
+            ".codex/runtime/*.json",
+        ),
+    },
 )
 
 PRECEDENCE_RULES = (
@@ -86,12 +97,13 @@ PRECEDENCE_RULES = (
     ".codex config (profiles + routing)",
     ".codex task gates",
     ".codex skills",
+    ".codex runtime references",
     ".codex memory/eval/telemetry (observational, non-normative)",
 )
 
 REQUIRED_STARTUP_MESSAGE = (
     "Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden "
-    "(Instruction-Index, Policies, Config/Routing, Tasks, Skills). "
+    "(Instruction-Index, Policies, Config/Routing, Tasks, Skills, Runtime References). "
     "Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede "
     "Abweichung sofort mit Begründung."
 )
@@ -123,7 +135,7 @@ def build_instruction_index(root: Path = ROOT) -> dict[str, Any]:
 
     return {
         "schema_version": 1,
-        "root": root.as_posix(),
+        "root": "<repo-root>",
         "precedence": list(PRECEDENCE_RULES),
         "required_startup_message": REQUIRED_STARTUP_MESSAGE,
         "required_files": list(REQUIRED_FILES),

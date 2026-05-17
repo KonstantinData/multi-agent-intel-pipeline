@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
-  "root": "D:/Git-GitHub/Repositories/00-Liquisto/multi-agent-intel-pipeline",
+  "root": "<repo-root>",
   "precedence": [
     ".codex policies",
     ".codex config (profiles + routing)",
     ".codex task gates",
     ".codex skills",
+    ".codex runtime references",
     ".codex memory/eval/telemetry (observational, non-normative)"
   ],
-  "required_startup_message": "Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden (Instruction-Index, Policies, Config/Routing, Tasks, Skills). Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede Abweichung sofort mit Begründung.",
+  "required_startup_message": "Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden (Instruction-Index, Policies, Config/Routing, Tasks, Skills, Runtime References). Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede Abweichung sofort mit Begründung.",
   "required_files": [
     ".codex/README.md",
     ".codex/config.toml",
@@ -26,7 +27,9 @@
     ".codex/tasks/README.md",
     ".codex/tasks/liquisto/README.md",
     ".codex/skills/README.md",
-    ".codex/skills/liquisto/README.md"
+    ".codex/skills/liquisto/README.md",
+    ".codex/runtime/README.md",
+    ".codex/runtime/runtime_memory_reference.json"
   ],
   "groups": [
     {
@@ -101,6 +104,16 @@
         ".codex/skills/shared/refactor/README.md",
         ".codex/skills/shared/review/README.md"
       ]
+    },
+    {
+      "id": "codex_runtime_reference",
+      "title": "Codex Runtime References",
+      "description": "Runtime-specific references and external memory backend bindings.",
+      "files": [
+        ".codex/runtime/README.md",
+        ".codex/runtime/autonomous_runtime_prompt.md",
+        ".codex/runtime/runtime_memory_reference.json"
+      ]
     }
   ],
   "all_files": [
@@ -121,6 +134,9 @@
     ".codex/policies/liquisto/prompt_budget_policy.md",
     ".codex/policies/liquisto/secret_policy.md",
     ".codex/policies/liquisto/tool_allowlist.md",
+    ".codex/runtime/README.md",
+    ".codex/runtime/autonomous_runtime_prompt.md",
+    ".codex/runtime/runtime_memory_reference.json",
     ".codex/skills/README.md",
     ".codex/skills/liquisto/README.md",
     ".codex/skills/liquisto/departments/README.md",
