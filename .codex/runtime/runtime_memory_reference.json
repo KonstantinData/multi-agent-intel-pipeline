@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "reference": "runtime",
+  "memory_backend": {
+    "provider": "cloudflare",
+    "worker_service": "liquisto-app-memory-worker",
+    "worker_environment": "runtime_dev",
+    "d1_binding": "MEMORY_DB",
+    "d1_database_name": "liquisto-runtime-memory-dev",
+    "api_endpoints": [
+      "/healthz",
+      "/v1/memory/events"
+    ]
+  },
+  "allowed_event_types": [
+    "runtime_task_started",
+    "runtime_plan_created",
+    "runtime_edit_applied",
+    "runtime_test_completed",
+    "runtime_evaluation_completed",
+    "runtime_retry_decided",
+    "runtime_escalated",
+    "runtime_finished"
+  ],
+  "forbidden_payload_types": [
+    "raw_secret",
+    "api_token",
+    "password",
+    "private_key",
+    "customer_fact_as_process_memory",
+    "run_specific_truth_as_long_term_memory"
+  ],
+  "constraints": {
+    "do_not_store": [
+      "raw secrets",
+      "api tokens",
+      "passwords",
+      "private keys",
+      "customer-specific facts in long-term process memory",
+      "run-specific conclusions as reusable truth"
+    ],
+    "max_retries_per_phase": 3,
+    "escalate_below_confidence": 0.6,
+    "escalate_high_risk_below_confidence": 0.75,
+    "max_runtime_minutes_without_required_gates": 45,
+    "follow_architecture_contracts": true
+  }
+}

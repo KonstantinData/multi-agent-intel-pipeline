@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --env dev",
-    "check": "wrangler check",
+    "dev:runtime": "wrangler dev --env runtime_dev",
+    "check": "wrangler types src/env.d.ts && tsc --noEmit",
     "types": "wrangler types src/env.d.ts",
     "d1:migrate:local": "wrangler d1 migrations apply liquisto-app-memory-dev --local --env dev",
+    "d1:migrate:runtime-dev": "wrangler d1 migrations apply liquisto-runtime-memory-dev --remote --env runtime_dev",
     "d1:migrate:staging": "wrangler d1 migrations apply liquisto-app-memory-staging --remote --env staging",
     "d1:migrate:prod": "wrangler d1 migrations apply liquisto-app-memory-prod --remote --env production",
+    "deploy:runtime-dev": "wrangler deploy --env runtime_dev",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:prod": "wrangler deploy --env production"
   },

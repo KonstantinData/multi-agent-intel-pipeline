@@ -229,6 +229,8 @@ test_real.py
 .codex/*
 !.codex/compliance/
 !.codex/compliance/**
+!.codex/runtime/
+!.codex/runtime/**
 .codex/compliance/**/__pycache__/
 .codex/compliance/**/*.pyc
 .cache/
@@ -237,3 +239,4 @@ test_real.py
 **/node_modules/
 **/.wrangler/
 **/.dev.vars
+cloudflare/app-memory-worker/src/env.d.ts

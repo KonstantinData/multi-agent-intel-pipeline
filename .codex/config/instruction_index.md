@@ -8,11 +8,12 @@ Canonical index of instruction sources for `.codex` app-level rule loading.
 2. .codex config (profiles + routing)
 3. .codex task gates
 4. .codex skills
-5. .codex memory/eval/telemetry (observational, non-normative)
+5. .codex runtime references
+6. .codex memory/eval/telemetry (observational, non-normative)
 
 ## Required Startup Confirmation
 
-Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden (Instruction-Index, Policies, Config/Routing, Tasks, Skills). Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede Abweichung sofort mit Begründung.
+Pflicht-Startmeldung: Ich habe die .codex-App-Ebene vollständig gelesen und verstanden (Instruction-Index, Policies, Config/Routing, Tasks, Skills, Runtime References). Ich beginne jetzt mit der Ausführung gemäß diesen Regeln und dokumentiere jede Abweichung sofort mit Begründung.
 
 ## Groups
 
@@ -78,3 +79,11 @@ Deterministic execution playbooks for recurring task classes.
 - [.codex/skills/shared/incident/README.md](.codex/skills/shared/incident/README.md)
 - [.codex/skills/shared/refactor/README.md](.codex/skills/shared/refactor/README.md)
 - [.codex/skills/shared/review/README.md](.codex/skills/shared/review/README.md)
+
+### Codex Runtime References
+
+Runtime-specific references and external memory backend bindings.
+
+- [.codex/runtime/README.md](.codex/runtime/README.md)
+- [.codex/runtime/autonomous_runtime_prompt.md](.codex/runtime/autonomous_runtime_prompt.md)
+- [.codex/runtime/runtime_memory_reference.json](.codex/runtime/runtime_memory_reference.json)

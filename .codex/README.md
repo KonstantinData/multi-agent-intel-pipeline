@@ -16,6 +16,7 @@ It is process-oriented and does not replace code or architecture as source of tr
 - `tasks/`: executable task definitions with triggers, commands, and acceptance checks.
 - `skills/`: explicit playbooks for recurring task classes.
 - `memory/`: procedural memory and anti-pattern history.
+- `runtime/`: runtime-specific operating references and external memory bindings.
 - `eval/`: replay, scorecards, and regression baselines.
 - `policies/`: guardrails for data, secrets, tools, and budgets.
 - `scripts/`: executable app-level helpers (for example local gate runners).
