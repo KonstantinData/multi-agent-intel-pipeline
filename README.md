@@ -41,7 +41,16 @@ python .codex/scripts/run_pre_pr_gates.py --fail-fast
 This mirrors the named gates in `.github/workflows/compliance-security-ai.yml` and writes a report to:
 
 `artifacts/pre_pr_gate_report.json`
+
+Optional runtime-memory recap before PR handling (non-blocking):
+
+```bash
+python .codex/scripts/run_pre_pr_gates.py --fail-fast --memory-run-id <run_id>
 ```
+
+This prints a compact `[MEMORY-RECAP]` summary from the Cloudflare app-memory
+worker. Missing token or unavailable endpoint only prints a skip/error message
+and does not interrupt the gate run.
 
 ## Architecture
 
@@ -240,9 +249,13 @@ uv pip compile requirements.txt --python-version 3.12 --universal --output-file 
 
 ```bash
 pip install pre-commit
-pre-commit install     # runs compliance-policy-check on every git commit
+python scripts/setup_local_pre_commit.py
 pre-commit run --all-files
 ```
+
+If local hooks do not trigger, `core.hooksPath` is usually pointing to a stale
+path. The setup script resets local `core.hooksPath` to Git default behavior
+(`.git/hooks`) and reinstalls `pre-commit`.
 
 During execution, each gate prints live status as:
 

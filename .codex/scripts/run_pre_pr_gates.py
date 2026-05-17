@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib import error, parse, request
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = ROOT / "scripts"
@@ -375,6 +377,114 @@ def _write_progress(
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _fetch_runtime_memory_events(
+    *,
+    base_url: str,
+    run_id: str,
+    token: str,
+    limit: int,
+) -> tuple[int, dict[str, Any]]:
+    query = parse.urlencode({"run_id": run_id, "limit": str(limit)})
+    url = f"{base_url.rstrip('/')}/v1/memory/events?{query}"
+    req = request.Request(
+        url=url,
+        method="GET",
+        headers={
+            "authorization": f"Bearer {token}",
+            "content-type": "application/json; charset=utf-8",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=20) as response:
+            payload = response.read().decode("utf-8")
+            body = json.loads(payload) if payload else {}
+            if not isinstance(body, dict):
+                body = {"raw_body": body}
+            return response.status, body
+    except error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {"raw_error": raw}
+        return exc.code, body
+    except Exception as exc:  # nosec B110
+        return 0, {"error": str(exc)}
+
+
+def _print_runtime_memory_recap(
+    *,
+    run_id: str,
+    base_url: str,
+    token_env: str,
+    limit: int,
+) -> None:
+    token = os.getenv(token_env, "").strip()
+    if not run_id:
+        print("\n[MEMORY-RECAP] skipped: --memory-run-id not provided.", flush=True)
+        return
+    if not token:
+        print(
+            f"\n[MEMORY-RECAP] skipped: token env '{token_env}' is not set.",
+            flush=True,
+        )
+        return
+
+    status, body = _fetch_runtime_memory_events(
+        base_url=base_url,
+        run_id=run_id,
+        token=token,
+        limit=limit,
+    )
+    print(
+        f"\n[MEMORY-RECAP] run_id={run_id} status={status} endpoint={base_url.rstrip('/')}/v1/memory/events",
+        flush=True,
+    )
+    if status != 200:
+        print(
+            "[MEMORY-RECAP] unavailable: " + json.dumps(body, ensure_ascii=False),
+            flush=True,
+        )
+        return
+
+    events = body.get("events")
+    if not isinstance(events, list):
+        print("[MEMORY-RECAP] malformed response: missing events list.", flush=True)
+        return
+
+    print(f"[MEMORY-RECAP] events_returned={len(events)} limit={limit}", flush=True)
+    if not events:
+        return
+
+    kind_counts: dict[str, int] = {}
+    dept_counts: dict[str, int] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        kind = str(event.get("kind", "unknown"))
+        dept = str(event.get("department", "unknown"))
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        dept_counts[dept] = dept_counts.get(dept, 0) + 1
+
+    print(
+        "[MEMORY-RECAP] by_kind="
+        + json.dumps(dict(sorted(kind_counts.items())), ensure_ascii=False),
+        flush=True,
+    )
+    print(
+        "[MEMORY-RECAP] by_department="
+        + json.dumps(dict(sorted(dept_counts.items())), ensure_ascii=False),
+        flush=True,
+    )
+
+    newest = events[0] if isinstance(events[0], dict) else {}
+    oldest = events[-1] if isinstance(events[-1], dict) else {}
+    print(
+        f"[MEMORY-RECAP] newest_created_at={newest.get('created_at', '')} oldest_created_at={oldest.get('created_at', '')}",
+        flush=True,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--list", action="store_true", help="List gate names and exit.")
@@ -393,6 +503,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fail-fast", action="store_true", help="Stop at first failed gate.")
     parser.add_argument("--report", default=str(REPORT_PATH), help="JSON report output path.")
     parser.add_argument("--progress", default=str(PROGRESS_PATH), help="JSON progress output path.")
+    parser.add_argument(
+        "--memory-run-id",
+        default="",
+        help="Optional runtime memory run_id to print a non-blocking recap before PR handling.",
+    )
+    parser.add_argument(
+        "--memory-base-url",
+        default="https://liquisto-app-memory-worker-dev.still-butterfly-bbff.workers.dev",
+        help="Memory worker base URL used for recap query.",
+    )
+    parser.add_argument(
+        "--memory-token-env",
+        default="APP_MEMORY_INGEST_API_TOKEN",
+        help="Env var name holding the memory ingest token for recap query.",
+    )
+    parser.add_argument(
+        "--memory-limit",
+        type=int,
+        default=25,
+        help="Max events to fetch for memory recap (1..200).",
+    )
     return parser.parse_args()
 
 
@@ -431,6 +562,8 @@ def _print_status(progress_path: Path) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.memory_limit < 1 or args.memory_limit > 200:
+        raise SystemExit("--memory-limit must be in range 1..200.")
     gates = build_gates(args.base_ref)
 
     report_path = Path(args.report)
@@ -569,6 +702,13 @@ def main() -> None:
         for name, result in failures.items():
             print(f"- {name}: {result}", flush=True)
         raise SystemExit(1)
+
+    _print_runtime_memory_recap(
+        run_id=args.memory_run_id.strip(),
+        base_url=args.memory_base_url.strip(),
+        token_env=args.memory_token_env.strip(),
+        limit=args.memory_limit,
+    )
     print("\nAll required compliance-security-ai gates passed.", flush=True)
 
 
