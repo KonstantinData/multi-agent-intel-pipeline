@@ -1,0 +1,22 @@
+{
+  "name": "@maip/memory-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env dev",
+    "check": "wrangler types src/env.d.ts && tsc --noEmit",
+    "types": "wrangler types src/env.d.ts",
+    "d1:migrate:dev": "wrangler d1 migrations apply maip-memory-dev --remote --env dev",
+    "d1:migrate:staging": "wrangler d1 migrations apply maip-memory-staging --remote --env staging",
+    "d1:migrate:prod": "wrangler d1 migrations apply maip-memory-prod --remote --env production",
+    "d1:migrate:local": "wrangler d1 migrations apply maip-memory-dev --local --env dev",
+    "deploy:dev": "wrangler deploy --env dev",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:prod": "wrangler deploy --env production"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "wrangler": "4.91.0"
+  }
+}

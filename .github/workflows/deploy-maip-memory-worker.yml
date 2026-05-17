@@ -1,0 +1,127 @@
+name: Deploy MAIP Memory Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-maip-memory-worker-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: cloudflare/maip-memory-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.MAIP_MASTER_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
+      CLOUDFLARE_ZONE_ID: ${{ secrets.ZONE_ID }}
+      MAIP_MEMORY_INGEST_API_TOKEN: ${{ secrets.MAIP_MEMORY_INGEST_API_TOKEN }}
+      TARGET_ENV: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: cloudflare/maip-memory-worker/package-lock.json
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN}" || { echo "Missing MAIP_MASTER_TOKEN" >&2; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID}" || { echo "Missing ACCOUNT_ID" >&2; exit 1; }
+          test -n "${MAIP_MEMORY_INGEST_API_TOKEN}" || { echo "Missing MAIP_MEMORY_INGEST_API_TOKEN" >&2; exit 1; }
+          case "${TARGET_ENV}" in
+            dev|staging|production) ;;
+            *) echo "Unsupported TARGET_ENV=${TARGET_ENV}" >&2; exit 1 ;;
+          esac
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure Cloudflare resources
+        run: |
+          set -euo pipefail
+          DB_NAME="maip-memory-${TARGET_ENV}"
+          R2_BUCKET="maip-memory-${TARGET_ENV}-objects"
+          VECTOR_INDEX="maip-memory-${TARGET_ENV}-patterns"
+          VECTOR_DIMENSIONS="1536"
+          VECTOR_METRIC="cosine"
+
+          npx wrangler d1 list --json > d1-list.json
+          if ! node -e 'const fs=require("fs"); const rows=JSON.parse(fs.readFileSync("d1-list.json","utf8")); process.exit(rows.some((r)=>r.name===process.env.DB_NAME)?0:1)' ; then
+            npx wrangler d1 create "${DB_NAME}" --location weur
+            npx wrangler d1 list --json > d1-list.json
+          fi
+
+          node -e '
+            const fs = require("fs");
+            const rows = JSON.parse(fs.readFileSync("d1-list.json", "utf8"));
+            const hit = rows.find((r) => r.name === process.env.DB_NAME);
+            if (!hit || !hit.uuid) {
+              console.error(`D1 database not found after create: ${process.env.DB_NAME}`);
+              process.exit(1);
+            }
+            fs.appendFileSync(process.env.GITHUB_ENV, `\nRESOLVED_MAIP_MEMORY_DB_ID=${hit.uuid}\n`);
+          '
+
+          if ! npx wrangler r2 bucket list --json | node -e 'let data=""; process.stdin.on("data",(c)=>data+=c); process.stdin.on("end",()=>{const rows=JSON.parse(data || "[]"); process.exit(rows.some((r)=>r.name===process.env.R2_BUCKET)?0:1);});' ; then
+            npx wrangler r2 bucket create "${R2_BUCKET}"
+          fi
+
+          if ! npx wrangler vectorize list --json | node -e 'let data=""; process.stdin.on("data",(c)=>data+=c); process.stdin.on("end",()=>{const rows=JSON.parse(data || "[]"); process.exit(rows.some((r)=>r.name===process.env.VECTOR_INDEX)?0:1);});' ; then
+            npx wrangler vectorize create "${VECTOR_INDEX}" --dimensions "${VECTOR_DIMENSIONS}" --metric "${VECTOR_METRIC}"
+          fi
+
+      - name: Configure wrangler database_id
+        run: |
+          node -e '
+            const fs = require("fs");
+            const env = process.env.TARGET_ENV;
+            const path = "wrangler.jsonc";
+            const data = JSON.parse(fs.readFileSync(path, "utf8"));
+            data.env[env].d1_databases[0].database_id = process.env.RESOLVED_MAIP_MEMORY_DB_ID;
+            fs.writeFileSync(path, JSON.stringify(data, null, 2));
+          '
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Apply D1 migrations
+        run: |
+          case "${TARGET_ENV}" in
+            dev) npm run d1:migrate:dev ;;
+            staging) npm run d1:migrate:staging ;;
+            production) npm run d1:migrate:prod ;;
+          esac
+
+      - name: Set INGEST_API_TOKEN
+        run: |
+          echo "${MAIP_MEMORY_INGEST_API_TOKEN}" | npx wrangler secret put INGEST_API_TOKEN --env "${TARGET_ENV}"
+
+      - name: Deploy worker
+        run: |
+          case "${TARGET_ENV}" in
+            dev) npm run deploy:dev ;;
+            staging) npm run deploy:staging ;;
+            production) npm run deploy:prod ;;
+          esac

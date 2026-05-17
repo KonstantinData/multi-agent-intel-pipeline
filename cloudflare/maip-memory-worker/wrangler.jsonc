@@ -1,0 +1,108 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "maip-memory-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-17",
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "vars": {
+    "APP_ENV": "dev",
+    "SCHEMA_VERSION": "2026-05-17.1",
+    "POLICY_VERSION": "maip-memory-policy-2026-05-17.1"
+  },
+  "env": {
+    "dev": {
+      "name": "maip-memory-worker-dev",
+      "vars": {
+        "APP_ENV": "dev",
+        "SCHEMA_VERSION": "2026-05-17.1",
+        "POLICY_VERSION": "maip-memory-policy-2026-05-17.1"
+      },
+      "d1_databases": [
+        {
+          "binding": "MEMORY_DB",
+          "database_name": "maip-memory-dev",
+          "database_id": "d45defcb-b7d2-4eba-a2d5-74d60e84b445",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEMORY_OBJECTS",
+          "bucket_name": "maip-memory-dev-objects"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "PATTERN_INDEX",
+          "index_name": "maip-memory-dev-patterns"
+        }
+      ]
+    },
+    "staging": {
+      "name": "maip-memory-worker-staging",
+      "vars": {
+        "APP_ENV": "staging",
+        "SCHEMA_VERSION": "2026-05-17.1",
+        "POLICY_VERSION": "maip-memory-policy-2026-05-17.1"
+      },
+      "d1_databases": [
+        {
+          "binding": "MEMORY_DB",
+          "database_name": "maip-memory-staging",
+          "database_id": "d67fc82b-439e-4d01-90f9-04b9cb971194",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEMORY_OBJECTS",
+          "bucket_name": "maip-memory-staging-objects"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "PATTERN_INDEX",
+          "index_name": "maip-memory-staging-patterns"
+        }
+      ]
+    },
+    "production": {
+      "name": "maip-memory-worker-prod",
+      "vars": {
+        "APP_ENV": "production",
+        "SCHEMA_VERSION": "2026-05-17.1",
+        "POLICY_VERSION": "maip-memory-policy-2026-05-17.1"
+      },
+      "d1_databases": [
+        {
+          "binding": "MEMORY_DB",
+          "database_name": "maip-memory-prod",
+          "database_id": "df9ec189-2c69-4f38-928b-7f55fa45179a",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEMORY_OBJECTS",
+          "bucket_name": "maip-memory-prod-objects"
+        }
+      ],
+      "vectorize": [
+        {
+          "binding": "PATTERN_INDEX",
+          "index_name": "maip-memory-prod-patterns"
+        }
+      ]
+    }
+  }
+}
