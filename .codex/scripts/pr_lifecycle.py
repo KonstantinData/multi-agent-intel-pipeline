@@ -269,6 +269,18 @@ def cmd_create(args: argparse.Namespace) -> int:
     }
     _write_json(Path(args.report), report)
     print(json.dumps(report, indent=2, ensure_ascii=False))
+    if args.watch_checks:
+        watch_args = argparse.Namespace(
+            pr=str(pr["number"]),
+            interval_sec=args.interval_sec,
+            max_fix_cycles=args.max_fix_cycles,
+            auto_fix_cmd=args.auto_fix_cmd,
+            commit_message=args.commit_message,
+            push=args.push,
+            sync_learning=args.sync_learning,
+            report=args.report,
+        )
+        return _watch_pr_checks(watch_args, pr)
     return 0
 
 
@@ -314,9 +326,7 @@ def _run_fix_cycle(args: argparse.Namespace, pr: dict[str, Any], failed: list[di
     return result
 
 
-def cmd_watch(args: argparse.Namespace) -> int:
-    _ensure_not_main()
-    pr = _load_pr(args.pr)
+def _watch_pr_checks(args: argparse.Namespace, pr: dict[str, Any]) -> int:
     cycles = 0
     observations: list[dict[str, Any]] = []
     while True:
@@ -376,6 +386,12 @@ def cmd_watch(args: argparse.Namespace) -> int:
         time.sleep(args.interval_sec)
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    _ensure_not_main()
+    pr = _load_pr(args.pr)
+    return _watch_pr_checks(args, pr)
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     pr = _load_pr(args.pr)
     checks = _pr_checks(str(pr["number"]))
@@ -403,6 +419,13 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--run-gates", action="store_true")
     create.add_argument("--resume-gates", action="store_true")
     create.add_argument("--fail-fast", action="store_true")
+    create.add_argument("--watch-checks", action=argparse.BooleanOptionalAction, default=True)
+    create.add_argument("--interval-sec", type=int, default=180)
+    create.add_argument("--max-fix-cycles", type=int, default=5)
+    create.add_argument("--auto-fix-cmd", default="")
+    create.add_argument("--commit-message", default="")
+    create.add_argument("--push", action="store_true")
+    create.add_argument("--sync-learning", action="store_true")
     create.add_argument("--report", default=str(REPORT_PATH))
     create.set_defaults(func=cmd_create)
 

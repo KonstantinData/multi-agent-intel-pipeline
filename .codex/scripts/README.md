@@ -9,7 +9,7 @@ Executable helpers that belong to the `.codex` app-level operating layer.
 
 ## PR Lifecycle
 
-- `pr_lifecycle.py`: local/Codex-side PR lifecycle orchestrator. It can create/find PRs, run local pre-PR gates, poll PR checks every 180 seconds by default, record PR failure/recovery events, and run an explicit operator-provided auto-fix command inside a bounded retry loop.
+- `pr_lifecycle.py`: local/Codex-side PR lifecycle orchestrator. It can create/find PRs, run local pre-PR gates, and by default start PR-check polling every 180 seconds immediately after `create` (`--no-watch-checks` disables this). It records PR failure/recovery events and can run an explicit operator-provided auto-fix command inside a bounded retry loop.
 - `run_pre_pr_gates.py`: local pre-PR gate runner mirroring `compliance-security-ai` gate names, with `--resume` and `--resume-from-changes` support, live progress JSON output in `artifacts/pre_pr_gate_progress.json`, and an on-demand `--status` view.
 
 ## Config
