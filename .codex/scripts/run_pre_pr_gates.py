@@ -384,8 +384,8 @@ def _fetch_runtime_memory_events(
     token: str,
     limit: int,
 ) -> tuple[int, dict[str, Any]]:
-    query = parse.urlencode({"run_id": run_id, "limit": str(limit)})
-    url = f"{base_url.rstrip('/')}/v1/memory/events?{query}"
+    query = parse.urlencode({"correlation_id": run_id, "limit": str(limit)})
+    url = f"{base_url.rstrip('/')}/v1/events?{query}"
     req = request.Request(
         url=url,
         method="GET",
@@ -437,7 +437,7 @@ def _print_runtime_memory_recap(
         limit=limit,
     )
     print(
-        f"\n[MEMORY-RECAP] run_id={run_id} status={status} endpoint={base_url.rstrip('/')}/v1/memory/events",
+        f"\n[MEMORY-RECAP] run_id={run_id} status={status} endpoint={base_url.rstrip('/')}/v1/events",
         flush=True,
     )
     if status != 200:
@@ -461,8 +461,8 @@ def _print_runtime_memory_recap(
     for event in events:
         if not isinstance(event, dict):
             continue
-        kind = str(event.get("kind", "unknown"))
-        dept = str(event.get("department", "unknown"))
+        kind = str(event.get("event_type", "unknown"))
+        dept = str(event.get("area", "unknown"))
         kind_counts[kind] = kind_counts.get(kind, 0) + 1
         dept_counts[dept] = dept_counts.get(dept, 0) + 1
 
@@ -510,12 +510,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--memory-base-url",
-        default="https://liquisto-app-memory-worker-dev.still-butterfly-bbff.workers.dev",
+        default="https://maip-memory-worker-dev.still-butterfly-bbff.workers.dev",
         help="Memory worker base URL used for recap query.",
     )
     parser.add_argument(
         "--memory-token-env",
-        default="APP_MEMORY_INGEST_API_TOKEN",
+        default="MAIP_MEMORY_INGEST_API_TOKEN",
         help="Env var name holding the memory ingest token for recap query.",
     )
     parser.add_argument(

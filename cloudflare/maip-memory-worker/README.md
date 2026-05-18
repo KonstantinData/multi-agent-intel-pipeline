@@ -71,7 +71,7 @@ Workflow: `.github/workflows/deploy-maip-memory-worker.yml`
 
 Required GitHub secrets:
 
-- `MAIS_MASTER_TOKEN`
+- `MAIP_MASTER_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 - `MAIP_MEMORY_INGEST_API_TOKEN`
 
