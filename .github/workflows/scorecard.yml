@@ -44,7 +44,7 @@ jobs:
             else
               .runs += [(
                 .runs[0]
-                | .automationDetails = {"id":"supply-chain/branch-protection"}
+                | .automationDetails = {"id":"supply-chain/branch-protection/parity"}
                 | del(.runAutomationDetails)
                 | .results = []
               )]
