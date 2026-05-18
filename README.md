@@ -51,7 +51,7 @@ Optional runtime-memory recap before PR handling (non-blocking):
 python .codex/scripts/run_pre_pr_gates.py --fail-fast --memory-run-id <run_id>
 ```
 
-This prints a compact `[MEMORY-RECAP]` summary from the Cloudflare app-memory
+This prints a compact `[MEMORY-RECAP]` summary from the Cloudflare MAIP memory
 worker. Missing token or unavailable endpoint only prints a skip/error message
 and does not interrupt the gate run.
 

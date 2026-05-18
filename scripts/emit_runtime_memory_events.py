@@ -2,8 +2,8 @@
 
 This helper is intentionally small and explicit:
 - loads allowed event kinds from the runtime memory reference file
-- emits one or multiple events to /v1/memory/events
-- reads back events for the same run_id from /v1/memory/events
+- emits one or multiple events to /v1/events
+- reads back events for the same correlation_id from /v1/events
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from urllib import error, parse, request
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REFERENCE = ROOT / ".codex" / "runtime" / "runtime_memory_reference.json"
-DEFAULT_BASE_URL = "https://liquisto-app-memory-worker-runtime-dev.still-butterfly-bbff.workers.dev"
+DEFAULT_BASE_URL = "https://maip-memory-worker-dev.still-butterfly-bbff.workers.dev"
 
 
 def _utc_now_iso() -> str:
@@ -50,8 +50,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--department",
-        default="runtime",
-        help="Department field for emitted events.",
+        default="operations",
+        help="Area field for emitted events (operations|learning|governance|ci|docs|tests).",
     )
     parser.add_argument(
         "--source",
@@ -74,7 +74,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--token-env",
-        default="APP_MEMORY_INGEST_API_TOKEN",
+        default="MAIP_MEMORY_INGEST_API_TOKEN",
         help="Environment variable containing ingest bearer token.",
     )
     parser.add_argument(
@@ -86,7 +86,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--limit",
         type=int,
         default=20,
-        help="Limit for readback GET /v1/memory/events (1..200).",
+        help="Limit for readback GET /v1/events (1..200).",
     )
     parser.add_argument(
         "--dry-run",
@@ -186,27 +186,27 @@ def main() -> None:
     print(f"reference_file={reference_path.as_posix()}")
     print(f"base_url={base_url}")
     print(f"run_id={args.run_id}")
-    print(f"department={args.department}")
+    print(f"area={args.department}")
     print(f"kinds={','.join(kinds)}")
     print(f"dry_run={args.dry_run}")
 
     if args.dry_run:
         for kind in kinds:
             event_obj = {
-                "run_id": args.run_id,
-                "department": args.department,
-                "kind": kind,
+                "area": args.department,
+                "event_type": kind,
                 "source": args.source,
+                "correlation_id": args.run_id,
                 "payload": {
                     "emitted_at": _utc_now_iso(),
-                    "kind": kind,
+                    "event_type": kind,
                     **payload_extra,
                 },
             }
             print("would_post=" + json.dumps(event_obj, ensure_ascii=False))
         print(
             "would_get="
-            + f"{base_url}/v1/memory/events?run_id={parse.quote(args.run_id)}&limit={args.limit}"
+            + f"{base_url}/v1/events?correlation_id={parse.quote(args.run_id)}&limit={args.limit}"
         )
         return
 
@@ -220,19 +220,19 @@ def main() -> None:
     expected_kinds: list[str] = []
     for kind in kinds:
         event_obj = {
-            "run_id": args.run_id,
-            "department": args.department,
-            "kind": kind,
+            "area": args.department,
+            "event_type": kind,
             "source": args.source,
+            "correlation_id": args.run_id,
             "payload": {
                 "emitted_at": _utc_now_iso(),
-                "kind": kind,
+                "event_type": kind,
                 **payload_extra,
             },
         }
         status, post_body = _http_json(
             method="POST",
-            url=f"{base_url}/v1/memory/events",
+            url=f"{base_url}/v1/events",
             token=token,
             body_obj=event_obj,
         )
@@ -242,7 +242,7 @@ def main() -> None:
             raise SystemExit(f"POST failed for kind '{kind}' with status {status}.")
         expected_kinds.append(kind)
 
-    list_url = f"{base_url}/v1/memory/events?run_id={parse.quote(args.run_id)}&limit={args.limit}"
+    list_url = f"{base_url}/v1/events?correlation_id={parse.quote(args.run_id)}&limit={args.limit}"
     status, list_body = _http_json(method="GET", url=list_url, token=token)
     print(f"get_status={status}")
     print("get_body=" + json.dumps(list_body, ensure_ascii=False))
@@ -252,7 +252,7 @@ def main() -> None:
     if not isinstance(events, list):
         raise SystemExit("GET response does not contain an events list.")
 
-    seen_kinds = {item.get("kind") for item in events if isinstance(item, dict)}
+    seen_kinds = {item.get("event_type") for item in events if isinstance(item, dict)}
     missing = [kind for kind in expected_kinds if kind not in seen_kinds]
     if missing:
         raise SystemExit(f"Readback missing emitted kinds: {', '.join(missing)}")

@@ -15,7 +15,7 @@ It separates three concerns that must not be mixed:
 - Runtime improvement brain: scrubbed, reviewed learning extracted from runtime
   artifacts to improve future runtime outputs.
 
-The current `liquisto-app-memory-worker` D1 schema is a validated smoke-test
+The current `maip-memory-worker` D1 schema is a validated smoke-test
 foundation, not the final memory architecture.
 
 ## Core Boundary
@@ -430,16 +430,10 @@ If D1 and Vectorize disagree, D1 wins.
 
 ## API Target Surface
 
-The current API supports:
-
-- `GET /healthz`
-- `POST /v1/memory/events`
-- `GET /v1/memory/events?run_id=<id>&limit=<n>`
-
-Target API surface:
+MAIP API surface:
 
 - `POST /v1/events`
-- `GET /v1/events?area=&component=&correlation_id=&limit=`
+- `GET /v1/events?area=&event_type=&correlation_id=&limit=`
 - `POST /v1/learning/candidates`
 - `GET /v1/learning/candidates/:candidate_id`
 - `POST /v1/learning/candidates/:candidate_id/reviews`

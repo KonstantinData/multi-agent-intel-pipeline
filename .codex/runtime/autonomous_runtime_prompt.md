@@ -50,7 +50,7 @@ Before editing anything, inspect and report:
 - Current branch: `git branch --show-current`
 - Working tree: `git status --short --branch`
 - Existing `.codex` structure
-- Existing Cloudflare worker structure under `cloudflare/app-memory-worker`
+- Existing Cloudflare worker structure under `cloudflare/maip-memory-worker`
 - Existing `.gitignore` rules for `.codex/*`
 - Existing test commands in repo config and docs
 
@@ -173,7 +173,7 @@ Run where applicable:
 - `pytest --collect-only -q tests/architecture`
 - `pytest -q tests/architecture`
 
-In `cloudflare/app-memory-worker`, run `npm run check` only if `node_modules`
+In `cloudflare/maip-memory-worker`, run `npm run check` only if `node_modules`
 exists. Do not run `npm install` unless explicitly allowed.
 </validation>
 
