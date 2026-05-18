@@ -45,7 +45,7 @@ jobs:
               .runs += [(
                 .runs[0]
                 | .automationDetails = {"id":"supply-chain/branch-protection"}
-                | .runAutomationDetails = {"id":"supply-chain/branch-protection"}
+                | del(.runAutomationDetails)
                 | .results = []
               )]
             end
