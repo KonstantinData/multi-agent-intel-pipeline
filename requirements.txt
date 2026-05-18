@@ -9,4 +9,4 @@ pypdf>=6.10.2,<7
 python-dotenv>=1.2.2,<2
 reportlab>=4.4.10,<5
 streamlit>=1.55.0,<2
-tldextract>=5.3.0,<6
+tldextract>=5.3.1,<6
