@@ -1,4 +1,4 @@
-"""Emit runtime memory events from .codex/runtime/runtime_memory_reference.json.
+"""Emit MAIP memory events from .codex/runtime/runtime_memory_reference.json.
 
 This helper is intentionally small and explicit:
 - loads allowed event kinds from the runtime memory reference file
