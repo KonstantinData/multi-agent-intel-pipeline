@@ -44,16 +44,16 @@
             "context": "pipeline-status"
           },
           {
-            "context": "codeql / analyze"
+            "context": "analyze"
           },
           {
             "context": "dependency-review"
           },
           {
-            "context": "compliance-security-ai / policy-as-code-gate"
+            "context": "policy-as-code-gate"
           },
           {
-            "context": "compliance-security-ai / scorecard-policy-gate"
+            "context": "scorecard-policy-gate"
           }
         ]
       }
