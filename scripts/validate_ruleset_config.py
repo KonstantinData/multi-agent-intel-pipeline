@@ -9,10 +9,10 @@ from typing import Any, cast
 
 REQUIRED_STATUS_CHECKS = {
     "pipeline-status",
-    "codeql / analyze",
+    "analyze",
     "dependency-review",
-    "compliance-security-ai / policy-as-code-gate",
-    "compliance-security-ai / scorecard-policy-gate",
+    "policy-as-code-gate",
+    "scorecard-policy-gate",
 }
 REQUIRED_RULE_TYPES = {
     "deletion",

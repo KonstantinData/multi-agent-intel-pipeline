@@ -241,5 +241,4 @@ test_real.py
 **/node_modules/
 **/.wrangler/
 **/.dev.vars
-cloudflare/app-memory-worker/src/env.d.ts
 cloudflare/maip-memory-worker/src/env.d.ts
