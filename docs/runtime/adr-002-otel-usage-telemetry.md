@@ -1,6 +1,6 @@
 # ADR-002: OpenTelemetry And Usage Telemetry On RuntimeSteps
 
-Status: Proposed
+Status: Accepted
 
 Date: 2026-05-20
 
