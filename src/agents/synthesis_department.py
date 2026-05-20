@@ -29,7 +29,7 @@ from src.config.settings import (
 )
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
-from src.orchestration.envelope import resolve_confidence, resolve_report_segment
+from src.orchestration.envelope import resolve_admission, resolve_confidence, resolve_report_segment
 from src.orchestration.speaker_selector import build_synthesis_selector
 
 MessageHook = Callable[[dict[str, Any]], None] | None
@@ -119,9 +119,19 @@ class SynthesisDepartmentAgent:
             segment = resolve_report_segment(package)
             if not segment or segment.get("narrative_summary", "n/v") == "n/v":
                 return json.dumps({"error": f"No report segment available for {department}"})
+            admission = resolve_admission(package)
+            visibility = package.get("synthesis_visibility") or {
+                "mode": "admitted" if admission.get("downstream_visible", True) else "diagnostic",
+                "reason": "inferred_from_admission",
+                "admission_decision": admission.get("decision", "unknown"),
+                "downstream_visible": bool(admission.get("downstream_visible", False)),
+            }
             return json.dumps(
                 {
                     "department": department,
+                    "admission_decision": admission.get("decision", "unknown"),
+                    "downstream_visible": bool(admission.get("downstream_visible", False)),
+                    "synthesis_visibility": visibility,
                     "narrative_summary": segment.get("narrative_summary", ""),
                     "confidence": segment.get("confidence", "low"),
                     "key_findings": segment.get("key_findings", []),
@@ -264,6 +274,16 @@ class SynthesisDepartmentAgent:
             d for d in _SYNTHESIS_DEPARTMENTS
             if resolve_report_segment(department_packages.get(d, {})).get("narrative_summary", "n/v") != "n/v"
         ]
+        available_segment_statuses = {}
+        for department in available_segments:
+            package = department_packages.get(department, {})
+            admission = resolve_admission(package)
+            visibility = package.get("synthesis_visibility") or {}
+            available_segment_statuses[department] = {
+                "admission_decision": admission.get("decision", "unknown"),
+                "downstream_visible": bool(admission.get("downstream_visible", False)),
+                "visibility_mode": visibility.get("mode", "admitted"),
+            }
         # Include synthesis context summary in initiation message so the LLM
         # has the pre-computed structural data available from the start.
         ctx_summary = {}
@@ -282,6 +302,7 @@ class SynthesisDepartmentAgent:
                 "status": "synthesis_started",
                 "company": brief.company_name,
                 "available_segments": available_segments,
+                "available_segment_statuses": available_segment_statuses,
                 "pre_computed_context": ctx_summary,
                 "instructions": (
                     f"Read all available report segments, identify cross-domain patterns, "
@@ -378,6 +399,7 @@ You do NOT conduct research yourself. You read, integrate, and judge.
 - Open questions must be 3-5 deal-critical validation questions, not a raw data-gap dump
 - Next steps must read like a first-meeting playbook / mutual action plan with owners, timing, and outcomes
 - Do not guess — base everything on what the segments contain
+- If read_report_segment returns synthesis_visibility.mode="diagnostic" or downstream_visible=false, use that segment only as gap/risk context, not as validated downstream truth
 """
 
     def _analyst_system_prompt(self) -> str:
