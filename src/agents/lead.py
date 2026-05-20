@@ -638,6 +638,42 @@ class DepartmentLeadAgent:
             if memory_store is not None:
                 memory_store.ingest_worker_report(report, department=self.department)
 
+            if step_emitter is not None:
+                report_usage = dict(report.get("usage", {}) or {})
+                if report_usage:
+                    report_usage.setdefault("provider", "openai")
+                    report_usage.setdefault("model", assignment.model_name or self.model_name)
+                step_emitter.emit_narrated(
+                    phase="department_groupchat",
+                    actor=self.researcher_name,
+                    actor_role="researcher",
+                    department=self.department,
+                    task_key=task_key,
+                    attempt=run_state.attempts[task_key],
+                    goal=f"Record research execution usage for {task_key}",
+                    action_kind="capability_call",
+                    action_target="research.run",
+                    action_payload={
+                        "department": self.department,
+                        "task_key": task_key,
+                        "attempt": run_state.attempts[task_key],
+                        "search_calls": int(report_usage.get("search_calls", 0) or 0),
+                        "page_fetches": int(report_usage.get("page_fetches", 0) or 0),
+                        "llm_calls": int(report_usage.get("llm_calls", 0) or 0),
+                    },
+                    capability_calls=[
+                        {
+                            "kind": "research_run",
+                            "target": assignment.target_section,
+                            "task_key": task_key,
+                        }
+                    ],
+                    usage=report_usage or None,
+                    decision="research_complete",
+                    reflection="Research execution usage recorded.",
+                    stop_reason="research_usage_recorded",
+                )
+
             return json.dumps(
                 {
                     "task_key": task_key,

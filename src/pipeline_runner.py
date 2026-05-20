@@ -20,6 +20,7 @@ from src.app.use_cases import (
     determine_final_status,
 )
 from src.config import (
+    estimate_cost_usd,
     estimate_web_search_preview_call_cost_usd,
     get_search_model,
     summarize_worker_report_costs,
@@ -48,6 +49,7 @@ from src.orchestration.meeting_questions import (
     matrix_status_for_task_status,
 )
 from src.orchestration.meeting_readiness import FinalBriefingComposer, MeetingReadinessGate
+from src.orchestration.otel_step_consumer import build_otel_step_consumer_from_env
 from src.orchestration.run_context import RunContext
 from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir
 from src.orchestration.runtime_agents import (
@@ -66,6 +68,7 @@ from src.orchestration.step1_handoff import (
 from src.orchestration.step_bus import (
     InMemoryStepSink,
     StepBus,
+    StepConsumer,
     StepEmitter,
     StepTraceConsumer,
     runtime_steps_enabled,
@@ -243,6 +246,97 @@ def _write_checkpoint(
     return checkpoint
 
 MessageHook = Callable[[dict[str, Any]], None] | None
+
+
+def _build_step_consumers(
+    step_trace: list[dict[str, Any]],
+    eval_sink: InMemoryStepSink,
+) -> list[StepConsumer]:
+    consumers: list[StepConsumer] = [
+        StepTraceConsumer(step_trace),
+        eval_sink,
+    ]
+    otel_consumer = build_otel_step_consumer_from_env()
+    if otel_consumer is not None:
+        consumers.append(otel_consumer)
+    return consumers
+
+
+def _build_run_usage_record(
+    *,
+    usage_totals: dict[str, Any],
+    usage_total: dict[str, Any],
+    search_model: str,
+) -> dict[str, Any]:
+    """Build ADR-002 usage metadata for the final export RuntimeStep."""
+
+    search_calls = int(usage_totals.get("search_calls", 0) or 0)
+    page_fetches = int(usage_totals.get("page_fetches", 0) or 0)
+    llm_calls = int(usage_totals.get("llm_calls", 0) or 0)
+    return {
+        "provider": "openai",
+        "model": search_model,
+        "prompt_tokens": int(usage_totals.get("prompt_tokens", 0) or 0),
+        "completion_tokens": int(usage_totals.get("completion_tokens", 0) or 0),
+        "total_tokens": int(usage_totals.get("total_tokens", 0) or 0),
+        "thinking_tokens": 0,
+        "cached_prompt_tokens": 0,
+        "tool_calls": search_calls + page_fetches + llm_calls,
+        "search_calls": search_calls,
+        "page_fetches": page_fetches,
+        "llm_calls": llm_calls,
+        "retry_count": 0,
+        "estimated_cost_usd": float(usage_total.get("total_cost", 0.0) or 0.0),
+    }
+
+
+def _report_writer_usage_record(report_package: dict[str, Any]) -> dict[str, Any] | None:
+    validation = report_package.get("composition_validation", {})
+    if not isinstance(validation, dict):
+        return None
+    aggregate = {
+        "provider": "openai",
+        "model": "",
+        "llm_calls": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "thinking_tokens": 0,
+        "cached_prompt_tokens": 0,
+        "tool_calls": 0,
+        "retry_count": 0,
+        "estimated_cost_usd": 0.0,
+    }
+    for language in ("de", "en"):
+        checks = validation.get(language, {})
+        if not isinstance(checks, dict):
+            continue
+        usage = checks.get("usage", {})
+        if not isinstance(usage, dict) or not usage:
+            continue
+        model = str(usage.get("model", "") or "")
+        if model and not aggregate["model"]:
+            aggregate["model"] = model
+        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+        aggregate["llm_calls"] += int(usage.get("llm_calls", 0) or 0)
+        aggregate["prompt_tokens"] += prompt_tokens
+        aggregate["completion_tokens"] += completion_tokens
+        aggregate["total_tokens"] += int(
+            usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens)
+        )
+        if model:
+            aggregate["estimated_cost_usd"] = round(
+                float(aggregate["estimated_cost_usd"])
+                + estimate_cost_usd(
+                    model_name=model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                ),
+                10,
+            )
+    aggregate["tool_calls"] = int(aggregate["llm_calls"])
+    return aggregate if int(aggregate["llm_calls"]) > 0 else None
 
 
 def _timestamp_run_id() -> str:
@@ -474,10 +568,7 @@ def _initialize_run(
         },
     )
     step_eval_sink = InMemoryStepSink()
-    step_bus = StepBus([
-        StepTraceConsumer(run_context.step_trace),
-        step_eval_sink,
-    ])
+    step_bus = StepBus(_build_step_consumers(run_context.step_trace, step_eval_sink))
     step_emitter = StepEmitter(
         run_id=run_id,
         bus=step_bus,
@@ -791,10 +882,7 @@ def resume_pipeline(
     resume_eval_sink = InMemoryStepSink()
     resume_emitter = StepEmitter(
         run_id=run_id,
-        bus=StepBus([
-            StepTraceConsumer(run_context.step_trace),
-            resume_eval_sink,
-        ]),
+        bus=StepBus(_build_step_consumers(run_context.step_trace, resume_eval_sink)),
         enabled=runtime_steps_enabled(),
     )
 
@@ -1950,6 +2038,7 @@ def _assemble_report_and_export(
         state_transitions=[
             {"kind": "report_package_recorded", "report_package_present": bool(report_package)}
         ],
+        usage=_report_writer_usage_record(report_package),
         decision="completed",
         reflection="Report writer assembled the report package.",
         stop_reason="report_writer_complete",
@@ -2043,6 +2132,11 @@ def _assemble_report_and_export(
             {"kind": "run_artifacts_ready_for_export", "status": finalization.status},
             {"kind": "process_patterns_consolidated", "pattern_count": len(role_patterns)},
         ],
+        usage=_build_run_usage_record(
+            usage_totals=usage_totals,
+            usage_total=usage_total,
+            search_model=get_search_model(),
+        ),
         decision="ready_to_export",
         reflection="Run artifacts prepared for export and process-memory consolidation completed.",
         stop_reason="export_ready",

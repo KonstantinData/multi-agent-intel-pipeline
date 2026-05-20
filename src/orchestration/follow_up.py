@@ -32,10 +32,12 @@ from typing import Any
 from src.exporters.json_export import export_follow_up
 from src.models.schemas import FollowUpAnswer
 from src.orchestration.envelope import resolve_raw_package
+from src.orchestration.otel_step_consumer import build_otel_step_consumer_from_env
 from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
 from src.orchestration.step_bus import (
     InMemoryStepSink,
     StepBus,
+    StepConsumer,
     StepEmitter,
     StepTraceConsumer,
     runtime_steps_enabled,
@@ -54,12 +56,16 @@ def _followup_step_emitter(run_id: str, run_context: dict[str, Any]) -> StepEmit
     if not isinstance(trace, list):
         trace = []
         run_context["step_trace"] = trace
+    consumers: list[StepConsumer] = [
+        StepTraceConsumer(trace),
+        InMemoryStepSink(),
+    ]
+    otel_consumer = build_otel_step_consumer_from_env()
+    if otel_consumer is not None:
+        consumers.append(otel_consumer)
     return StepEmitter(
         run_id=run_id,
-        bus=StepBus([
-            StepTraceConsumer(trace),
-            InMemoryStepSink(),
-        ]),
+        bus=StepBus(consumers),
         enabled=runtime_steps_enabled(),
     )
 

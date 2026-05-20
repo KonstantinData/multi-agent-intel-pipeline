@@ -43,6 +43,10 @@ Implement an optional `StepBus` OpenTelemetry consumer that consumes the same
 sanitized `RuntimeStep` payloads already emitted by ADR-001. The OTel consumer
 must not introduce a second trace schema.
 
+Activation is controlled by `LIQUISTO_OTEL_ENABLED=1`. The consumer must remain
+dependency-light at import time and only load OpenTelemetry SDK modules when
+export is enabled or a deployment explicitly injects an OTel sink.
+
 Telemetry export is non-blocking after ADR-001 secret validation has passed. If
 OTel export fails, the runtime path continues and the failure is logged locally
 without emitting raw sensitive payloads.
