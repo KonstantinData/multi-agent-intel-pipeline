@@ -151,6 +151,8 @@ _validate_payload_against_task_schema = validate_payload_against_task_schema
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
+_AUTO_RECOVER_FINALIZE_AFTER_BLOCKS = 2
+
 _DEPARTMENT_PREFIX = {
     "CompanyDepartment": "Company",
     "MarketDepartment": "Market",
@@ -880,12 +882,61 @@ class DepartmentLeadAgent:
                     incomplete_tasks,
                     blocked_finalize_attempts,
                 )
+                next_required_task = incomplete_tasks[0]
+                if blocked_finalize_attempts >= _AUTO_RECOVER_FINALIZE_AFTER_BLOCKS:
+                    research_result_raw = run_research(next_required_task)
+                    try:
+                        research_result: Any = json.loads(research_result_raw)
+                    except json.JSONDecodeError:
+                        research_result = {"raw_result": research_result_raw[:1000]}
+                    remaining_incomplete = [
+                        assignment.task_key
+                        for assignment in assignments
+                        if run_state.latest_artifact(assignment.task_key) is None
+                        and run_state.latest_decision(assignment.task_key) is None
+                    ]
+                    logger.warning(
+                        "finalize_package auto-recovered missing research: department=%s task=%s remaining=%s",
+                        self.department,
+                        next_required_task,
+                        remaining_incomplete,
+                    )
+                    return json.dumps(
+                        {
+                            "status": "auto_recovered_missing_research",
+                            "trigger": "repeated_premature_finalize",
+                            "blocked_finalize_attempt": blocked_finalize_attempts,
+                            "task_key": next_required_task,
+                            "research_status": (
+                                research_result.get("status")
+                                if isinstance(research_result, dict)
+                                else "unknown"
+                            ),
+                            "facts": (
+                                research_result.get("facts", [])[:5]
+                                if isinstance(research_result, dict)
+                                else []
+                            ),
+                            "open_questions": (
+                                research_result.get("open_questions", [])[:5]
+                                if isinstance(research_result, dict)
+                                else []
+                            ),
+                            "remaining_incomplete_tasks": remaining_incomplete,
+                            "next_required_action": (
+                                f"run_research(task_key='{remaining_incomplete[0]}')"
+                                if remaining_incomplete
+                                else "finalize_package(summary=...)"
+                            ),
+                        },
+                        ensure_ascii=False,
+                    )
                 return json.dumps(
                     {
                         "error": "Cannot finalize package before all assigned tasks have at least one research result.",
                         "incomplete_tasks": incomplete_tasks,
-                        "next_required_task": incomplete_tasks[0],
-                        "next_required_action": f"run_research(task_key='{incomplete_tasks[0]}')",
+                        "next_required_task": next_required_task,
+                        "next_required_action": f"run_research(task_key='{next_required_task}')",
                     },
                     ensure_ascii=False,
                 )
