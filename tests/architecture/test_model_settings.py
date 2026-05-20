@@ -1,3 +1,5 @@
+"""Architecture tests for model settings and legacy overrides."""
+
 from __future__ import annotations
 
 from src.config.settings import (
@@ -5,6 +7,7 @@ from src.config.settings import (
     DEFAULT_SEARCH_MODEL,
     DEFAULT_TRANSLATION_MODEL,
     get_extraction_model,
+    get_role_model_profile,
     get_role_model_selection,
     get_search_model,
     get_translation_model,
@@ -69,3 +72,29 @@ def test_gpt5_temperature_is_omitted_for_non_default_values():
 def test_non_gpt5_temperature_is_kept():
     assert resolve_model_temperature("gpt-4.1", 0.1) == 0.1
     assert temperature_param("gpt-4.1-mini", 0.2) == {"temperature": 0.2}
+
+
+def test_role_model_profile_preserves_legacy_model_selection(monkeypatch):
+    _disable_dotenv_lookup(monkeypatch)
+    monkeypatch.setenv("OPENAI_MODEL_COMPANY_RESEARCHER", "gpt-5-mini")
+    monkeypatch.setenv("OPENAI_STRUCTURED_MODEL_COMPANY_RESEARCHER", "gpt-4.1-mini")
+    profile = get_role_model_profile("CompanyResearcher")
+
+    assert profile.provider == "openai"
+    assert profile.model == "gpt-5-mini"
+    assert profile.structured_model == "gpt-4.1-mini"
+    assert profile.supports_reasoning is True
+    assert profile.supports_temperature is False
+    assert profile.default_temperature is None
+    assert profile.default_reasoning_policy.effort == "low"
+
+
+def test_non_reasoning_role_profile_defaults_to_no_reasoning(monkeypatch):
+    _disable_dotenv_lookup(monkeypatch)
+    monkeypatch.delenv("OPENAI_MODEL_COMPANY_RESEARCHER", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL_COMPANYRESEARCHER", raising=False)
+    profile = get_role_model_profile("CompanyResearcher")
+
+    assert profile.model == "gpt-4.1-mini"
+    assert profile.supports_reasoning is False
+    assert profile.default_reasoning_policy.effort == "none"
