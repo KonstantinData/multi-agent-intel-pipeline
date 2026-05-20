@@ -10,6 +10,11 @@ import os
 from collections.abc import Callable, Iterable
 from typing import Any, Protocol
 
+from src.config import (
+    StepReasoningContext,
+    get_role_model_profile,
+    resolve_step_reasoning_policy,
+)
 from src.orchestration.runtime_step import build_narrated_step, validate_runtime_step
 from src.security.secret_guard import (
     PromptSecretLeakError,
@@ -156,12 +161,37 @@ class StepEmitter:
         return validated
 
     def emit_narrated(self, **kwargs: Any) -> dict[str, Any] | None:
+        step_kwargs = dict(kwargs)
+        if step_kwargs.get("reasoning_policy") is None:
+            step_kwargs["reasoning_policy"] = self._resolve_reasoning_policy_payload(step_kwargs)
         step = build_narrated_step(
             run_id=self.run_id,
             sequence=self._next_sequence(),
-            **kwargs,
+            **step_kwargs,
         )
         return self.emit(step)
+
+    @staticmethod
+    def _resolve_reasoning_policy_payload(step_kwargs: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            actor = str(step_kwargs.get("actor", "") or "").strip()
+            profile = get_role_model_profile(actor)
+            policy = resolve_step_reasoning_policy(
+                StepReasoningContext(
+                    role=actor,
+                    actor_role=str(step_kwargs.get("actor_role", "") or ""),
+                    phase=str(step_kwargs.get("phase", "") or ""),
+                    action_kind=str(step_kwargs.get("action_kind", "") or ""),
+                    action_target=str(step_kwargs.get("action_target", "") or ""),
+                    department=str(step_kwargs.get("department", "") or ""),
+                    task_key=str(step_kwargs.get("task_key", "") or ""),
+                ),
+                role_profile=profile,
+            )
+        except Exception as exc:  # pragma: no cover - telemetry hardening
+            logger.warning("runtime step reasoning policy resolution failed: %s", exc)
+            return None
+        return policy.as_runtime_step_payload()
 
     @staticmethod
     def _assert_publishable(step: dict[str, Any]) -> None:
