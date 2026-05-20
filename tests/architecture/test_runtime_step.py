@@ -190,6 +190,42 @@ def test_step_emitter_resolves_reasoning_policy_for_reasoning_capable_role(monke
     assert policy["reason"] == "final readiness gate"
 
 
+def test_step_emitter_derives_reasoning_realized_from_usage():
+    sink = InMemoryStepSink()
+    emitter = StepEmitter(
+        run_id="20260520T120000Z",
+        bus=StepBus([sink]),
+        enabled=True,
+    )
+
+    result = emitter.emit_narrated(
+        phase="finalization",
+        actor="MeetingReadinessGate",
+        actor_role="runtime_gate",
+        goal="Evaluate meeting readiness",
+        action_kind="state_transition",
+        action_target="meeting_readiness.evaluate",
+        action_payload={"blocker_count": 0},
+        usage={
+            "provider": "openai",
+            "model": "gpt-5-mini",
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "thinking_tokens": 3,
+        },
+        decision="meeting_ready",
+        reflection="Meeting readiness evaluated.",
+        stop_reason="meeting_readiness_evaluated",
+    )
+
+    assert result is not None
+    realized = result["execution"]["reasoning_realized"]
+    assert realized["effort_used"] == result["intent"]["reasoning_policy"]["effort"]
+    assert realized["thinking_tokens"] == 3
+    assert realized["reasoning_summary_available"] is False
+
+
 def test_run_context_snapshot_round_trips_step_trace():
     context = RunContext(
         run_id="20260520T120000Z",

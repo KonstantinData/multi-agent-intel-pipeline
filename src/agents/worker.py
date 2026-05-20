@@ -80,6 +80,7 @@ from src.agents._helpers import (
 from src.agents._helpers import (
     sanitize_for_section as _sanitize_for_section_impl,
 )
+from src.config.model_usage import build_usage_record
 from src.config.settings import (
     get_llm_config,
     get_openai_api_key,
@@ -1422,12 +1423,7 @@ class ResearchWorker:
         except json.JSONDecodeError:
             payload = {"payload_updates": {}, "open_questions": ["Structured output could not be parsed reliably."]}
         usage = getattr(response, "usage", None)
-        payload["usage"] = {
-            "llm_calls": 1,
-            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
-            "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
-            "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
-        }
+        payload["usage"] = build_usage_record(usage, llm_calls=1)
         return payload
 
     def _fallback_synthesis(self, evidence_pack: dict[str, Any]) -> dict[str, Any]:
