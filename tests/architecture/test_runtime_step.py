@@ -120,7 +120,7 @@ def test_step_emitter_blocks_secret_payload_without_publishing():
         goal="Secret test",
         action_kind="state_transition",
         action_target="test.secret",
-        action_payload={"api_key": "sk-abcdefghijklmnopqrstuvwxyz123456"},
+        action_payload={"payload": "api_key=0000000000000000"},
         decision="blocked",
         reflection="Should not publish.",
         stop_reason="secret_guard",
