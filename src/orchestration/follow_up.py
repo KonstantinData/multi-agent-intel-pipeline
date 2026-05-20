@@ -33,6 +33,13 @@ from src.exporters.json_export import export_follow_up
 from src.models.schemas import FollowUpAnswer
 from src.orchestration.envelope import resolve_raw_package
 from src.orchestration.run_paths import RUNS_DIR, resolve_run_dir, validate_run_id
+from src.orchestration.step_bus import (
+    InMemoryStepSink,
+    StepBus,
+    StepEmitter,
+    StepTraceConsumer,
+    runtime_steps_enabled,
+)
 from src.storage.run_artifacts import (
     load_latest_run_artifact_json,
     should_use_postgres_run_artifacts,
@@ -40,6 +47,21 @@ from src.storage.run_artifacts import (
 from src.utils import dedup_safe as _dedup_safe
 
 logger = logging.getLogger(__name__)
+
+
+def _followup_step_emitter(run_id: str, run_context: dict[str, Any]) -> StepEmitter:
+    trace = run_context.setdefault("step_trace", [])
+    if not isinstance(trace, list):
+        trace = []
+        run_context["step_trace"] = trace
+    return StepEmitter(
+        run_id=run_id,
+        bus=StepBus([
+            StepTraceConsumer(trace),
+            InMemoryStepSink(),
+        ]),
+        enabled=runtime_steps_enabled(),
+    )
 
 # ---------------------------------------------------------------------------
 # Run brain loading (CHG-08)
@@ -72,6 +94,28 @@ def load_run_artifact(run_id: str) -> dict[str, Any]:
         "load_run_artifact: run_id=%s departments=%s",
         run_id,
         list(run_context.get("short_term_memory", {}).get("department_run_states", {}).keys()),
+    )
+    _followup_step_emitter(str(run_id).strip(), run_context).emit_narrated(
+        phase="follow_up",
+        actor="FollowUpRuntime",
+        actor_role="runtime",
+        goal="Load persisted run artifacts for follow-up",
+        action_kind="capability_call",
+        action_target="run_artifact.load",
+        action_payload={
+            "pipeline_data_present": bool(pipeline_data),
+            "run_context_present": bool(run_context),
+            "department_run_state_count": len(
+                run_context.get("short_term_memory", {}).get("department_run_states", {})
+            ),
+        },
+        capability_calls=[
+            {"kind": "load_run_artifact", "artifact_type": "pipeline_data"},
+            {"kind": "load_run_artifact", "artifact_type": "run_context"},
+        ],
+        decision="loaded",
+        reflection="Persisted run artifacts loaded for follow-up.",
+        stop_reason="follow_up_artifacts_loaded",
     )
     return {
         "run_id": str(run_id).strip(),
@@ -341,9 +385,23 @@ def answer_follow_up(
     (the full artifact history) in addition to the final package and pipeline_data.
     """
     safe_run_id = validate_run_id(run_id)
+    step_emitter = _followup_step_emitter(safe_run_id, run_context)
     logger.info(
         "answer_follow_up: run_id=%s route=%s question_len=%d",
         safe_run_id, route, len(question),
+    )
+    step_emitter.emit_narrated(
+        phase="follow_up",
+        actor="Supervisor",
+        actor_role="supervisor",
+        goal="Route follow-up question",
+        action_kind="state_transition",
+        action_target="follow_up.route",
+        action_payload={"route": route, "question_length": len(question)},
+        state_transitions=[{"kind": "follow_up_route_recorded", "route": route}],
+        decision=route,
+        reflection="Follow-up question routed to a department answer path.",
+        stop_reason="follow_up_routed",
     )
 
     if route == "MarketDepartment":
@@ -367,6 +425,50 @@ def answer_follow_up(
         unresolved_points=unresolved,
         requires_additional_research=bool(unresolved),
     ).model_dump(mode="json")
+    step_emitter.emit_narrated(
+        phase="follow_up",
+        actor=route,
+        actor_role="department_answer_path",
+        goal="Generate follow-up answer from stored run memory",
+        action_kind="state_transition",
+        action_target="follow_up.answer",
+        action_payload={
+            "route": route,
+            "evidence_count": len(evidence),
+            "unresolved_count": len(unresolved),
+            "requires_additional_research": bool(unresolved),
+        },
+        state_transitions=[
+            {
+                "kind": "follow_up_answer_recorded",
+                "route": route,
+                "requires_additional_research": bool(unresolved),
+            }
+        ],
+        decision="additional_research_required" if unresolved else "answered_from_memory",
+        reflection="Follow-up answer generated from stored run context.",
+        stop_reason="follow_up_answered",
+    )
+    if unresolved:
+        step_emitter.emit_narrated(
+            phase="follow_up",
+            actor="FollowUpRuntime",
+            actor_role="runtime",
+            goal="Record additional-research handoff requirement",
+            action_kind="state_transition",
+            action_target="follow_up.additional_research_handoff",
+            action_payload={"route": route, "unresolved_count": len(unresolved)},
+            state_transitions=[
+                {
+                    "kind": "follow_up_additional_research_required",
+                    "route": route,
+                    "unresolved_count": len(unresolved),
+                }
+            ],
+            decision="handoff_required",
+            reflection="Follow-up requires additional research beyond stored run memory.",
+            stop_reason="additional_research_required",
+        )
     export_follow_up(safe_run_id, payload, runs_root=RUNS_DIR)
     return payload
 
