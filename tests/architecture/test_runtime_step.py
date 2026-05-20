@@ -131,6 +131,65 @@ def test_step_emitter_blocks_secret_payload_without_publishing():
     assert emitter.blocked_errors
 
 
+def test_step_emitter_attaches_default_reasoning_policy():
+    sink = InMemoryStepSink()
+    emitter = StepEmitter(
+        run_id="20260520T120000Z",
+        bus=StepBus([sink]),
+        enabled=True,
+    )
+
+    result = emitter.emit_narrated(
+        phase="after_first_pass",
+        actor="RuntimeCheckpoint",
+        actor_role="runtime",
+        goal="Write checkpoint",
+        action_kind="state_transition",
+        action_target="checkpoint.write",
+        action_payload={"checkpoint_id": "after_first_pass"},
+        decision="written",
+        reflection="Checkpoint written.",
+        stop_reason="checkpoint_written",
+    )
+
+    assert result is not None
+    policy = result["intent"]["reasoning_policy"]
+    assert policy["effort"] == "none"
+    assert policy["policy_source"] == "rule"
+    assert policy["reason"] == "deterministic checkpoint"
+
+
+def test_step_emitter_resolves_reasoning_policy_for_reasoning_capable_role(monkeypatch):
+    monkeypatch.setenv("OPENAI_MODEL_MEETING_READINESS_GATE", "gpt-5-mini")
+    monkeypatch.setenv("OPENAI_STRUCTURED_MODEL_MEETING_READINESS_GATE", "gpt-4.1-mini")
+    sink = InMemoryStepSink()
+    emitter = StepEmitter(
+        run_id="20260520T120000Z",
+        bus=StepBus([sink]),
+        enabled=True,
+    )
+
+    result = emitter.emit_narrated(
+        phase="finalization",
+        actor="MeetingReadinessGate",
+        actor_role="runtime_gate",
+        goal="Evaluate meeting readiness",
+        action_kind="state_transition",
+        action_target="meeting_readiness.evaluate",
+        action_payload={"blocker_count": 0},
+        decision="meeting_ready",
+        reflection="Meeting readiness evaluated.",
+        stop_reason="meeting_readiness_evaluated",
+    )
+
+    assert result is not None
+    policy = result["intent"]["reasoning_policy"]
+    assert policy["effort"] == "high"
+    assert policy["max_thinking_tokens"] == 32_000
+    assert policy["policy_source"] == "rule"
+    assert policy["reason"] == "final readiness gate"
+
+
 def test_run_context_snapshot_round_trips_step_trace():
     context = RunContext(
         run_id="20260520T120000Z",
