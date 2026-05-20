@@ -10,6 +10,11 @@ from typing import Any
 
 from dotenv import dotenv_values
 
+from src.config.model_profiles import (
+    RoleModelProfile,
+    build_role_model_profile,
+)
+
 DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_STRUCTURED_MODEL = "gpt-4.1-mini"
 DEFAULT_SEARCH_MODEL = "gpt-4.1-mini"
@@ -324,6 +329,20 @@ def get_role_model_selection(role: str) -> tuple[str, str]:
         or role_model
     )
     return role_model, role_structured
+
+
+def get_role_model_profile(role: str) -> RoleModelProfile:
+    """Resolve the ADR-003 role model profile while preserving legacy overrides."""
+    role_model, role_structured = get_role_model_selection(role)
+    return build_role_model_profile(
+        role=role,
+        model=role_model,
+        structured_model=role_structured,
+        provider="openai",
+        timeout_seconds=get_openai_timeout_seconds(),
+        max_retries=get_openai_max_retries(),
+        default_temperature=resolve_model_temperature(role_model, 0.1),
+    )
 
 
 def summarize_runtime_models() -> str:

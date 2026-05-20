@@ -1,5 +1,13 @@
 """Configuration helpers exposed to the UI and CLI."""
 
+from __future__ import annotations
+
+from src.config.model_profiles import (
+    RoleModelProfile,
+    StepReasoningContext,
+    StepReasoningPolicy,
+    resolve_step_reasoning_policy,
+)
 from src.config.pricing import (
     estimate_cost_usd,
     estimate_web_search_preview_call_cost_usd,
@@ -12,6 +20,7 @@ from src.config.settings import (
     get_model_selection,
     get_openai_max_retries,
     get_openai_timeout_seconds,
+    get_role_model_profile,
     get_role_model_selection,
     get_search_model,
     get_translation_model,
@@ -22,6 +31,9 @@ from src.config.settings import (
 )
 
 __all__ = [
+    "RoleModelProfile",
+    "StepReasoningContext",
+    "StepReasoningPolicy",
     "estimate_cost_usd",
     "estimate_web_search_preview_call_cost_usd",
     "get_extraction_model",
@@ -30,9 +42,11 @@ __all__ = [
     "get_model_selection",
     "get_openai_max_retries",
     "get_openai_timeout_seconds",
+    "get_role_model_profile",
     "get_role_model_selection",
     "get_search_model",
     "resolve_model_temperature",
+    "resolve_step_reasoning_policy",
     "supports_custom_temperature",
     "temperature_param",
     "get_translation_model",
