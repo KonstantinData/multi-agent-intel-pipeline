@@ -113,6 +113,8 @@ def test_runtime_agents_supports_dict_style_access() -> None:
     assert bundle["synthesis"] is bundle.synthesis
     assert bundle["report_writer"] is bundle.report_writer
     assert bundle["departments"] is bundle.departments
+    assert bundle.get("departments") is bundle.departments
+    assert bundle.get("does_not_exist", {"fallback": True}) == {"fallback": True}
     assert "supervisor" in bundle
     with pytest.raises(KeyError):
         bundle["does_not_exist"]

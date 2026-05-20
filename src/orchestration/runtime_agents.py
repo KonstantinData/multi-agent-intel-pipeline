@@ -218,6 +218,13 @@ class RuntimeAgents:
     def __contains__(self, key: object) -> bool:
         return key in {"supervisor", "departments", "synthesis", "report_writer"}
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """Dict-compatible lookup for legacy runtime callers."""
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
     def as_dict(self) -> dict[str, Any]:
         """Dict-shaped view, identical to the pre-2026 factory return type."""
         return {
