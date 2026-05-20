@@ -14,6 +14,7 @@ Requires AG2/autogen — auto-skipped if not installed.
 from __future__ import annotations
 
 import inspect
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -264,6 +265,58 @@ class TestDepartmentGroupChatRun:
         statuses = {item["task_key"]: item["status"] for item in package["completed_tasks"]}
         assert statuses["company_fundamentals"] in {"accepted", "degraded"}
         assert statuses["economic_commercial_situation"] == "degraded"
+
+    def test_repeated_premature_finalize_auto_runs_next_missing_task(self):
+        from src.agents.lead import DepartmentLeadAgent
+        brief = _make_brief()
+        lead = DepartmentLeadAgent("CompanyDepartment")
+        worker_calls: list[str] = []
+        finalize_results: list[dict[str, Any]] = []
+
+        def fake_worker_run(**kwargs):
+            task_key = kwargs["task_key"]
+            worker_calls.append(task_key)
+            return {
+                "task_key": task_key,
+                "worker": "CompanyResearcher",
+                "facts": [f"{task_key} fact"],
+                "payload": {"company_name": brief.company_name},
+                "queries_used": [],
+                "sources": [],
+                "open_questions": [],
+                "strategy_notes": "test",
+                "objective": kwargs.get("objective", ""),
+            }
+
+        lead.worker.run = fake_worker_run
+
+        def fake_initiate_chat(self_agent, manager, message="", **kwargs):
+            tools: dict[str, Any] = {}
+            for agent in manager.groupchat.agents:
+                for tool_name, tool_fn in getattr(agent, "_function_map", {}).items():
+                    tools[tool_name] = tool_fn
+            tools["run_research"](task_key="company_fundamentals")
+            first = json.loads(tools["finalize_package"](summary="Premature finalize attempt 1."))
+            second = json.loads(tools["finalize_package"](summary="Premature finalize attempt 2."))
+            finalize_results.extend([first, second])
+
+        with patch("autogen.ConversableAgent.initiate_chat", fake_initiate_chat):
+            _, _, package = lead.run(
+                brief=brief,
+                assignments=_multi_company_assignments(brief),
+                current_section=None,
+            )
+
+        assert worker_calls == ["company_fundamentals", "economic_commercial_situation"]
+        assert finalize_results[0]["next_required_task"] == "economic_commercial_situation"
+        assert finalize_results[1]["status"] == "auto_recovered_missing_research"
+        assert finalize_results[1]["task_key"] == "economic_commercial_situation"
+        assert finalize_results[1]["remaining_incomplete_tasks"] == []
+        assert package is not None
+        assert {item["task_key"] for item in package["completed_tasks"]} == {
+            "company_fundamentals",
+            "economic_commercial_situation",
+        }
 
 
 class TestContactDepartmentEndToEnd:
