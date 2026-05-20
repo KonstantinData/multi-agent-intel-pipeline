@@ -1,0 +1,292 @@
+# ADR-003: RoleModelProfile And StepReasoningPolicy
+
+Status: Draft
+
+Date: 2026-05-20
+
+## Context
+
+The runtime currently resolves models with role-level defaults in
+`src/config/settings.py`:
+
+- `ROLE_MODEL_DEFAULTS`
+- `ROLE_STRUCTURED_MODEL_DEFAULTS`
+- role-specific environment overrides such as `OPENAI_MODEL_COMPANY_RESEARCHER`
+
+This is sufficient for non-reasoning `gpt-4.1`-family operation, but it is not
+enough for reasoning-capable models because reasoning is not only a role choice.
+The runtime needs two independent decisions:
+
+1. Which provider/model profile is assigned to a role.
+2. How much reasoning budget is allowed for a specific step.
+
+ADR-001 already added `intent.reasoning_policy` and
+`execution.reasoning_realized` to `RuntimeStep`. ADR-002 added the telemetry
+path for `reasoning.effort_planned`, `reasoning.effort_used`, token metrics,
+and usage metrics. The ADR-001 observation sprint did not include a
+reasoning-capable model run, so there is still no observed data for
+`thinking_tokens` or planned-vs-realized reasoning deltas.
+
+ADR-003 defines the configuration and policy layer needed to run one controlled
+reasoning-capable validation run and later tune reasoning budgets from traces.
+
+## Decision
+
+Introduce a two-stage model and reasoning configuration model:
+
+1. `RoleModelProfile`
+2. `StepReasoningPolicy`
+
+`RoleModelProfile` chooses the provider/model capability envelope for a role.
+`StepReasoningPolicy` chooses the reasoning budget for a specific step within
+that role.
+
+The runtime must resolve the effective policy in this order:
+
+```text
+role defaults
+-> role environment override
+-> step policy rule
+-> explicit step override
+-> safety/cost clamp
+```
+
+The resolved reasoning policy should be written to
+`RuntimeStep.intent.reasoning_policy`. Realized provider metadata should be
+written to `RuntimeStep.execution.reasoning_realized` when available.
+
+## RoleModelProfile
+
+`RoleModelProfile` is the stable role-level configuration object.
+
+Canonical fields:
+
+```text
+RoleModelProfile
+- provider: openai | anthropic | bedrock | local | other
+- model: string
+- structured_model: string | null
+- supports_reasoning: bool
+- supports_structured_output: bool
+- supports_temperature: bool
+- default_temperature: float | null
+- timeout_seconds: float
+- max_retries: int
+- default_reasoning_policy: StepReasoningPolicy
+- provider_options: dict
+```
+
+Initial defaults:
+
+| Role group | Profile intent |
+| --- | --- |
+| Supervisor | non-reasoning or low reasoning by default; medium only for ambiguous routing |
+| Department Lead | low/medium; owns completion but should not spend high effort on every turn |
+| Researcher | low/medium; volume-bound, tool-heavy, not the main reasoning bottleneck |
+| Critic | medium/high; evidence-quality review benefits from deeper analysis |
+| Judge | high; borderline decisions and conflict resolution are high-leverage |
+| Synthesis Lead/Analyst | medium/high; cross-domain integration is high-leverage |
+| Synthesis Judge | high; final edge-case adjudication is high-leverage |
+| Coding Specialist | low/medium; deterministic code/debug work should stay bounded |
+| ReportWriter | low/medium; composition should use structure and gates more than long reasoning |
+
+The first implementation should keep OpenAI as the only concrete adapter and
+represent other providers as future-compatible profile fields, not active
+runtime dependencies.
+
+## StepReasoningPolicy
+
+`StepReasoningPolicy` is the step-level reasoning budget.
+
+Canonical fields:
+
+```text
+StepReasoningPolicy
+- effort: none | low | medium | high | xhigh
+- max_thinking_tokens: int | null
+- max_output_tokens: int | null
+- max_cost_usd: float | null
+- policy_source: role_default | rule | explicit_override | safety_clamp
+- reason: string
+- downgrade_allowed: bool
+```
+
+`effort=none` means no extended reasoning should be requested. It is valid for
+non-reasoning models and for reasoning-capable models where the step should not
+spend thinking budget.
+
+`max_thinking_tokens=null` means the provider default applies. A non-null value
+is a runtime cap and should be surfaced in traces.
+
+The policy reason must be concise and non-sensitive. It should explain the
+budget class, not reveal prompt content or hidden reasoning.
+
+## Step Policy Rules
+
+The first implementation should support deterministic rules before adding any
+model-driven budget selector.
+
+Suggested initial rules:
+
+| Match | Effort | Reason |
+| --- | --- | --- |
+| `action.kind=capability_call` and `action.target=research.run` | low/medium | Tool-heavy research step |
+| `actor.role=critic` | medium | Evidence-quality review |
+| `actor.role=judge` | high | Borderline adjudication |
+| `actor.role=synthesis_judge` | high | Cross-domain final decision |
+| `phase=synthesis` and `actor.role in {runtime_node, analyst}` | medium/high | Cross-domain integration |
+| `action.target=meeting_readiness.evaluate` | high | Final readiness gate |
+| `action.target=run.export` | none | Deterministic export |
+| `action.target=checkpoint.write` | none | Deterministic checkpoint |
+| `action.kind=no_op` | none | Narrated trace-only step |
+
+Policy rules must be deterministic and testable. Do not let a model decide its
+own budget in the initial ADR-003 implementation.
+
+## Telemetry Contract
+
+Planned reasoning:
+
+```text
+RuntimeStep.intent.reasoning_policy
+- effort
+- max_thinking_tokens
+- max_output_tokens
+- max_cost_usd
+- policy_source
+- reason
+- downgrade_allowed
+```
+
+Realized reasoning:
+
+```text
+RuntimeStep.execution.reasoning_realized
+- effort_used
+- thinking_tokens
+- reasoning_summary_available
+```
+
+Token counts remain canonical in `RuntimeStep.execution.usage`, per ADR-002.
+`reasoning_realized` must not duplicate `prompt_tokens`, `completion_tokens`,
+or `total_tokens`.
+
+## Controlled Validation Run
+
+ADR-003 cannot move from `Draft` to `Proposed` until one controlled
+reasoning-capable validation run is completed.
+
+Validation run requirements:
+
+- Use exactly one production-like initial briefing run.
+- Use a manufacturer in industrial goods, medical technology, or electrical
+  engineering.
+- Keep the high-level pipeline unchanged.
+- Enable RuntimeSteps and ADR-002 telemetry.
+- Configure only a narrow set of high-leverage roles to a reasoning-capable
+  profile: Judge, SynthesisJudge, and MeetingReadinessGate-equivalent steps.
+- Keep Researchers on the existing non-reasoning or low-budget profile.
+- Persist the full `step_trace.json`.
+- Record model/provider, planned effort, realized effort, `thinking_tokens`
+  where available, total tokens, cost, latency, and final status.
+
+Suggested input class:
+
+```text
+company_name: manufacturer with public website and enough source coverage
+web_domain: canonical public domain
+```
+
+The run should answer:
+
+- Did `intent.reasoning_policy` appear on the expected steps?
+- Did the provider return usable `execution.reasoning_realized` metadata?
+- Are `thinking_tokens` available and non-zero for high-effort steps?
+- Are Judge/SynthesisJudge decisions materially better or only more expensive?
+- Did latency or cost exceed acceptable bounds?
+- Which steps should be downgraded before production rollout?
+
+## Goals
+
+- Replace flat role model defaults with a typed `RoleModelProfile` concept.
+- Add deterministic `StepReasoningPolicy` resolution.
+- Preserve existing environment override compatibility during migration.
+- Populate planned reasoning policy on RuntimeSteps.
+- Capture realized reasoning metadata when the provider exposes it.
+- Run one controlled reasoning-capable validation run before implementation is
+  promoted beyond draft/prototype.
+- Make reasoning-budget tuning possible from ADR-002 traces.
+
+## Non-Goals
+
+- Do not replace the phase pipeline.
+- Do not change department autonomy or speaker selection.
+- Do not migrate providers beyond OpenAI in the first implementation.
+- Do not introduce dynamic model-driven budget selection in the first
+  implementation.
+- Do not require all roles to use reasoning-capable models.
+- Do not tune final production budgets from theory alone.
+- Do not store hidden chain-of-thought in traces.
+
+## Migration Plan
+
+1. Add dependency-light profile dataclasses or typed dicts in
+   `src/config/model_profiles.py`.
+2. Keep `get_role_model_selection(role)` as a backwards-compatible facade.
+3. Add `get_role_model_profile(role)` for new runtime code.
+4. Add deterministic `resolve_step_reasoning_policy(step_context)` with rule
+   coverage tests.
+5. Update RuntimeStep emitters to attach planned reasoning policy where a
+   model call or adjudication step is represented.
+6. Add provider metadata extraction for realized reasoning where available.
+7. Run the controlled validation run and summarize it in this ADR.
+8. Promote ADR-003 from `Draft` to `Proposed` only after the validation run
+   confirms the telemetry path works.
+
+## Test Strategy
+
+- Architecture tests for role-profile defaults and environment override
+  compatibility.
+- Policy tests for deterministic effort selection by role, phase, action kind,
+  and target.
+- Safety-clamp tests for max cost and max thinking tokens.
+- RuntimeStep tests asserting planned policy is emitted without raw prompts.
+- Provider-adapter tests using fake responses with and without
+  `thinking_tokens`.
+- Validation-run snapshot test or fixture asserting at least one high-effort
+  step has realized reasoning metadata when the provider returns it.
+
+## Open Questions
+
+- Which exact reasoning-capable model should be used for the first validation
+  run in the deployed environment?
+- Should Judge and SynthesisJudge use the same profile or separate caps?
+- Should `max_thinking_tokens` be global, per role, or per step rule?
+- Should `MeetingReadinessGate` be promoted to an explicit model-backed actor,
+  or should it remain deterministic with high reasoning only in adjacent
+  synthesis/judge steps?
+- What cost ceiling per run is acceptable for high-effort reasoning?
+
+## Consequences
+
+Positive:
+
+- Model choice and reasoning budget become separable and auditable.
+- High-effort reasoning can be reserved for the few steps where it matters.
+- ADR-002 telemetry can support real budget tuning instead of guesswork.
+- Existing non-reasoning runtime behavior can remain the default.
+
+Costs:
+
+- Additional configuration surface and tests.
+- Provider metadata extraction must handle missing or inconsistent fields.
+- Validation runs may be more expensive and slower.
+
+Risks:
+
+- Over-budgeting Judge/SynthesisJudge may increase cost without improving
+  output quality.
+- Under-instrumented provider responses may make realized effort hard to
+  compare across models.
+- If policy rules become too broad, the runtime may accidentally spend
+  reasoning budget on deterministic or low-value steps.
