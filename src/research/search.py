@@ -34,11 +34,14 @@ def perform_search(query: str, *, max_results: int = 5, timeout: int = 20) -> li
             timeout=resolved_timeout,
             max_retries=get_openai_max_retries(),
         )
-        response = client.responses.create(
-            model=get_search_model(),
-            tools=[{"type": "web_search_preview"}],
-            input=query,
-        )
+        try:
+            response = client.responses.create(
+                model=get_search_model(),
+                tools=[{"type": "web_search_preview"}],
+                input=query,
+            )
+        finally:
+            client.close()
 
         results: list[dict[str, str]] = []
         seen_urls: set[str] = set()

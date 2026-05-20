@@ -430,7 +430,10 @@ class ReportWriterAgent:
         temperature = resolve_model_temperature(model_name, 0.2)
         if temperature is not None:
             params["temperature"] = temperature
-        resp = client.chat.completions.create(**params)
+        try:
+            resp = client.chat.completions.create(**params)
+        finally:
+            client.close()
         content = str(resp.choices[0].message.content or "{}")
         return json.loads(content)
 
