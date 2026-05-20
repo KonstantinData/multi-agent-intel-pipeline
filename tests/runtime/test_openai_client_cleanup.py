@@ -124,9 +124,17 @@ def test_report_writer_client_is_closed(monkeypatch) -> None:
     )
 
     agent = ReportWriterAgent()
-    agent._compose_with_llm(language="en", blueprint={}, context={})
+    payload = agent._compose_with_llm(language="en", blueprint={}, context={})
 
     assert _FakeOpenAI.instances[-1].closed is True
+    assert payload["_usage"] == {
+        "provider": "openai",
+        "model": agent.structured_model or agent.chat_model,
+        "llm_calls": 1,
+        "prompt_tokens": 1,
+        "completion_tokens": 1,
+        "total_tokens": 2,
+    }
 
 
 def test_pdf_translation_clients_are_closed(monkeypatch) -> None:

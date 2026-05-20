@@ -192,6 +192,7 @@ class ReportWriterAgent:
         notes: list[str] = []
         draft = fallback
         llm_used = False
+        llm_usage: dict[str, Any] = {}
         if get_openai_api_key():
             try:
                 llm_payload = self._compose_with_llm(
@@ -199,6 +200,7 @@ class ReportWriterAgent:
                     blueprint=blueprint,
                     context=context,
                 )
+                llm_usage = dict(llm_payload.pop("_usage", {}) or {})
                 llm_draft = ReportDraft.model_validate(llm_payload)
                 draft = self._merge_missing_fields(preferred=llm_draft, fallback=fallback)
                 llm_used = True
@@ -210,6 +212,7 @@ class ReportWriterAgent:
             draft = self._merge_missing_fields(preferred=draft, fallback=fallback)
             checks = self._validate_draft(language=language, draft=draft, context=context)
         checks["llm_used"] = llm_used
+        checks["usage"] = llm_usage
         checks["notes"] = notes + list(draft.validation_notes)
         return draft, checks
 
@@ -435,7 +438,17 @@ class ReportWriterAgent:
         finally:
             client.close()
         content = str(resp.choices[0].message.content or "{}")
-        return json.loads(content)
+        payload = json.loads(content)
+        usage = getattr(resp, "usage", None)
+        payload["_usage"] = {
+            "provider": "openai",
+            "model": model_name,
+            "llm_calls": 1,
+            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+            "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+            "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+        }
+        return payload
 
     def _merge_missing_fields(self, *, preferred: ReportDraft, fallback: ReportDraft) -> ReportDraft:
         merged = preferred.model_dump(mode="json")
