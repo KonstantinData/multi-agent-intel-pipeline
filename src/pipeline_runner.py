@@ -1590,6 +1590,7 @@ def _run_synthesis_phase(
         memory_store=state.run_context.short_term_memory,
         on_message=on_message,
         synthesis_context=synthesis_ctx,
+        step_emitter=state.step_emitter,
     )
     state.messages.extend(synthesis_messages)
     synthesis_back_requests = list(synthesis_result.get("back_requests", []) or [])
