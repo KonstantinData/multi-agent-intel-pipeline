@@ -82,6 +82,7 @@ from src.orchestration.synthesis import (
     build_synthesis_context,
     harmonize_synthesis_output,
 )
+from src.orchestration.synthesis_inputs import build_synthesis_input_packages
 from src.orchestration.task_router import build_synthesis_assignments
 from src.research.normalize import IntakeErrorCode, NormalizedDomainResult, normalize_domain_result
 from src.research.ssrf_guard import SSRFBlockedError, resolve_and_validate_host
@@ -755,14 +756,8 @@ def _sync_finalization_artifacts(
 
 
 def _admitted_packages_for_synthesis(department_packages: dict[str, Any]) -> dict[str, Any]:
-    """Expose only Supervisor-admitted department packages to synthesis."""
-    return {
-        dept: pkg
-        for dept, pkg in department_packages.items()
-        if isinstance(pkg, dict)
-        and dept != "SynthesisDepartment"
-        and pkg.get("admission", {}).get("downstream_visible", False)
-    }
+    """Build the report-segment view consumed by synthesis."""
+    return build_synthesis_input_packages(department_packages)
 
 
 def resume_pipeline(
