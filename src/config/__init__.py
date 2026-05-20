@@ -8,6 +8,11 @@ from src.config.model_profiles import (
     StepReasoningPolicy,
     resolve_step_reasoning_policy,
 )
+from src.config.model_usage import (
+    build_reasoning_realized_record,
+    build_usage_record,
+    extract_thinking_tokens,
+)
 from src.config.pricing import (
     estimate_cost_usd,
     estimate_web_search_preview_call_cost_usd,
@@ -36,6 +41,9 @@ __all__ = [
     "StepReasoningPolicy",
     "estimate_cost_usd",
     "estimate_web_search_preview_call_cost_usd",
+    "build_reasoning_realized_record",
+    "build_usage_record",
+    "extract_thinking_tokens",
     "get_extraction_model",
     "get_llm_config",
     "get_model_pricing",

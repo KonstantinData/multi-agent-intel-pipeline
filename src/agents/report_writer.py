@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Any
 
+from src.config.model_usage import build_usage_record
 from src.config.settings import (
     get_openai_api_key,
     get_openai_max_retries,
@@ -440,14 +441,12 @@ class ReportWriterAgent:
         content = str(resp.choices[0].message.content or "{}")
         payload = json.loads(content)
         usage = getattr(resp, "usage", None)
-        payload["_usage"] = {
-            "provider": "openai",
-            "model": model_name,
-            "llm_calls": 1,
-            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
-            "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
-            "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
-        }
+        payload["_usage"] = build_usage_record(
+            usage,
+            provider="openai",
+            model=model_name,
+            llm_calls=1,
+        )
         return payload
 
     def _merge_missing_fields(self, *, preferred: ReportDraft, fallback: ReportDraft) -> ReportDraft:

@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from src.config import (
     StepReasoningContext,
+    build_reasoning_realized_record,
     get_role_model_profile,
     resolve_step_reasoning_policy,
 )
@@ -164,6 +165,8 @@ class StepEmitter:
         step_kwargs = dict(kwargs)
         if step_kwargs.get("reasoning_policy") is None:
             step_kwargs["reasoning_policy"] = self._resolve_reasoning_policy_payload(step_kwargs)
+        if step_kwargs.get("reasoning_realized") is None:
+            step_kwargs["reasoning_realized"] = self._build_reasoning_realized(step_kwargs)
         step = build_narrated_step(
             run_id=self.run_id,
             sequence=self._next_sequence(),
@@ -192,6 +195,15 @@ class StepEmitter:
             logger.warning("runtime step reasoning policy resolution failed: %s", exc)
             return None
         return policy.as_runtime_step_payload()
+
+    @staticmethod
+    def _build_reasoning_realized(step_kwargs: dict[str, Any]) -> dict[str, Any] | None:
+        policy = step_kwargs.get("reasoning_policy")
+        planned_effort = policy.get("effort") if isinstance(policy, dict) else None
+        return build_reasoning_realized_record(
+            step_kwargs.get("usage"),
+            planned_effort=str(planned_effort) if planned_effort else None,
+        )
 
     @staticmethod
     def _assert_publishable(step: dict[str, Any]) -> None:
