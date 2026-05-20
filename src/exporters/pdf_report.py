@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 from datetime import datetime
 from io import BytesIO
@@ -56,6 +57,7 @@ SURFACE      = colors.HexColor("#F4F8F7")
 SURFACE_WARM = colors.HexColor("#FFF8F0")
 WHITE        = colors.white
 _PLACEHOLDER_TOKENS = {"", "n/v", "n/a", "unknown", "none", "null", "—", "-"}
+_PDF_LLM_TRANSLATION_ENABLED_ENV = "LIQUISTO_PDF_LLM_TRANSLATION_ENABLED"
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -67,6 +69,11 @@ def _safe_text(value: Any, default: str = "n/v") -> str:
 
 def _is_placeholder_token(value: Any) -> bool:
     return str(value or "").strip().lower() in _PLACEHOLDER_TOKENS
+
+
+def _pdf_llm_translation_enabled() -> bool:
+    """Keep optional PDF translation calls out of the critical export path by default."""
+    return os.getenv(_PDF_LLM_TRANSLATION_ENABLED_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _missing_reason(lang: str, *, context: str = "general") -> str:
@@ -2456,42 +2463,45 @@ def _translate_residual_strings(payload: Any, target_lang: str) -> Any:
             return payload
 
         client = OpenAI(api_key=api_key, timeout=TRANSLATION_TIMEOUT_SECONDS, max_retries=0)
-        tokens = list(paths.keys())
-        chunk_size = 24
-        for start in range(0, len(tokens), chunk_size):
-            chunk_tokens = tokens[start:start + chunk_size]
-            chunk_payload = {token: pending[token] for token in chunk_tokens}
-            try:
-                messages = [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are fixing residual untranslated text inside a German executive PDF export. "
-                            "Translate every JSON value fully into idiomatic German. "
-                            "Do not leave English words behind unless they are company names, URLs, legal names, "
-                            "or abbreviations like CEO/CFO/EBIT/NDA. "
-                            "Return only a valid JSON object with the exact same keys."
-                        ),
-                    },
-                    {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
-                ]
-                assert_no_secrets_in_payload(
-                    messages,
-                    context="pdf_report_translate_residual_german",
-                )
-                resp = client.chat.completions.create(
-                    model=translation_model,
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                    timeout=TRANSLATION_TIMEOUT_SECONDS,
-                    **temperature_param(translation_model, 0),
-                )
-                translated: dict[str, str] = json.loads(resp.choices[0].message.content)
-            except Exception:  # nosec B112 - skip failed chunk translation and continue remaining chunks
-                continue
-            for token in chunk_tokens:
-                if token in translated:
-                    payload = _set_nested_value(payload, paths[token], translated[token])
+        try:
+            tokens = list(paths.keys())
+            chunk_size = 24
+            for start in range(0, len(tokens), chunk_size):
+                chunk_tokens = tokens[start:start + chunk_size]
+                chunk_payload = {token: pending[token] for token in chunk_tokens}
+                try:
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are fixing residual untranslated text inside a German executive PDF export. "
+                                "Translate every JSON value fully into idiomatic German. "
+                                "Do not leave English words behind unless they are company names, URLs, legal names, "
+                                "or abbreviations like CEO/CFO/EBIT/NDA. "
+                                "Return only a valid JSON object with the exact same keys."
+                            ),
+                        },
+                        {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
+                    ]
+                    assert_no_secrets_in_payload(
+                        messages,
+                        context="pdf_report_translate_residual_german",
+                    )
+                    resp = client.chat.completions.create(
+                        model=translation_model,
+                        messages=messages,
+                        response_format={"type": "json_object"},
+                        timeout=TRANSLATION_TIMEOUT_SECONDS,
+                        **temperature_param(translation_model, 0),
+                    )
+                    translated: dict[str, str] = json.loads(resp.choices[0].message.content)
+                except Exception:  # nosec B112 - skip failed chunk translation and continue remaining chunks
+                    continue
+                for token in chunk_tokens:
+                    if token in translated:
+                        payload = _set_nested_value(payload, paths[token], translated[token])
+        finally:
+            client.close()
         return payload
     except Exception:
         return payload
@@ -2671,40 +2681,43 @@ def _translate_content(pipeline_data: dict[str, Any], target_lang: str) -> dict[
         from src.config.settings import get_translation_model, temperature_param
         lang_name = _LANG_NAMES.get(target_lang, target_lang)
         client = OpenAI(api_key=api_key, timeout=TRANSLATION_TIMEOUT_SECONDS, max_retries=0)
-        translation_model = get_translation_model()
-        translated: dict[str, str] = {}
-        keys = list(batch.keys())
-        chunk_size = 28
-        for start in range(0, len(keys), chunk_size):
-            chunk_keys = keys[start:start + chunk_size]
-            chunk_payload = {key: batch[key] for key in chunk_keys}
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are a professional business translator. "
-                        f"Translate every JSON value fully into {lang_name}. "
-                        f"The input may contain mixed-language content. "
-                        f"Do not leave source-language sentences unchanged. "
-                        f"Keep company names, brand names, legal entity names, "
-                        f"abbreviations, URLs, and numeric values unchanged. "
-                        f"Return ONLY a valid JSON object with the exact same keys."
-                    ),
-                },
-                {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
-            ]
-            assert_no_secrets_in_payload(
-                messages,
-                context=f"pdf_report_translate:{target_lang}",
-            )
-            resp = client.chat.completions.create(
-                model=translation_model,
-                messages=messages,
-                response_format={"type": "json_object"},
-                timeout=TRANSLATION_TIMEOUT_SECONDS,
-                **temperature_param(translation_model, 0.1),
-            )
-            translated.update(json.loads(resp.choices[0].message.content))
+        try:
+            translation_model = get_translation_model()
+            translated: dict[str, str] = {}
+            keys = list(batch.keys())
+            chunk_size = 28
+            for start in range(0, len(keys), chunk_size):
+                chunk_keys = keys[start:start + chunk_size]
+                chunk_payload = {key: batch[key] for key in chunk_keys}
+                messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"You are a professional business translator. "
+                            f"Translate every JSON value fully into {lang_name}. "
+                            f"The input may contain mixed-language content. "
+                            f"Do not leave source-language sentences unchanged. "
+                            f"Keep company names, brand names, legal entity names, "
+                            f"abbreviations, URLs, and numeric values unchanged. "
+                            f"Return ONLY a valid JSON object with the exact same keys."
+                        ),
+                    },
+                    {"role": "user", "content": strict_json_dumps(chunk_payload, ensure_ascii=False)},
+                ]
+                assert_no_secrets_in_payload(
+                    messages,
+                    context=f"pdf_report_translate:{target_lang}",
+                )
+                resp = client.chat.completions.create(
+                    model=translation_model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    timeout=TRANSLATION_TIMEOUT_SECONDS,
+                    **temperature_param(translation_model, 0.1),
+                )
+                translated.update(json.loads(resp.choices[0].message.content))
+        finally:
+            client.close()
 
         def _get(key: str, original: Any) -> Any:
             return translated.get(key, original)
@@ -2847,13 +2860,16 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
         if (isinstance(validation, dict) and validation.get("passed") is False) or has_quality_red_flags:
             composed_override = {}
 
-    # Translate all narrative content into the requested output language.
+    # PDF export is non-critical; LLM translation must be explicit opt-in so
+    # network timeouts cannot keep an otherwise completed run alive.
+    llm_translation_enabled = _pdf_llm_translation_enabled()
     if lang == "de":
-        pipeline_data = _translate_content(pipeline_data, lang)
+        if llm_translation_enabled:
+            pipeline_data = _translate_content(pipeline_data, lang)
+            pipeline_data = _offline_translate_obj(pipeline_data, lang)
+            pipeline_data = _translate_residual_strings(pipeline_data, lang)
         pipeline_data = _offline_translate_obj(pipeline_data, lang)
-        pipeline_data = _translate_residual_strings(pipeline_data, lang)
-        pipeline_data = _offline_translate_obj(pipeline_data, lang)
-    elif lang in _LANG_NAMES:
+    elif lang in _LANG_NAMES and llm_translation_enabled:
         pipeline_data = _translate_content(pipeline_data, lang)
 
     pipeline_data = copy.deepcopy(pipeline_data)
@@ -3111,7 +3127,8 @@ def generate_pdf(pipeline_data: dict[str, Any], *, lang: str = "de") -> bytes:
             "primary_reasoning": primary_reasoning,
         }
         render_payload = _offline_translate_obj(render_payload, "de")
-        render_payload = _translate_residual_strings(render_payload, "de")
+        if llm_translation_enabled:
+            render_payload = _translate_residual_strings(render_payload, "de")
         render_payload = _offline_translate_obj(render_payload, "de")
 
         revenue = render_payload["revenue"]

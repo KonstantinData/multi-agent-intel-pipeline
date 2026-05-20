@@ -266,6 +266,10 @@ def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
         def __init__(self, *args, **kwargs):
             self.chat = _TimeoutChat()
 
+        def close(self):
+            pass
+
+    monkeypatch.setenv("LIQUISTO_PDF_LLM_TRANSLATION_ENABLED", "1")
     monkeypatch.setattr(settings, "get_openai_api_key", lambda: "test-key")
     monkeypatch.setattr(openai, "OpenAI", _TimeoutOpenAI)
 
@@ -278,6 +282,29 @@ def test_pdf_falls_back_when_llm_translation_times_out(monkeypatch):
     assert pdf_de[:5] == b"%PDF-"
     assert "Konservative Ausgabe" in text_de
     assert "Prepare CFO-first outreach" not in text_de
+
+
+def test_pdf_llm_translation_is_opt_in_for_runtime_export(monkeypatch):
+    pytest.importorskip("reportlab")
+    pytest.importorskip("openai")
+    import openai
+
+    from src.config import settings
+    from src.exporters.pdf_report import generate_pdf
+
+    class _UnexpectedOpenAI:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("PDF LLM translation should be opt-in")
+
+    monkeypatch.delenv("LIQUISTO_PDF_LLM_TRANSLATION_ENABLED", raising=False)
+    monkeypatch.setattr(settings, "get_openai_api_key", lambda: "test-key")
+    monkeypatch.setattr(openai, "OpenAI", _UnexpectedOpenAI)
+
+    pdf_de = generate_pdf(_make_pipeline_data(), lang="de")
+    pdf_en = generate_pdf(_make_pipeline_data(), lang="en")
+
+    assert pdf_de[:5] == b"%PDF-"
+    assert pdf_en[:5] == b"%PDF-"
 
 
 def test_pdf_german_has_no_nv_placeholders_and_no_truncated_action_text():

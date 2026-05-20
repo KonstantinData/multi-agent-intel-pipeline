@@ -104,9 +104,12 @@ def _llm_extract_keywords(text: str, *, company_name: str = "") -> list[str]:
             context="research_extract_keywords",
         )
         request_payload.update(temperature_param(model_name, 0.0))
-        response = client.chat.completions.create(
-            **request_payload,
-        )
+        try:
+            response = client.chat.completions.create(
+                **request_payload,
+            )
+        finally:
+            client.close()
         raw = json.loads(response.choices[0].message.content or "{}")
         keywords = raw.get("keywords", [])
         return [str(k).strip() for k in keywords if isinstance(k, str) and k.strip()][:8]
