@@ -29,6 +29,7 @@ from src.config.settings import (
 )
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
+from src.orchestration.ag2_usage import build_ag2_usage_delta, snapshot_ag2_usage
 from src.orchestration.envelope import resolve_admission, resolve_confidence, resolve_report_segment
 from src.orchestration.speaker_selector import build_synthesis_selector
 
@@ -65,6 +66,7 @@ class SynthesisDepartmentAgent:
         memory_store=None,
         on_message: MessageHook = None,
         synthesis_context: dict[str, Any] | None = None,
+        step_emitter: Any | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Run the synthesis GroupChat. Returns (synthesis_payload, messages)."""
         self._completed_synthesis = None
@@ -311,7 +313,9 @@ class SynthesisDepartmentAgent:
             },
             ensure_ascii=False,
         )
+        judge_usage_before = snapshot_ag2_usage(judge_ca)
         lead_ca.initiate_chat(manager, message=initiation_message)
+        judge_usage_after = snapshot_ag2_usage(judge_ca)
 
         # ── Collect messages ───────────────────────────────────────────
         synthesis_messages: list[dict[str, Any]] = []
@@ -325,6 +329,68 @@ class SynthesisDepartmentAgent:
             synthesis_messages.append(event)
             if on_message:
                 on_message(event)
+            if step_emitter is not None:
+                content_text = event["content"]
+                if len(content_text) > 500:
+                    content_text = f"{content_text[:500]}... [truncated]"
+                actor = str(event["agent"])
+                step_emitter.emit_narrated(
+                    phase="synthesis",
+                    actor=actor,
+                    actor_role=self._role_for_agent_name(actor),
+                    department="SynthesisDepartment",
+                    goal="Record AG2 synthesis turn",
+                    action_kind="no_op",
+                    action_target="ag2.synthesis_turn",
+                    action_payload={
+                        "department": "SynthesisDepartment",
+                        "message_index": len(synthesis_messages),
+                        "content_length": len(event["content"]),
+                    },
+                    observations=[
+                        {
+                            "kind": "ag2_message_preview",
+                            "agent": actor,
+                            "content_preview": content_text,
+                        }
+                    ],
+                    decision="recorded",
+                    reflection=f"Recorded AG2 synthesis turn from {actor}.",
+                    stop_reason="ag2_turn_recorded",
+                )
+
+        if step_emitter is not None:
+            usage = build_ag2_usage_delta(
+                before=judge_usage_before,
+                after=judge_usage_after,
+                model=get_role_model_selection(self.judge_name)[0],
+            )
+            if usage:
+                step_emitter.emit_narrated(
+                    phase="synthesis",
+                    actor=self.judge_name,
+                    actor_role="synthesis_judge",
+                    department="SynthesisDepartment",
+                    goal="Record AG2 synthesis judge model usage",
+                    action_kind="state_transition",
+                    action_target="ag2.synthesis_judge_usage",
+                    action_payload={
+                        "department": "SynthesisDepartment",
+                        "usage_source": "ag2.actual_usage_summary",
+                        "model": usage.get("model", ""),
+                    },
+                    state_transitions=[
+                        {
+                            "kind": "ag2_usage_recorded",
+                            "role": "synthesis_judge",
+                            "model": usage.get("model", ""),
+                        }
+                    ],
+                    usage=usage,
+                    decision="recorded",
+                    reflection=f"Recorded AG2 synthesis judge usage for {self.judge_name}.",
+                    stop_reason="ag2_usage_recorded",
+                )
 
         if self._completed_synthesis is None:
             ctx = run_state.get("synthesis_context", {})
@@ -357,6 +423,19 @@ class SynthesisDepartmentAgent:
     # ------------------------------------------------------------------
     # System prompts
     # ------------------------------------------------------------------
+
+    def _role_for_agent_name(self, agent_name: str) -> str:
+        if agent_name == self.name:
+            return "synthesis_lead"
+        if agent_name == self.analyst_name:
+            return "synthesis_analyst"
+        if agent_name == self.critic_name:
+            return "synthesis_critic"
+        if agent_name == self.judge_name:
+            return "synthesis_judge"
+        if agent_name == "SynthesisExecutor":
+            return "tool_executor"
+        return "synthesis_agent"
 
     def _lead_system_prompt(
         self, brief: SupervisorBrief, department_packages: dict[str, dict[str, Any]]

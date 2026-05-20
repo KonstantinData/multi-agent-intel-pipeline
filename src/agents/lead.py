@@ -122,6 +122,7 @@ from src.config.settings import (
 from src.domain.intake import SupervisorBrief
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import DepartmentPackage, DomainReportSegment
+from src.orchestration.ag2_usage import build_ag2_usage_delta, snapshot_ag2_usage
 from src.orchestration.contract_validation import validate_payload_against_task_schema
 from src.orchestration.contracts import (
     DepartmentPolicy,
@@ -1389,10 +1390,12 @@ class DepartmentLeadAgent:
             },
             ensure_ascii=False,
         )
+        judge_usage_before = snapshot_ag2_usage(judge_ca)
         try:
             lead_ca.initiate_chat(manager, message=initiation_message)
         finally:
             self.worker.close()
+        judge_usage_after = snapshot_ag2_usage(judge_ca)
 
         # ── Convert AG2 message history to event stream ────────────────────
         package_messages: list[dict[str, Any]] = []
@@ -1434,6 +1437,38 @@ class DepartmentLeadAgent:
                     decision="recorded",
                     reflection=f"Recorded AG2 turn from {actor}.",
                     stop_reason="ag2_turn_recorded",
+                )
+        if step_emitter is not None:
+            usage = build_ag2_usage_delta(
+                before=judge_usage_before,
+                after=judge_usage_after,
+                model=get_role_model_selection(self.judge_name)[0],
+            )
+            if usage:
+                step_emitter.emit_narrated(
+                    phase="department_groupchat",
+                    actor=self.judge_name,
+                    actor_role="judge",
+                    department=self.department,
+                    goal="Record AG2 judge model usage",
+                    action_kind="state_transition",
+                    action_target="ag2.judge_usage",
+                    action_payload={
+                        "department": self.department,
+                        "usage_source": "ag2.actual_usage_summary",
+                        "model": usage.get("model", ""),
+                    },
+                    state_transitions=[
+                        {
+                            "kind": "ag2_usage_recorded",
+                            "role": "judge",
+                            "model": usage.get("model", ""),
+                        }
+                    ],
+                    usage=usage,
+                    decision="recorded",
+                    reflection=f"Recorded AG2 judge usage for {self.judge_name}.",
+                    stop_reason="ag2_usage_recorded",
                 )
 
         # Fallback: if finalize_package was never called (e.g. max_round hit)
