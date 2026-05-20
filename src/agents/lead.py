@@ -375,6 +375,7 @@ class DepartmentLeadAgent:
         memory_store=None,
         role_memory: dict[str, list[dict[str, Any]]] | None = None,
         on_message: MessageHook = None,
+        step_emitter: Any | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
         """Build a fresh AG2 GroupChat, run the investigation, return the domain package.
 
@@ -1318,6 +1319,35 @@ class DepartmentLeadAgent:
             package_messages.append(event)
             if on_message:
                 on_message(event)
+            if step_emitter is not None:
+                content_text = event["content"]
+                if len(content_text) > 500:
+                    content_text = f"{content_text[:500]}... [truncated]"
+                actor = str(event["agent"])
+                step_emitter.emit_narrated(
+                    phase="department_groupchat",
+                    actor=actor,
+                    actor_role=self._role_for_agent_name(actor),
+                    department=self.department,
+                    goal="Record AG2 department turn",
+                    action_kind="no_op",
+                    action_target="ag2.turn",
+                    action_payload={
+                        "department": self.department,
+                        "message_index": len(package_messages),
+                        "content_length": len(event["content"]),
+                    },
+                    observations=[
+                        {
+                            "kind": "ag2_message_preview",
+                            "agent": actor,
+                            "content_preview": content_text,
+                        }
+                    ],
+                    decision="recorded",
+                    reflection=f"Recorded AG2 turn from {actor}.",
+                    stop_reason="ag2_turn_recorded",
+                )
 
         # Fallback: if finalize_package was never called (e.g. max_round hit)
         if self._completed_package is None:
@@ -1760,6 +1790,21 @@ When {s_lead} asks you to help with a blocked task:
 
 Your query suggestions will be used by {s_researcher} on the next research attempt.
 """
+
+    def _role_for_agent_name(self, agent_name: str) -> str:
+        if agent_name == self.name:
+            return "department_lead"
+        if agent_name == self.researcher_name:
+            return "researcher"
+        if agent_name == self.critic_name:
+            return "critic"
+        if agent_name == self.judge_name:
+            return "judge"
+        if agent_name == self.coding_name:
+            return "coding_specialist"
+        if agent_name.endswith("Executor"):
+            return "tool_executor"
+        return "department_agent"
 
     # ------------------------------------------------------------------
     # LLM config

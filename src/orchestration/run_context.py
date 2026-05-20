@@ -22,6 +22,7 @@ class RunContext:
     answer_matrix: dict[str, dict[str, Any]] = field(default_factory=dict)
     meeting_readiness_assessment: MeetingReadinessAssessment = field(default_factory=MeetingReadinessAssessment)
     final_briefing: FinalBriefing | None = None
+    step_trace: list[dict[str, Any]] = field(default_factory=list)
     status: RunStatus = "running"
     resolution_state: dict[str, Any] = field(default_factory=dict)
 
@@ -63,6 +64,7 @@ class RunContext:
             "answer_matrix": self.answer_matrix,
             "meeting_readiness_assessment": self.meeting_readiness_assessment.model_dump(mode="json"),
             "final_briefing": self.final_briefing.model_dump(mode="json") if self.final_briefing else None,
+            "step_trace": self.step_trace,
             "short_term_memory": self.short_term_memory.snapshot(),
             "status": self.status,
             "resolution_state": self.resolution_state,
@@ -90,6 +92,7 @@ class RunContext:
                 if payload.get("final_briefing")
                 else None
             ),
+            step_trace=list(payload.get("step_trace", [])),
             status=payload.get("status", "running"),
             resolution_state=dict(payload.get("resolution_state", {})),
         )

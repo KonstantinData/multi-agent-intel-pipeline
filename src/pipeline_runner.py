@@ -63,6 +63,13 @@ from src.orchestration.step1_handoff import (
     handoff_allows_department_routing,
     stable_json_hash,
 )
+from src.orchestration.step_bus import (
+    InMemoryStepSink,
+    StepBus,
+    StepEmitter,
+    StepTraceConsumer,
+    runtime_steps_enabled,
+)
 from src.orchestration.supervisor_logging import log_supervisor_brief_event
 from src.orchestration.supervisor_loop import emit_message, run_supervisor_loop
 from src.orchestration.synthesis import (
@@ -101,6 +108,8 @@ class InitialRunState:
     run_context: RunContext
     messages: list[dict[str, Any]]
     budget_tracker: PhaseBudgetTracker
+    step_emitter: StepEmitter
+    step_eval_sink: InMemoryStepSink
     normalized_domain: str
     normalized_domain_result: NormalizedDomainResult
 
@@ -161,6 +170,7 @@ def _write_checkpoint(
     *,
     run_id: str = "",
     run_state_store: Any | None = None,
+    step_emitter: StepEmitter | None = None,
 ) -> dict[str, Any]:
     """RA-07: Write a phase-aware checkpoint for crash recovery and observability."""
     run_context.resolution_state["last_checkpoint"] = phase
@@ -194,13 +204,42 @@ def _write_checkpoint(
             sequence=sequence,
             run_context_snapshot=payload,
         )
-    return CheckpointInfo(
+    checkpoint = CheckpointInfo(
         checkpoint_id=phase,
         phase=phase,
         path=path_text,
         content_hash=content_hash,
         written=True,
     ).as_dict()
+    if step_emitter is not None:
+        step_emitter.emit_narrated(
+            phase=phase,
+            actor="RuntimeCheckpoint",
+            actor_role="runtime",
+            goal=f"Write checkpoint {phase}",
+            action_kind="state_transition",
+            action_target="checkpoint.write",
+            action_payload={
+                "checkpoint_id": phase,
+                "phase": phase,
+                "sequence": sequence,
+                "content_hash": content_hash,
+            },
+            state_transitions=[
+                {
+                    "kind": "checkpoint_write",
+                    "checkpoint_id": phase,
+                    "phase": phase,
+                    "sequence": sequence,
+                    "content_hash": content_hash,
+                    "path": path_text,
+                }
+            ],
+            decision="written",
+            reflection=f"Checkpoint {phase} written.",
+            stop_reason="checkpoint_written",
+        )
+    return checkpoint
 
 MessageHook = Callable[[dict[str, Any]], None] | None
 
@@ -433,6 +472,16 @@ def _initialize_run(
             "public_suffix": normalization.public_suffix,
         },
     )
+    step_eval_sink = InMemoryStepSink()
+    step_bus = StepBus([
+        StepTraceConsumer(run_context.step_trace),
+        step_eval_sink,
+    ])
+    step_emitter = StepEmitter(
+        run_id=run_id,
+        bus=step_bus,
+        enabled=runtime_steps_enabled(),
+    )
     _record_phase(run_context, "initialized")
     run_context.resolution_state["storage"] = stores.snapshot()
     run_state_store.create_run(
@@ -496,6 +545,68 @@ def _initialize_run(
             "resolved_ips_count": len(resolved_ips),
         },
     )
+    step_emitter.emit_narrated(
+        phase="initialized",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Initialize run context and runtime agents",
+        action_kind="state_transition",
+        action_target="run.initialize",
+        action_payload={
+            "company_name_present": bool(intake.company_name),
+            "normalized_domain": normalized_domain,
+            "agent_factory_duration_ms": phase_durations_ms["agent_factory"],
+            "intake_duration_ms": phase_durations_ms["intake_validation"],
+        },
+        state_transitions=[
+            {"kind": "run_context_created", "run_id": run_id},
+            {"kind": "runtime_agents_created", "department_count": len(agents.departments)},
+        ],
+        decision="initialized",
+        reflection="Run context, runtime agents, and intake validation completed.",
+        stop_reason="initialized",
+    )
+    step_emitter.emit_narrated(
+        phase="storage_init",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Initialize storage boundary",
+        action_kind="state_transition",
+        action_target="storage.initialize",
+        action_payload=stores.snapshot(),
+        state_transitions=[
+            {"kind": "storage_healthcheck", "status": "ok"},
+            {"kind": "run_state_created", "run_id": run_id},
+        ],
+        decision="storage_ready",
+        reflection="Runtime storage boundary initialized and health-checked.",
+        stop_reason="storage_ready",
+    )
+    step_emitter.emit_narrated(
+        phase="memory_retrieval",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Retrieve initial long-term process-memory patterns",
+        action_kind="capability_call",
+        action_target="memory.retrieve_strategy_batch",
+        action_payload={
+            "target_scope": "run_start",
+            "limit": DEFAULT_GENERAL_RETRIEVAL_LIMIT,
+            "result_count": len(initial_retrieval.patterns),
+            "status": initial_retrieval.snapshot.get("status", ""),
+        },
+        capability_calls=[
+            {
+                "kind": "memory_retrieval",
+                "target_scope": "run_start",
+                "result_count": len(initial_retrieval.patterns),
+                "duration_ms": initial_retrieval.snapshot.get("duration_ms", 0),
+            }
+        ],
+        decision=str(initial_retrieval.snapshot.get("status", "ok")),
+        reflection="Initial process-memory retrieval completed.",
+        stop_reason=str(initial_retrieval.snapshot.get("warning_code") or "retrieval_complete"),
+    )
 
     return InitialRunState(
         start_time=start_time,
@@ -508,6 +619,8 @@ def _initialize_run(
         run_context=run_context,
         messages=[],
         budget_tracker=PhaseBudgetTracker(),
+        step_emitter=step_emitter,
+        step_eval_sink=step_eval_sink,
         normalized_domain=normalized_domain,
         normalized_domain_result=normalization,
     )
@@ -680,6 +793,15 @@ def resume_pipeline(
         pipeline_data = json.loads((run_dir / "pipeline_data.json").read_text(encoding="utf-8"))
 
     run_context = RunContext.from_snapshot(run_context_payload)
+    resume_eval_sink = InMemoryStepSink()
+    resume_emitter = StepEmitter(
+        run_id=run_id,
+        bus=StepBus([
+            StepTraceConsumer(run_context.step_trace),
+            resume_eval_sink,
+        ]),
+        enabled=runtime_steps_enabled(),
+    )
 
     if run_context.status != SELECTION_REQUIRED_RUN_STATUS:
         # Only selection-paused runs can enter this resume path.
@@ -742,6 +864,30 @@ def resume_pipeline(
     if status != SELECTION_REQUIRED_RUN_STATUS and not meeting_assessment.meeting_ready:
         status = meeting_assessment.run_status
     run_context.status = status
+    resume_emitter.emit_narrated(
+        phase="dashboard_resume",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Resume run with dashboard user selections",
+        action_kind="state_transition",
+        action_target="dashboard.resume",
+        action_payload={
+            "selected_question_count": len(selected_questions),
+            "skipped_question_count": len(skipped_questions),
+            "final_status": status,
+        },
+        state_transitions=[
+            {
+                "kind": "dashboard_resume_recorded",
+                "selected_question_count": len(selected_questions),
+                "skipped_question_count": len(skipped_questions),
+                "status": status,
+            }
+        ],
+        decision=status,
+        reflection="Dashboard user selections applied and finalization gate re-evaluated.",
+        stop_reason="dashboard_resume_complete",
+    )
     _sync_finalization_artifacts(
         run_context=run_context,
         pipeline_data=pipeline_data,
@@ -751,7 +897,13 @@ def resume_pipeline(
     )
 
     # RA-07: Checkpoint after dashboard resume
-    _write_checkpoint(run_dir, "after_dashboard_resume", run_context)
+    _write_checkpoint(
+        run_dir,
+        "after_dashboard_resume",
+        run_context,
+        run_id=run_id,
+        step_emitter=resume_emitter,
+    )
 
     # Re-export the updated run artifacts for UI and follow-up loading.
     run_context_snapshot = run_context.snapshot()
@@ -895,13 +1047,45 @@ def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) 
             "industry": intake_research.get("industry", {}),
             "duration_ms": duration_ms,
         }
-
-    # ── Punkt 5.11: structured supervisor briefing event ──
     routing_gaps_tuple = tuple(getattr(brief, "routing_gaps", []) or [])
     readiness = getattr(brief, "briefing_readiness", "ready")
     log_status = "ok" if readiness == "ready" else (
         "blocked" if str(readiness).startswith("blocked_") else "degraded"
     )
+    state.step_emitter.emit_narrated(
+        phase="supervisor_brief",
+        actor="Supervisor",
+        actor_role="supervisor",
+        goal="Create Supervisor brief and refresh process memory",
+        action_kind="state_transition",
+        action_target="supervisor_brief.create",
+        action_payload={
+            "briefing_readiness": str(readiness),
+            "identity_confidence": brief.name_confidence,
+            "industry_confidence": getattr(brief, "industry_confidence", "unknown"),
+            "routing_gap_count": len(routing_gaps_tuple),
+            "role_memory_batches": len(role_batches),
+            "duration_ms": duration_ms,
+        },
+        capability_calls=[
+            {
+                "kind": "memory_retrieval",
+                "target_scope": "brief_context",
+                "result_count": len(brief_retrieval.patterns),
+                "duration_ms": brief_retrieval.snapshot.get("duration_ms", 0),
+            }
+        ],
+        state_transitions=[
+            {"kind": "supervisor_brief_recorded", "readiness": str(readiness)},
+            {"kind": "question_registry_initialized", "question_count": len(question_ids)},
+            {"kind": "answer_matrix_initialized", "entry_count": len(state.run_context.answer_matrix)},
+        ],
+        decision=log_status,
+        reflection="Supervisor brief created and process-memory retrieval refreshed.",
+        stop_reason="supervisor_brief_complete",
+    )
+
+    # ── Punkt 5.11: structured supervisor briefing event ──
     log_supervisor_brief_event(
         run_id=state.run_id,
         status=log_status,
@@ -932,6 +1116,7 @@ def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) 
             state.run_context,
             run_id=state.run_id,
             run_state_store=state.run_state_store,
+            step_emitter=state.step_emitter,
         )
     except Exception as exc:
         checkpoint_info = CheckpointInfo(
@@ -965,6 +1150,7 @@ def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) 
                 state.run_context,
                 run_id=state.run_id,
                 run_state_store=state.run_state_store,
+                step_emitter=state.step_emitter,
             )
             handoff = build_step1_handoff(
                 run_context=state.run_context,
@@ -1006,6 +1192,29 @@ def _build_supervisor_brief(state: InitialRunState, *, on_message: MessageHook) 
     if not handoff_allows_department_routing(handoff):
         _record_phase(state.run_context, "step1_handoff")
         state.run_context.status = "blocked"
+    state.step_emitter.emit_narrated(
+        phase="step1_handoff",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Validate Step-1 handoff before department routing",
+        action_kind="state_transition",
+        action_target="step1_handoff.validate",
+        action_payload={
+            "readiness": state.run_context.resolution_state.get("step1_handoff", {}).get("readiness", ""),
+            "validation_error_count": len(
+                state.run_context.resolution_state.get("step1_handoff", {}).get("validation_errors", [])
+            ),
+        },
+        state_transitions=[
+            {
+                "kind": "step1_handoff_recorded",
+                "allows_department_routing": handoff_allows_department_routing(handoff),
+            }
+        ],
+        decision="ready" if handoff_allows_department_routing(handoff) else "blocked",
+        reflection="Step-1 handoff built and validated.",
+        stop_reason="handoff_validated",
+    )
     return SupervisorBriefResult(
         brief=brief,
         supervisor_message=supervisor_message,
@@ -1020,11 +1229,25 @@ def _run_first_pass(
     on_message: MessageHook,
 ) -> FirstPassResult:
     _record_phase(state.run_context, "first_pass")
+    state.step_emitter.emit_narrated(
+        phase="first_pass",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Start first-pass department execution",
+        action_kind="state_transition",
+        action_target="phase.start",
+        action_payload={"phase": "first_pass"},
+        state_transitions=[{"kind": "phase_started", "phase": "first_pass"}],
+        decision="started",
+        reflection="First-pass department execution started.",
+        stop_reason="phase_started",
+    )
     sections, department_packages, loop_messages, completed_backlog, department_timings, first_round_resolution = run_supervisor_loop(
         brief=brief,
         run_context=state.run_context,
         agents=state.agents,
         on_message=on_message,
+        step_emitter=state.step_emitter,
     )
     state.messages.extend(loop_messages)
     state.run_context.short_term_memory.task_statuses.update(
@@ -1054,6 +1277,31 @@ def _run_first_pass(
         state.run_context,
         run_id=state.run_id,
         run_state_store=state.run_state_store,
+        step_emitter=state.step_emitter,
+    )
+    state.step_emitter.emit_narrated(
+        phase="first_pass",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Complete first-pass department execution",
+        action_kind="state_transition",
+        action_target="phase.complete",
+        action_payload={
+            "phase": "first_pass",
+            "completed_task_count": len(completed_backlog),
+            "department_count": len(department_packages),
+            "resolution_bucket": first_round_resolution.get("bucket", ""),
+        },
+        state_transitions=[
+            {
+                "kind": "first_round_resolution_recorded",
+                "bucket": first_round_resolution.get("bucket", ""),
+            }
+        ],
+        usage={"total_tokens": first_pass_tokens},
+        decision=str(first_round_resolution.get("bucket", "")),
+        reflection="First-pass department execution completed and first-round resolution recorded.",
+        stop_reason="first_pass_complete",
     )
     return FirstPassResult(
         sections=sections,
@@ -1075,6 +1323,19 @@ def _run_auto_close_if_required(
         return AutoCloseResult(triggered=False, payload={})
 
     _record_phase(state.run_context, "auto_close")
+    state.step_emitter.emit_narrated(
+        phase="auto_close",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Start bounded auto-close for public evidence gaps",
+        action_kind="state_transition",
+        action_target="phase.start",
+        action_payload={"phase": "auto_close", "max_questions": 4},
+        state_transitions=[{"kind": "phase_started", "phase": "auto_close"}],
+        decision="started",
+        reflection="Bounded auto-close started for meeting-critical public gaps.",
+        stop_reason="phase_started",
+    )
     auto_close_result = run_bounded_follow_up(
         run_id=state.run_id,
         run_context=state.run_context.snapshot(),
@@ -1138,6 +1399,30 @@ def _run_auto_close_if_required(
         state.run_context,
         run_id=state.run_id,
         run_state_store=state.run_state_store,
+        step_emitter=state.step_emitter,
+    )
+    state.step_emitter.emit_narrated(
+        phase="auto_close",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Complete bounded auto-close",
+        action_kind="state_transition",
+        action_target="auto_close.complete",
+        action_payload={
+            "attempted_questions": auto_close_result.get("attempted_questions", 0),
+            "stop_reason": auto_close_result.get("stop_reason", ""),
+            "unresolved_after_count": len(auto_close_result.get("unresolved_after", [])),
+        },
+        state_transitions=[
+            {
+                "kind": "auto_close_recorded",
+                "attempted_questions": auto_close_result.get("attempted_questions", 0),
+            }
+        ],
+        usage={"total_tokens": max(closure_tokens, 0)},
+        decision=str(auto_close_result.get("stop_reason", "")),
+        reflection="Bounded auto-close completed.",
+        stop_reason=str(auto_close_result.get("stop_reason", "auto_close_complete")),
     )
     return AutoCloseResult(triggered=True, payload=auto_close_result)
 
@@ -1150,6 +1435,19 @@ def _run_synthesis_phase(
     on_message: MessageHook,
 ) -> SynthesisPhaseResult:
     _record_phase(state.run_context, "synthesis")
+    state.step_emitter.emit_narrated(
+        phase="synthesis",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Start synthesis phase",
+        action_kind="state_transition",
+        action_target="phase.start",
+        action_payload={"phase": "synthesis"},
+        state_transitions=[{"kind": "phase_started", "phase": "synthesis"}],
+        decision="started",
+        reflection="Synthesis phase started.",
+        stop_reason="phase_started",
+    )
     synthesis_assignments = build_synthesis_assignments(brief)
     for assignment in synthesis_assignments:
         state.run_context.record_task(
@@ -1300,6 +1598,27 @@ def _run_synthesis_phase(
         state.run_context,
         run_id=state.run_id,
         run_state_store=state.run_state_store,
+        step_emitter=state.step_emitter,
+    )
+    state.step_emitter.emit_narrated(
+        phase="synthesis",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Complete synthesis phase",
+        action_kind="state_transition",
+        action_target="synthesis.complete",
+        action_payload={
+            "admission_decision": synthesis_decision,
+            "back_request_count": len(synthesis_back_requests),
+            "synthesis_task_status": synthesis_task_status,
+        },
+        state_transitions=[
+            {"kind": "synthesis_admission_recorded", "decision": synthesis_decision},
+            {"kind": "synthesis_task_status_recorded", "status": synthesis_task_status},
+        ],
+        decision=synthesis_decision,
+        reflection="Synthesis phase completed and admission decision recorded.",
+        stop_reason="synthesis_complete",
     )
     return SynthesisPhaseResult(
         sections=first_pass.sections,
@@ -1480,6 +1799,30 @@ def _finalize_readiness(
         blockers=list(readiness.get("readiness_blockers", []) or []),
     )
     state.run_context.meeting_readiness_assessment = meeting_assessment
+    state.step_emitter.emit_narrated(
+        phase="finalization",
+        actor="MeetingReadinessGate",
+        actor_role="runtime_gate",
+        goal="Evaluate meeting-readiness gate",
+        action_kind="state_transition",
+        action_target="meeting_readiness.evaluate",
+        action_payload={
+            "evidence_health": quality_review.get("evidence_health", "low"),
+            "readiness_usable": bool(readiness.get("usable")),
+            "discovery_ready": bool(readiness.get("discovery_ready")),
+            "blocker_count": len(readiness.get("readiness_blockers", []) or []),
+        },
+        state_transitions=[
+            {
+                "kind": "meeting_readiness_assessment_recorded",
+                "meeting_ready": meeting_assessment.meeting_ready,
+                "run_status": meeting_assessment.run_status,
+            }
+        ],
+        decision=meeting_assessment.run_status,
+        reflection="Meeting-readiness gate evaluated.",
+        stop_reason="meeting_readiness_evaluated",
+    )
 
     composer = FinalBriefingComposer()
     meeting_actions = composer.compose(
@@ -1492,6 +1835,21 @@ def _finalize_readiness(
     state.run_context.short_term_memory.meeting_actions = meeting_actions
     pipeline_data["meeting_actions"] = sort_meeting_actions(
         [action.model_dump(mode="json") for action in meeting_actions]
+    )
+    state.step_emitter.emit_narrated(
+        phase="finalization",
+        actor="FinalBriefingComposer",
+        actor_role="runtime_node",
+        goal="Compose final briefing meeting actions",
+        action_kind="state_transition",
+        action_target="final_briefing.compose",
+        action_payload={"meeting_action_count": len(meeting_actions)},
+        state_transitions=[
+            {"kind": "meeting_actions_recorded", "meeting_action_count": len(meeting_actions)}
+        ],
+        decision="composed",
+        reflection="Final briefing meeting actions composed.",
+        stop_reason="final_briefing_composed",
     )
 
     status = determine_final_status(
@@ -1528,6 +1886,25 @@ def _finalize_readiness(
                 if isinstance(item, dict) and str(item.get("reason", "")).strip()
             ],
         }
+    if status == SELECTION_REQUIRED_RUN_STATUS:
+        state.step_emitter.emit_narrated(
+            phase="finalization",
+            actor="PipelineRunner",
+            actor_role="runtime",
+            goal="Pause run for dashboard user selection",
+            action_kind="state_transition",
+            action_target="dashboard.pause",
+            action_payload={
+                "status": status,
+                "resume_entrypoint": resume_entrypoint,
+            },
+            state_transitions=[
+                {"kind": "dashboard_pause_recorded", "resume_entrypoint": resume_entrypoint}
+            ],
+            decision="needs_user_selection",
+            reflection="Run paused for dashboard user selection.",
+            stop_reason="user_selection_required",
+        )
     state.run_context.status = status
     _sync_finalization_artifacts(
         run_context=state.run_context,
@@ -1564,6 +1941,24 @@ def _assemble_report_and_export(
     state.run_context.report_package = report_package
     finalization.pipeline_data["report_package"] = report_package
     state.messages.extend(report_messages)
+    state.step_emitter.emit_narrated(
+        phase="report_and_export",
+        actor="ReportWriter",
+        actor_role="runtime_node",
+        goal="Assemble report package",
+        action_kind="state_transition",
+        action_target="report_writer.run",
+        action_payload={
+            "report_message_count": len(report_messages),
+            "report_package_present": bool(report_package),
+        },
+        state_transitions=[
+            {"kind": "report_package_recorded", "report_package_present": bool(report_package)}
+        ],
+        decision="completed",
+        reflection="Report writer assembled the report package.",
+        stop_reason="report_writer_complete",
+    )
     state.run_context.resolution_state["budget_tracker"] = state.budget_tracker.snapshot()
     _write_checkpoint(
         state.run_dir,
@@ -1571,6 +1966,7 @@ def _assemble_report_and_export(
         state.run_context,
         run_id=state.run_id,
         run_state_store=state.run_state_store,
+        step_emitter=state.step_emitter,
     )
 
     elapsed_seconds = round(perf_counter() - state.start_time, 3)
@@ -1636,6 +2032,27 @@ def _assemble_report_and_export(
     ):
         for pattern in role_patterns:
             state.memory_store.upsert_strategy(pattern)
+    state.step_emitter.emit_narrated(
+        phase="report_and_export",
+        actor="PipelineRunner",
+        actor_role="runtime",
+        goal="Export run artifacts and consolidate process-memory patterns",
+        action_kind="state_transition",
+        action_target="run.export",
+        action_payload={
+            "status": finalization.status,
+            "role_pattern_count": len(role_patterns),
+            "stored_role_patterns": bool(role_patterns),
+        },
+        state_transitions=[
+            {"kind": "run_artifacts_ready_for_export", "status": finalization.status},
+            {"kind": "process_patterns_consolidated", "pattern_count": len(role_patterns)},
+        ],
+        decision="ready_to_export",
+        reflection="Run artifacts prepared for export and process-memory consolidation completed.",
+        stop_reason="export_ready",
+    )
+    run_context_snapshot = state.run_context.snapshot()
 
     export_run(
         run_dir=state.run_dir,

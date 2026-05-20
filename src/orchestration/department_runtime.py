@@ -50,6 +50,7 @@ class DepartmentRuntime:
         memory_store=None,
         role_memory: dict[str, list[dict[str, Any]]] | None = None,
         on_message: MessageHook = None,
+        step_emitter: Any | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
         section_payload, package_messages, department_package = self.lead.run(
             brief=brief,
@@ -59,6 +60,7 @@ class DepartmentRuntime:
             memory_store=memory_store,
             role_memory=role_memory,
             on_message=on_message,
+            step_emitter=step_emitter,
         )
         department_package["evidence_packages"] = [
             EvidencePacket.model_validate(item).model_dump(mode="json")

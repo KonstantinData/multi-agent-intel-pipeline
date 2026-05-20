@@ -190,6 +190,7 @@ def run_supervisor_loop(
     run_context,
     agents: dict[str, Any],
     on_message: MessageHook = None,
+    step_emitter: Any | None = None,
 ) -> SupervisorLoopResult:
     if not run_context.question_registry:
         run_context.question_registry = build_question_registry()
@@ -203,6 +204,65 @@ def run_supervisor_loop(
     department_assignments = build_department_assignments(brief)
     completed_backlog: list[dict[str, str]] = []
     department_timings: dict[str, float] = {}
+
+    def _emit_department_assignment_step(dept_name: str, dept_assignment) -> None:
+        if step_emitter is None:
+            return
+        step_emitter.emit_narrated(
+            phase="first_pass",
+            actor="Supervisor",
+            actor_role="supervisor",
+            department=dept_name,
+            goal=f"Assign tasks to {dept_name}",
+            action_kind="state_transition",
+            action_target="department.assign",
+            action_payload={
+                "department": dept_name,
+                "target_section": dept_assignment.target_section,
+                "task_keys": [a.task_key for a in dept_assignment.assignments],
+            },
+            state_transitions=[
+                {
+                    "kind": "department_assigned",
+                    "department": dept_name,
+                    "task_count": len(dept_assignment.assignments),
+                }
+            ],
+            decision="assigned",
+            reflection=f"{dept_name} assigned {len(dept_assignment.assignments)} task(s).",
+            stop_reason="department_assigned",
+        )
+
+    def _emit_package_admission_step(dept_name: str, acceptance: dict[str, Any]) -> None:
+        if step_emitter is None:
+            return
+        decision = str(acceptance.get("decision", "rejected"))
+        step_emitter.emit_narrated(
+            phase="first_pass",
+            actor="Supervisor",
+            actor_role="supervisor",
+            department=dept_name,
+            goal=f"Review package admission for {dept_name}",
+            action_kind="state_transition",
+            action_target="department_package.admit",
+            action_payload={
+                "department": dept_name,
+                "decision": decision,
+                "accepted_tasks": acceptance.get("accepted_tasks", 0),
+                "total_tasks": acceptance.get("total_tasks", 0),
+                "policy_gate_passed": acceptance.get("policy_gate_passed", False),
+            },
+            state_transitions=[
+                {
+                    "kind": "department_package_admission",
+                    "department": dept_name,
+                    "decision": decision,
+                }
+            ],
+            decision=decision,
+            reflection=f"{dept_name} package admission decision: {decision}.",
+            stop_reason="department_package_reviewed",
+        )
 
     def _update_answer_matrix_from_task(assignment, task_status: str) -> None:
         matrix_status = matrix_status_for_task_status(task_status)
@@ -266,6 +326,7 @@ def run_supervisor_loop(
             memory_store=memory_store,
             role_memory=run_context.retrieved_role_strategies,
             on_message=on_message,
+            step_emitter=step_emitter,
         )
         elapsed = round(perf_counter() - t0, 3)
         department_timings[dept_name] = elapsed
@@ -302,6 +363,7 @@ def run_supervisor_loop(
                         ),
                     )
                 )
+                _emit_department_assignment_step(dept_name, da)
                 current_section = sections.get(da.target_section, {})
                 ws = run_context.short_term_memory.create_working_set()
                 baseline = run_context.short_term_memory.create_working_set()
@@ -333,6 +395,7 @@ def run_supervisor_loop(
                         content=json.dumps({"department": dept_name, "status": "department_package_reviewed", **acceptance}, ensure_ascii=False),
                     )
                 )
+                _emit_package_admission_step(dept_name, acceptance)
                 status_by_task = {task["task_key"]: task["status"] for task in package.get("completed_tasks", [])}
                 for assignment in da.assignments:
                     task_status = status_by_task.get(assignment.task_key, "degraded")
@@ -355,6 +418,7 @@ def run_supervisor_loop(
             messages.append(
                 emit_message(on_message, agent="Supervisor", content=json.dumps({"department": da.department, "status": "department_assigned", "target_section": da.target_section, "tasks": [{"task_key": a.task_key, "label": a.label, "objective": a.objective} for a in da.assignments]}, ensure_ascii=False))
             )
+            _emit_department_assignment_step(dept_name, da)
             section_payload, department_messages, package = _run_single_department(
                 dept_name,
                 da,
@@ -375,6 +439,7 @@ def run_supervisor_loop(
                 department_packages=department_packages,
             )
             messages.append(emit_message(on_message, agent="Supervisor", content=json.dumps({"department": dept_name, "status": "department_package_reviewed", **acceptance}, ensure_ascii=False)))
+            _emit_package_admission_step(dept_name, acceptance)
             status_by_task = {task["task_key"]: task["status"] for task in package.get("completed_tasks", [])}
             for assignment in da.assignments:
                 task_status = status_by_task.get(assignment.task_key, "degraded")
@@ -413,6 +478,7 @@ def run_supervisor_loop(
                 ),
             )
         )
+        _emit_department_assignment_step(department_name, da)
 
         # Generic run_condition evaluation from the task contract
         pipeline_state = {
@@ -499,6 +565,7 @@ def run_supervisor_loop(
                 ),
             )
         )
+        _emit_package_admission_step(department_name, acceptance)
 
         status_by_task = {task["task_key"]: task["status"] for task in package.get("completed_tasks", [])}
         for assignment in department_assignment.assignments:

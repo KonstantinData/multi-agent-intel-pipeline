@@ -178,6 +178,11 @@ def export_run(
         upsert_run_artifact_json(run_id=safe_run_id, artifact_type="run_context", payload=run_context)
         upsert_run_artifact_json(
             run_id=safe_run_id,
+            artifact_type="step_trace",
+            payload=run_context.get("step_trace", []),
+        )
+        upsert_run_artifact_json(
+            run_id=safe_run_id,
             artifact_type="memory_snapshot",
             payload=run_context.get("short_term_memory", {}),
         )
@@ -189,6 +194,7 @@ def export_run(
     atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/chat_history.json", runs_root), chat_history, runs_root)
     atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/pipeline_data.json", runs_root), sanitized_pipeline_data, runs_root)
     atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/run_context.json", runs_root), run_context, runs_root)
+    atomic_write_json(_ensure_within_runs_dir(f"{safe_run_id}/step_trace.json", runs_root), run_context.get("step_trace", []), runs_root)
     atomic_write_json(
         _ensure_within_runs_dir(f"{safe_run_id}/memory_snapshot.json", runs_root),
         run_context.get("short_term_memory", {}),
