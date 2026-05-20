@@ -206,6 +206,71 @@ The run should answer:
 - Did latency or cost exceed acceptable bounds?
 - Which steps should be downgraded before production rollout?
 
+### Validation Run 1 — 2026-05-20
+
+Run metadata:
+
+- `run_id`: `20260520T210613Z`
+- Company: Phoenix Contact GmbH & Co. KG
+- Domain: `phoenixcontact.com`
+- Industry class: electrical engineering / industrial automation
+- Storage profile: `local_dev`
+- RuntimeSteps: enabled
+- OTel flag: enabled, but local OTel SDK was not installed; the OTel consumer
+  failed open and was disabled for this run
+- Narrow reasoning-capable overrides: Judge roles, `SynthesisJudge`, and
+  `MeetingReadinessGate` profile set to `gpt-5-mini`; Researchers remained on
+  the existing non-reasoning profile
+
+Run outcome:
+
+- Final status: `blocked_not_meeting_ready`
+- `step_trace.json` persisted with 48 steps
+- `intent.reasoning_policy` was present on all 48 steps
+- Planned reasoning effort distribution: 47 `none`, 1 `high`
+- The single high-effort planned step was
+  `finalization / MeetingReadinessGate / meeting_readiness.evaluate`
+- Usage-bearing steps: 9
+- `execution.reasoning_realized` steps: 0
+- `thinking_tokens` total: 0
+
+Answers to the validation questions:
+
+- `intent.reasoning_policy` appears reliably on RuntimeSteps.
+- The current trace does not capture usable realized reasoning metadata from
+  AG2 GroupChat model calls.
+- `thinking_tokens` were not available in the persisted trace.
+- `SynthesisJudge` did run with the reasoning-capable override and produced a
+  conservative accept-with-gaps decision, but that model call was visible only
+  in the console transcript, not as a usage-bearing RuntimeStep.
+- `MeetingReadinessGate` received a high planned policy, but it is currently a
+  deterministic runtime gate and has no provider usage to realize.
+- Runtime cost in the exported run was estimated at approximately USD 1.44, but
+  AG2 emitted zero-price warnings for dated model aliases, so cost telemetry is
+  not yet reliable enough for budget tuning.
+
+Conclusion:
+
+Validation Run 1 completed the production-like workflow, but it does **not**
+satisfy the ADR-003 promotion gate. The planned-policy path works; the realized
+reasoning telemetry path is still incomplete for reasoning-capable AG2 turns.
+ADR-003 remains `Draft`.
+
+Required follow-up before promotion:
+
+- Emit usage-bearing RuntimeSteps for AG2 adjudication/model-call turns,
+  especially Judge and `SynthesisJudge`.
+- Capture provider usage for those turns and map reasoning/thinking tokens into
+  `execution.usage.thinking_tokens` plus
+  `execution.reasoning_realized.thinking_tokens`.
+- Add OTel SDK dependencies or document the local validation path as
+  step-trace-only when OTel is intentionally unavailable.
+- Resolve or suppress AG2 pricing warnings for dated model aliases so cost
+  telemetry can be trusted.
+- Re-run one controlled validation run after these fixes and promote ADR-003
+  only if at least one high-effort reasoning-capable step has realized
+  reasoning metadata.
+
 ## Goals
 
 - Replace flat role model defaults with a typed `RoleModelProfile` concept.
