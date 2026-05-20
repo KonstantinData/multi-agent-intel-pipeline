@@ -109,6 +109,7 @@ def test_fm5_synthesis_and_report_writer_are_separate_runtime_nodes() -> None:
 
     assert "supervisor" not in synthesis_signature.parameters
     assert "department_packages" in synthesis_signature.parameters
+    assert "step_emitter" in synthesis_signature.parameters
     assert "pipeline_data" in report_signature.parameters
     assert "department_packages" in report_signature.parameters
 
@@ -116,6 +117,27 @@ def test_fm5_synthesis_and_report_writer_are_separate_runtime_nodes() -> None:
     assert pipeline_source.index('agents["synthesis"].run') < pipeline_source.index(
         'agents["report_writer"].run'
     )
+
+
+def test_synthesis_runtime_forwards_step_emitter() -> None:
+    captured: dict[str, object] = {}
+
+    class _Agent:
+        def run(self, **kwargs):
+            captured.update(kwargs)
+            return {}, []
+
+    runtime = SynthesisRuntime.__new__(SynthesisRuntime)
+    runtime.agent = _Agent()
+    step_emitter = object()
+
+    runtime.run(
+        brief=object(),  # type: ignore[arg-type]
+        department_packages={},
+        step_emitter=step_emitter,
+    )
+
+    assert captured["step_emitter"] is step_emitter
 
 
 def test_fm6_follow_up_persists_answer_artifact_after_run_brain_routing(tmp_path) -> None:
