@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
+from src.orchestration.assurance import AssuranceShadowRecord
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,7 @@ class TaskReviewArtifact:
     feedback_to_worker: list[str] = field(default_factory=list)
     revision_instructions: list[str] = field(default_factory=list)
     coding_brief: str | None = None
+    assurance_shadow: AssuranceShadowRecord | dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -263,6 +265,11 @@ class TaskReviewArtifact:
             "feedback_to_worker": self.feedback_to_worker,
             "revision_instructions": self.revision_instructions,
             "coding_brief": self.coding_brief,
+            "assurance_shadow": (
+                self.assurance_shadow.to_dict()
+                if isinstance(self.assurance_shadow, AssuranceShadowRecord)
+                else self.assurance_shadow
+            ),
         }
 
     @classmethod
@@ -286,6 +293,7 @@ class TaskReviewArtifact:
             feedback_to_worker=list(review.get("feedback_to_worker", [])),
             revision_instructions=list(review.get("revision_instructions", [])),
             coding_brief=review.get("coding_brief"),
+            assurance_shadow=review.get("assurance_shadow"),
         )
 
 
