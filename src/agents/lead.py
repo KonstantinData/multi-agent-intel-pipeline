@@ -116,13 +116,18 @@ from src.agents.worker import ResearchWorker
 from src.config.settings import (
     MAX_TASK_RETRIES,
     get_openai_api_key,
+    get_role_model_profile,
     get_role_model_selection,
     resolve_model_temperature,
 )
 from src.domain.intake import SupervisorBrief
 from src.models.meeting_ready import AnswerMatrixUpdate, EvidencePacket, GapCandidate
 from src.models.schemas import DepartmentPackage, DomainReportSegment
-from src.orchestration.ag2_usage import build_ag2_usage_delta, snapshot_ag2_usage
+from src.orchestration.ag2_usage import (
+    build_ag2_usage_delta,
+    install_ag2_reasoning_usage_patch,
+    snapshot_ag2_usage,
+)
 from src.orchestration.contract_validation import validate_payload_against_task_schema
 from src.orchestration.contracts import (
     DepartmentPolicy,
@@ -1933,13 +1938,19 @@ Your query suggestions will be used by {s_researcher} on the next research attem
     # ------------------------------------------------------------------
 
     def _llm_config(self, role: str) -> dict[str, Any] | Literal[False]:
+        install_ag2_reasoning_usage_patch()
         model, _ = get_role_model_selection(role)
         api_key = get_openai_api_key()
         if not api_key:
             return False
+        config_entry: dict[str, Any] = {"model": model, "api_key": api_key}
         cfg: dict[str, Any] = {
-            "config_list": [{"model": model, "api_key": api_key}],
+            "config_list": [config_entry],
         }
+        profile = get_role_model_profile(role)
+        reasoning_effort = profile.default_reasoning_policy.effort
+        if profile.supports_reasoning and reasoning_effort != "none":
+            config_entry["reasoning_effort"] = reasoning_effort
         temperature = resolve_model_temperature(model, 0.1)
         if temperature is not None:
             cfg["temperature"] = temperature

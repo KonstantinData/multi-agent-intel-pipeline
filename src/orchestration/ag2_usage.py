@@ -15,6 +15,69 @@ _TOKEN_KEYS = {
     "reasoning_tokens",
 }
 _CALL_KEYS = ("llm_calls", "num_calls", "calls", "call_count")
+_AG2_REASONING_PATCH_ATTR = "_liquisto_reasoning_usage_patch"
+
+
+def install_ag2_reasoning_usage_patch() -> bool:
+    """Preserve provider reasoning-token fields in AG2 usage summaries.
+
+    AG2 0.12.x records only the canonical token fields in
+    ``OpenAIWrapper.actual_usage_summary``. OpenAI responses can include
+    reasoning-token metadata, but AG2 drops it before our RuntimeStep extractor
+    sees the summary. This patch is intentionally narrow and idempotent: it only
+    enriches usage dictionaries, and it does not alter prompts, responses, or
+    control flow.
+    """
+
+    try:
+        from autogen.oai.client import OpenAIClient, OpenAIWrapper
+    except Exception:
+        return False
+
+    if not getattr(OpenAIClient.get_usage, _AG2_REASONING_PATCH_ATTR, False):
+        original_get_usage = OpenAIClient.get_usage
+
+        def get_usage_with_reasoning(response: Any) -> dict[str, Any]:
+            payload = original_get_usage(response)
+            if not isinstance(payload, dict):
+                return payload
+            return _with_reasoning_token_fields(payload, getattr(response, "usage", None))
+
+        setattr(get_usage_with_reasoning, _AG2_REASONING_PATCH_ATTR, True)
+        OpenAIClient.get_usage = staticmethod(get_usage_with_reasoning)
+
+    if not getattr(OpenAIWrapper._update_usage, _AG2_REASONING_PATCH_ATTR, False):
+        original_update_usage = OpenAIWrapper._update_usage
+
+        def update_usage_with_reasoning(
+            self: Any,
+            actual_usage: dict[str, Any] | None,
+            total_usage: dict[str, Any] | None,
+        ) -> None:
+            before_actual_tokens = _summary_thinking_tokens(
+                getattr(self, "actual_usage_summary", None),
+                actual_usage,
+            )
+            before_total_tokens = _summary_thinking_tokens(
+                getattr(self, "total_usage_summary", None),
+                total_usage,
+            )
+            original_update_usage(self, actual_usage, total_usage)
+            _merge_summary_reasoning_delta(
+                getattr(self, "actual_usage_summary", None),
+                actual_usage,
+                before_tokens=before_actual_tokens,
+            )
+            _merge_summary_reasoning_delta(
+                getattr(self, "total_usage_summary", None),
+                total_usage,
+                before_tokens=before_total_tokens,
+            )
+
+        setattr(update_usage_with_reasoning, _AG2_REASONING_PATCH_ATTR, True)
+        OpenAIWrapper._update_usage = update_usage_with_reasoning
+
+    return True
 
 
 def snapshot_ag2_usage(source: Any) -> dict[str, Any]:
@@ -75,6 +138,50 @@ def build_ag2_usage_delta(
     if cost:
         payload["estimated_cost_usd"] = cost
     return {key: value for key, value in payload.items() if value not in {"", None}}
+
+
+def _with_reasoning_token_fields(payload: dict[str, Any], provider_usage: Any) -> dict[str, Any]:
+    enriched = dict(payload)
+    thinking_tokens = extract_thinking_tokens(provider_usage)
+    if thinking_tokens:
+        enriched["thinking_tokens"] = max(_int_value(enriched.get("thinking_tokens")), thinking_tokens)
+        enriched["reasoning_tokens"] = max(_int_value(enriched.get("reasoning_tokens")), thinking_tokens)
+    return enriched
+
+
+def _summary_thinking_tokens(
+    usage_summary: dict[str, Any] | None,
+    response_usage: dict[str, Any] | None,
+) -> int:
+    if not isinstance(usage_summary, dict) or not isinstance(response_usage, dict):
+        return 0
+    model = str(response_usage.get("model", "")).strip()
+    entry = usage_summary.get(model)
+    return extract_thinking_tokens(entry) if isinstance(entry, dict) else 0
+
+
+def _merge_summary_reasoning_delta(
+    usage_summary: dict[str, Any] | None,
+    response_usage: dict[str, Any] | None,
+    *,
+    before_tokens: int,
+) -> None:
+    if not isinstance(usage_summary, dict) or not isinstance(response_usage, dict):
+        return
+    thinking_tokens = extract_thinking_tokens(response_usage)
+    if not thinking_tokens:
+        return
+    model = str(response_usage.get("model", "")).strip()
+    entry = usage_summary.get(model)
+    if not isinstance(entry, dict):
+        return
+
+    already_recorded = max(extract_thinking_tokens(entry) - int(before_tokens or 0), 0)
+    missing_tokens = max(thinking_tokens - already_recorded, 0)
+    if not missing_tokens:
+        return
+    entry["thinking_tokens"] = _int_value(entry.get("thinking_tokens")) + missing_tokens
+    entry["reasoning_tokens"] = _int_value(entry.get("reasoning_tokens")) + missing_tokens
 
 
 def _select_usage(usage: dict[str, Any], *, preferred_model: str = "") -> dict[str, Any]:
