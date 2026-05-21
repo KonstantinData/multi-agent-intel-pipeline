@@ -260,7 +260,7 @@ AssuranceShadowRecord
 - gate_verdict: GateVerdict
 - gate_signals: TaskAssuranceSignals
 - escalation_reason: list[string]
-- actual_critic_delta: ActualCriticDelta | null
+- actual_critic_delta: CriticDeltaRecord | null
 ```
 
 The record is observational. It does not change runtime behavior in ADR-004.
@@ -268,7 +268,7 @@ The record is observational. It does not change runtime behavior in ADR-004.
 is wired. A temporary `null` is allowed only during the first wiring step and
 must not be treated as evidence that the Critic changed nothing.
 
-## ActualCriticDelta
+## CriticDeltaRecord
 
 `actual_critic_delta` is the minimum viable comparison between the hypothetical
 gate decision and the actual Critic result.
@@ -276,7 +276,7 @@ gate decision and the actual Critic result.
 Canonical fields:
 
 ```text
-ActualCriticDelta
+CriticDeltaRecord
 - changed_outcome: bool
 - rejected_points_count: int
 - failed_core_rules: list[string]
@@ -337,7 +337,7 @@ Initial implementation files:
   - `TaskAssurancePolicy`
   - `GateVerdict`
   - `AssuranceShadowRecord`
-  - `ActualCriticDelta`
+  - `CriticDeltaRecord`
   - `evaluate_gate`
 - `tests/architecture/test_assurance.py`
   - pure unit tests; no AG2 dependency
@@ -355,7 +355,7 @@ Integration points:
 
 - Typed structures are implemented in a dependency-light module.
 - Unit tests cover threshold clamping, criticality behavior, null signals, LTM
-  no-bonus behavior, and `ActualCriticDelta`.
+  no-bonus behavior, and `CriticDeltaRecord`.
 - At least one end-to-end run emits shadow records without changing Critic or
   Judge execution behavior.
 - A short observation plan defines how many runs are needed before any fast
