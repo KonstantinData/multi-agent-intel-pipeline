@@ -1,6 +1,6 @@
 # ADR-004: Progressive Assurance Shadow Mode
 
-Status: Draft
+Status: Proposed
 
 Date: 2026-05-21
 
@@ -367,11 +367,51 @@ Integration points:
 ## Open Wiring Gaps
 
 - Follow-up `review_research` does not emit `AssuranceShadowRecord` in the
-  first runtime wiring PR. This is deferred until the initial-briefing shadow
-  path has produced at least one clean end-to-end observation run.
+  first runtime wiring PR. This is a non-blocking observability gap for moving
+  the ADR to Proposed because the initial-briefing path is the primary source of
+  fast-path activation data. Follow-up wiring should be handled in a separate
+  small PR after the initial observation data is reviewed.
 - Core/supporting rejected-point separation is not yet available in
   `TaskReviewArtifact`; `failed_core_rules` uses `rejected_points` as a
   conservative v1 approximation.
+
+## Initial Observation Result
+
+The first post-implementation end-to-end shadow run was completed on
+2026-05-21 after PR #101 merged.
+
+- Run ID: `20260521T141404Z`
+- Target: Phoenix Contact GmbH & Co. KG (`phoenixcontact.com`)
+- Runtime status: `blocked_not_meeting_ready`
+- Runtime error: none
+- Validation export:
+  `artifacts/runs/20260521T141404Z/adr004_shadow_validation.json`
+- Review artifacts checked: 11
+- `AssuranceShadowRecord` coverage: 11/11 persisted review artifacts
+- `gate_verdict.would_auto_accept`: `false` for all records because the
+  default policy has `auto_accept_allowed=false`
+- `actual_critic_delta`: present for all records
+- `requires_critic`: computed for all records; all 11 were `true` in this run
+  because confidence was below threshold
+- Critic execution: unchanged; no fast path was activated
+
+This satisfies the minimum evidence required to move ADR-004 from Draft to
+Proposed. It does not justify activating the fast path.
+
+## Observation Plan Before Fast-Path Activation
+
+Before any ADR or PR may enable auto-accept behavior:
+
+- collect at least three additional initial-briefing observation runs across
+  industrial goods, medical technology, and electrical engineering targets;
+- compare gate verdicts with `actual_critic_delta`, especially cases where a
+  future policy would have `requires_critic=false`;
+- record false-negative risk: cases where the gate would have skipped Critic
+  but the actual Critic found blocking or material issues;
+- review whether per-task thresholds need to differ by `task_key`,
+  `department`, and `task_criticality`;
+- keep `auto_accept_allowed=false` until this analysis is documented in a
+  follow-up ADR or ADR amendment.
 
 ## Acceptance Criteria For Moving To Proposed
 
@@ -382,6 +422,8 @@ Integration points:
   Judge execution behavior.
 - A short observation plan defines how many runs are needed before any fast
   path can be considered.
+
+Criteria status: satisfied by PR #100, PR #101, and run `20260521T141404Z`.
 
 ## Related
 
