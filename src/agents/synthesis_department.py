@@ -24,12 +24,17 @@ from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgen
 
 from src.config.settings import (
     get_openai_api_key,
+    get_role_model_profile,
     get_role_model_selection,
     resolve_model_temperature,
 )
 from src.domain.intake import SupervisorBrief
 from src.models.schemas import BackRequest
-from src.orchestration.ag2_usage import build_ag2_usage_delta, snapshot_ag2_usage
+from src.orchestration.ag2_usage import (
+    build_ag2_usage_delta,
+    install_ag2_reasoning_usage_patch,
+    snapshot_ag2_usage,
+)
 from src.orchestration.envelope import resolve_admission, resolve_confidence, resolve_report_segment
 from src.orchestration.speaker_selector import build_synthesis_selector
 
@@ -532,13 +537,19 @@ When {self.name} asks for a final decision:
     # ------------------------------------------------------------------
 
     def _llm_config(self, role: str) -> dict[str, Any]:
+        install_ag2_reasoning_usage_patch()
         model, _ = get_role_model_selection(role)
         api_key = get_openai_api_key()
         if not api_key:
             return False  # type: ignore[return-value]
+        config_entry: dict[str, Any] = {"model": model, "api_key": api_key}
         cfg: dict[str, Any] = {
-            "config_list": [{"model": model, "api_key": api_key}],
+            "config_list": [config_entry],
         }
+        profile = get_role_model_profile(role)
+        reasoning_effort = profile.default_reasoning_policy.effort
+        if profile.supports_reasoning and reasoning_effort != "none":
+            config_entry["reasoning_effort"] = reasoning_effort
         temperature = resolve_model_temperature(model, 0.1)
         if temperature is not None:
             cfg["temperature"] = temperature

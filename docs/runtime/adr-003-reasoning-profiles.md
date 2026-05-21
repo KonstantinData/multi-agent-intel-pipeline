@@ -1,6 +1,6 @@
 # ADR-003: RoleModelProfile And StepReasoningPolicy
 
-Status: Draft
+Status: Proposed
 
 Date: 2026-05-20
 
@@ -24,8 +24,8 @@ ADR-001 already added `intent.reasoning_policy` and
 `execution.reasoning_realized` to `RuntimeStep`. ADR-002 added the telemetry
 path for `reasoning.effort_planned`, `reasoning.effort_used`, token metrics,
 and usage metrics. The ADR-001 observation sprint did not include a
-reasoning-capable model run, so there is still no observed data for
-`thinking_tokens` or planned-vs-realized reasoning deltas.
+reasoning-capable model run, so ADR-003 needed a controlled validation path for
+`thinking_tokens` and planned-vs-realized reasoning deltas.
 
 ADR-003 defines the configuration and policy layer needed to run one controlled
 reasoning-capable validation run and later tune reasoning budgets from traces.
@@ -349,6 +349,87 @@ Remaining follow-up before promotion:
   exists and promote ADR-003 only if at least one high-effort step has realized
   reasoning metadata.
 
+### Validation Run 3 — 2026-05-21
+
+Run metadata:
+
+- `run_id`: `20260521T081418Z`
+- Company: ZIEHL-ABEGG SE
+- Domain: `ziehl-abegg.com`
+- Industry class: mechanical engineering / ventilation, drive, and control
+  technology
+- Storage profile: `local_dev`
+- RuntimeSteps: enabled
+- OTel flag: disabled for local step-trace-only validation
+- Narrow reasoning-capable overrides: Judge roles, `SynthesisJudge`, and
+  `MeetingReadinessGate` profile set to `gpt-5-mini`; Researchers remained on
+  the existing non-reasoning profile
+- Code state: branch `codex/ag2-reasoning-token-telemetry`
+- Implementation under validation:
+  - AG2 OpenAI usage enrichment preserves provider `reasoning_tokens` /
+    `thinking_tokens`
+  - AG2 usage summaries retain reasoning-token deltas
+  - AG2 role configs pass `reasoning_effort` inside the `config_list` entry
+
+Discarded validation attempts before this run:
+
+- `20260521T081244Z` / Phoenix Contact failed before AG2 execution because the
+  homepage fetch was denied.
+- `20260521T081312Z` / ZIEHL-ABEGG reached first-pass setup but exposed an AG2
+  config placement bug: `reasoning_effort` was invalid as a top-level
+  `llm_config` field and must live in the OpenAI `config_list` entry.
+
+Run outcome:
+
+- Final status: `blocked_not_meeting_ready`
+- `step_trace.json` persisted with 83 steps
+- Usage-bearing steps: 11
+- AG2 usage-bearing steps: 1
+- The AG2 usage-bearing step was
+  `synthesis / SynthesisJudge / ag2.synthesis_judge_usage`
+- `SynthesisJudge` usage payload:
+  - provider: `openai`
+  - model: `gpt-5-mini`
+  - `llm_calls`: 1
+  - `prompt_tokens`: 1450
+  - `completion_tokens`: 4962
+  - `total_tokens`: 6412
+  - `thinking_tokens`: 3840
+  - estimated cost: USD 0.0102865
+- `execution.reasoning_realized` steps: 1
+- Realized reasoning payload:
+  - `effort_used`: `high`
+  - `thinking_tokens`: 3840
+  - `reasoning_summary_available`: `false`
+- `thinking_tokens` total: 3840
+
+Answers to the validation questions:
+
+- `intent.reasoning_policy` reaches a reasoning-capable AG2 adjudication step.
+- AG2 now emits a usage-bearing RuntimeStep for the observed `SynthesisJudge`
+  model call.
+- Provider reasoning-token telemetry is preserved through AG2 and mapped into
+  `execution.usage.thinking_tokens`.
+- The StepEmitter now derives `execution.reasoning_realized` for the same
+  high-effort step.
+- `MeetingReadinessGate` remains deterministic and correctly has no realized
+  provider usage.
+
+Conclusion:
+
+Validation Run 3 satisfies the ADR-003 promotion gate: at least one high-effort
+reasoning-capable step has realized reasoning metadata in the persisted
+RuntimeStep trace. ADR-003 can move from `Draft` to `Proposed`.
+
+Remaining follow-up after promotion:
+
+- Keep monitoring whether AG2 preserves reasoning-token metadata natively in a
+  future version so the local compatibility patch can be removed.
+- Decide whether Judge and SynthesisJudge should keep identical high-effort
+  profiles or receive separate caps after more traces exist.
+- Resolve or suppress AG2 pricing warnings for dated model aliases so cost
+  telemetry can be trusted for budget tuning.
+
 ## Goals
 
 - Replace flat role model defaults with a typed `RoleModelProfile` concept.
@@ -401,18 +482,15 @@ Remaining follow-up before promotion:
 
 ## Open Questions
 
-- Which exact reasoning-capable model should be used for the first validation
-  run in the deployed environment?
 - Should Judge and SynthesisJudge use the same profile or separate caps?
 - Should `max_thinking_tokens` be global, per role, or per step rule?
 - Should `MeetingReadinessGate` be promoted to an explicit model-backed actor,
   or should it remain deterministic with high reasoning only in adjacent
   synthesis/judge steps?
 - What cost ceiling per run is acceptable for high-effort reasoning?
-- Which OpenAI or AG2 integration path exposes reasoning-token telemetry for
-  reasoning-capable models in a stable machine-readable form?
-- Should the runtime bypass AG2 for high-leverage adjudication calls when AG2
-  cannot expose provider reasoning metadata?
+- Should the local AG2 usage compatibility patch be upstreamed, kept as a
+  version-gated shim, or removed once AG2 preserves reasoning-token metadata
+  natively?
 
 ## Consequences
 
