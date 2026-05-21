@@ -11,7 +11,10 @@ from src.orchestration.assurance import (
     CriticDeltaRecord,
     TaskAssurancePolicy,
     TaskAssuranceSignals,
+    build_assurance_shadow_record,
     evaluate_gate,
+    get_default_assurance_policy,
+    score_required_fields,
 )
 
 
@@ -49,6 +52,7 @@ def _policy(
         critic_required_below=threshold,
         judge_required_on=judge_required_on,  # type: ignore[arg-type]
         required_source_types=("primary",),
+        required_payload_fields=("company_name",),
         task_criticality=criticality,  # type: ignore[arg-type]
     )
 
@@ -172,6 +176,75 @@ def test_policy_unknown_source_date_scoring_is_explicit() -> None:
 
     assert neutral == 0.5
     assert penalize == 0.0
+
+
+def test_required_payload_fields_are_serialized() -> None:
+    payload = _policy().to_dict()
+
+    assert payload["required_payload_fields"] == ["company_name"]
+
+
+def test_score_required_fields_returns_none_without_configured_fields() -> None:
+    assert score_required_fields({"company_name": "ACME"}, ()) is None
+
+
+def test_score_required_fields_counts_only_present_non_empty_values() -> None:
+    assert (
+        score_required_fields(
+            {
+                "company_name": "ACME",
+                "industry": "  ",
+                "products": [],
+                "website": "https://example.com",
+            },
+            ("company_name", "industry", "products", "website"),
+        )
+        == 0.5
+    )
+
+
+def test_default_policy_disables_fast_path_but_preserves_gate_verdict() -> None:
+    policy = get_default_assurance_policy(
+        "company_overview",
+        required_payload_fields=("company_name",),
+    )
+    verdict = evaluate_gate(
+        TaskAssuranceSignals(
+            required_fields_score=1.0,
+            source_mix_score=1.0,
+            source_freshness_score=1.0,
+            contradiction_score=1.0,
+            evidence_strength_score=1.0,
+            task_criticality="medium",
+        ),
+        policy,
+    )
+
+    assert policy.auto_accept_allowed is False
+    assert verdict.requires_critic is False
+    assert verdict.would_auto_accept is False
+
+
+def test_build_shadow_record_uses_required_field_score_and_critic_delta() -> None:
+    policy = get_default_assurance_policy(
+        "company_overview",
+        required_payload_fields=("company_name", "industry"),
+    )
+    shadow = build_assurance_shadow_record(
+        payload={"company_name": "ACME", "industry": ""},
+        policy=policy,
+        approved=False,
+        core_passed=1,
+        core_total=2,
+        rejected_points=("industry missing",),
+        issues=("Core field missing.",),
+    )
+
+    assert shadow.gate_signals.required_fields_score == 0.5
+    assert shadow.gate_verdict.would_auto_accept is False
+    assert shadow.actual_critic_delta is not None
+    assert shadow.actual_critic_delta.failed_core_rules == ("industry missing",)
+    assert shadow.actual_critic_delta.critic_severity == "blocking"
 
 
 def test_validation_rejects_invalid_scores_and_thresholds() -> None:

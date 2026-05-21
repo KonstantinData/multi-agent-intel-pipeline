@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 ASSURANCE_SIGNAL_SCHEMA_VERSION = "2026-05-21.1"
-ASSURANCE_SCORING_VERSION = "2026-05-21.1"
+ASSURANCE_SCORING_VERSION = "2026-05-21.2"
 ASSURANCE_WEIGHTS_VERSION = "2026-05-21.1"
-TASK_ASSURANCE_POLICY_VERSION = "2026-05-21.1"
+TASK_ASSURANCE_POLICY_VERSION = "2026-05-21.2"
 
 TaskCriticality = Literal["low", "medium", "high", "critical"]
 JudgeCondition = Literal["conflict", "max_retries", "critical_decision", "ambiguity"]
@@ -67,6 +67,37 @@ def _validate_optional_score(name: str, value: float | None) -> None:
         return
     if not (0.0 <= value <= 1.0):
         raise ValueError(f"{name} must be in [0.0, 1.0], got {value!r}")
+
+
+def _is_present_payload_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    return True
+
+
+def score_required_fields(
+    payload: dict[str, Any],
+    required_fields: tuple[str, ...],
+) -> float | None:
+    """Score required payload field presence.
+
+    Returns None when no required fields are configured so callers do not
+    accidentally treat an unknown requirement set as perfect evidence.
+    """
+    normalized_fields = tuple(field for field in required_fields if field.strip())
+    if not normalized_fields:
+        return None
+
+    present = sum(
+        1
+        for field_name in normalized_fields
+        if field_name in payload and _is_present_payload_value(payload[field_name])
+    )
+    return round(present / len(normalized_fields), 6)
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +176,7 @@ class TaskAssurancePolicy:
     judge_required_on: frozenset[JudgeCondition]
     required_source_types: tuple[str, ...]
     task_criticality: TaskCriticality
+    required_payload_fields: tuple[str, ...] = ()
     policy_version: str = TASK_ASSURANCE_POLICY_VERSION
     preferred_source_types: tuple[str, ...] = ()
     minimum_source_count: int = 0
@@ -156,7 +188,11 @@ class TaskAssurancePolicy:
             raise ValueError("task_key must not be empty")
         if self.task_criticality not in _VALID_TASK_CRITICALITIES:
             raise ValueError(f"task_criticality must be one of {_VALID_TASK_CRITICALITIES}")
-        unknown_judge_conditions = set(self.judge_required_on) - _VALID_JUDGE_CONDITIONS
+        unknown_judge_conditions = {
+            str(item)
+            for item in self.judge_required_on
+            if item not in _VALID_JUDGE_CONDITIONS
+        }
         if unknown_judge_conditions:
             raise ValueError(f"unknown judge condition(s): {sorted(unknown_judge_conditions)}")
         if self.unknown_source_dates_policy not in _VALID_UNKNOWN_SOURCE_DATE_POLICIES:
@@ -182,6 +218,7 @@ class TaskAssurancePolicy:
             "critic_required_below": self.critic_required_below,
             "judge_required_on": sorted(self.judge_required_on),
             "required_source_types": list(self.required_source_types),
+            "required_payload_fields": list(self.required_payload_fields),
             "preferred_source_types": list(self.preferred_source_types),
             "minimum_source_count": self.minimum_source_count,
             "task_criticality": self.task_criticality,
@@ -272,6 +309,106 @@ class AssuranceShadowRecord:
                 else None
             ),
         }
+
+
+def get_default_assurance_policy(
+    task_key: str,
+    *,
+    task_criticality: TaskCriticality = "medium",
+    required_payload_fields: tuple[str, ...] = (),
+    required_source_types: tuple[str, ...] = (),
+) -> TaskAssurancePolicy:
+    """Return the conservative ADR-004 v1 shadow policy for one task.
+
+    The production fast path is explicitly disabled. Gate outputs are therefore
+    observational until shadow data proves a safer per-task policy.
+    """
+    return TaskAssurancePolicy(
+        task_key=task_key,
+        auto_accept_allowed=False,
+        critic_required_below=0.7,
+        judge_required_on=frozenset({"conflict", "critical_decision"}),
+        required_source_types=required_source_types,
+        required_payload_fields=required_payload_fields,
+        task_criticality=task_criticality,
+    )
+
+
+def _critic_severity(
+    *,
+    approved: bool,
+    core_passed: int,
+    core_total: int,
+    rejected_points_count: int,
+    missing_points_count: int,
+    issues_count: int,
+    method_issue: bool,
+) -> CriticSeverity:
+    if (
+        not approved
+        and ((core_total > 0 and core_passed < core_total) or method_issue)
+    ):
+        return "blocking"
+    if not approved or rejected_points_count or missing_points_count:
+        return "major"
+    if issues_count or method_issue:
+        return "minor"
+    return "none"
+
+
+def build_assurance_shadow_record(
+    *,
+    payload: dict[str, Any],
+    policy: TaskAssurancePolicy,
+    approved: bool,
+    core_passed: int,
+    core_total: int,
+    rejected_points: tuple[str, ...],
+    missing_points: tuple[str, ...] = (),
+    issues: tuple[str, ...] = (),
+    method_issue: bool = False,
+    escalation_reason: tuple[str, ...] = (),
+) -> AssuranceShadowRecord:
+    """Build the ADR-004 shadow record from observable review-path data."""
+    signals = TaskAssuranceSignals(
+        required_fields_score=score_required_fields(
+            payload,
+            policy.required_payload_fields,
+        ),
+        source_mix_score=None,
+        source_freshness_score=None,
+        contradiction_score=None,
+        evidence_strength_score=None,
+        task_criticality=policy.task_criticality,
+        policy_version=policy.policy_version,
+    )
+    verdict = evaluate_gate(signals, policy)
+    severity = _critic_severity(
+        approved=approved,
+        core_passed=core_passed,
+        core_total=core_total,
+        rejected_points_count=len(rejected_points),
+        missing_points_count=len(missing_points),
+        issues_count=len(issues),
+        method_issue=method_issue,
+    )
+    material_critic_issue = severity in {"major", "blocking"} or not approved
+    gate_would_skip_review = not verdict.requires_critic and not verdict.requires_judge
+    critic_delta = CriticDeltaRecord(
+        changed_outcome=not approved,
+        rejected_points_count=len(rejected_points),
+        failed_core_rules=rejected_points,
+        critic_severity=severity,
+        would_have_blocked_auto_accept=(
+            gate_would_skip_review and material_critic_issue
+        ),
+    )
+    return AssuranceShadowRecord(
+        gate_verdict=verdict,
+        gate_signals=signals,
+        escalation_reason=escalation_reason,
+        actual_critic_delta=critic_delta,
+    )
 
 
 def _score_value(value: float | None) -> float:

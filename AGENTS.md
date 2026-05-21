@@ -357,6 +357,7 @@ If local `main` is ahead with unsigned commits, create a PR branch from
 | `src/orchestration/follow_up.py` | run loading, follow-up routing, persisted follow-up answers |
 | `src/orchestration/followup_config.py` | follow-up routing constants and section mapping |
 | `src/orchestration/contracts.py` | typed runtime contracts and department artifact state |
+| `src/orchestration/assurance.py` | ADR-004 progressive assurance signals, policies, and shadow gate records |
 | `src/orchestration/contract_validation.py` | dependency-light contract validation helpers |
 | `src/orchestration/envelope.py` | canonical F2 admission gate for department package envelopes |
 | `src/orchestration/department_knowledge.py` | department source/policy KB loading and acceptance-gate evaluation |

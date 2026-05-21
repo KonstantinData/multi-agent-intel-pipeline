@@ -128,6 +128,10 @@ from src.orchestration.ag2_usage import (
     install_ag2_reasoning_usage_patch,
     snapshot_ag2_usage,
 )
+from src.orchestration.assurance import (
+    build_assurance_shadow_record,
+    get_default_assurance_policy,
+)
 from src.orchestration.contract_validation import validate_payload_against_task_schema
 from src.orchestration.contracts import (
     DepartmentPolicy,
@@ -761,6 +765,30 @@ class DepartmentLeadAgent:
                 attempt=artifact.attempt,
                 reviewer=self.critic_name,
             )
+            try:
+                assurance_policy = get_default_assurance_policy(
+                    task_key,
+                    required_payload_fields=tuple(self.department_policy.required_fields),
+                    required_source_types=tuple(self.department_policy.source_priority),
+                )
+                review_artifact.assurance_shadow = build_assurance_shadow_record(
+                    payload=artifact.payload,
+                    policy=assurance_policy,
+                    approved=review_artifact.approved,
+                    core_passed=review_artifact.core_passed,
+                    core_total=review_artifact.core_total,
+                    rejected_points=tuple(review_artifact.rejected_points),
+                    missing_points=tuple(review_artifact.missing_points),
+                    issues=tuple(review_artifact.issues),
+                    method_issue=review_artifact.method_issue,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "assurance shadow emission failed: task=%s department=%s error=%s",
+                    task_key,
+                    self.department,
+                    exc,
+                )
             run_state.record_review_artifact(review_artifact)
 
             if memory_store is not None:
@@ -1606,6 +1634,8 @@ class DepartmentLeadAgent:
             }, ensure_ascii=False)
 
         def review_research(task_key: Annotated[str, "task key"]) -> str:
+            # TODO(ADR-004): emit AssuranceShadowRecord for follow-up
+            # review_research once initial-briefing shadow wiring is validated.
             artifact = run_state.latest_artifact(task_key)
             if artifact is None:
                 return json.dumps(

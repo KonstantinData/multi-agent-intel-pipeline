@@ -15,6 +15,10 @@ import pytest
 from pydantic import ValidationError
 
 from src.models.schemas import DepartmentPackage
+from src.orchestration.assurance import (
+    build_assurance_shadow_record,
+    get_default_assurance_policy,
+)
 from src.orchestration.contracts import (
     DEPENDENCY_SATISFYING_OUTCOMES,
     NON_TERMINAL_OUTCOMES,
@@ -107,6 +111,39 @@ class TestTaskReviewArtifact:
         assert artifact.approved is False
         assert artifact.method_issue is True
         assert "company_name is n/v" in artifact.issues
+
+    def test_review_serializes_optional_assurance_shadow(self):
+        policy = get_default_assurance_policy(
+            "company_fundamentals",
+            required_payload_fields=("company_name",),
+        )
+        shadow = build_assurance_shadow_record(
+            payload={"company_name": "ACME GmbH"},
+            policy=policy,
+            approved=True,
+            core_passed=1,
+            core_total=1,
+            rejected_points=(),
+        )
+        artifact = TaskReviewArtifact(
+            task_key="company_fundamentals",
+            attempt=1,
+            approved=True,
+            assurance_shadow=shadow,
+        )
+        payload = artifact.to_dict()
+
+        assert payload["assurance_shadow"]["shadow_mode"] is True
+        assert payload["assurance_shadow"]["gate_signals"]["required_fields_score"] == 1.0
+
+    def test_review_serializes_absent_assurance_shadow_for_legacy_artifacts(self):
+        artifact = TaskReviewArtifact(
+            task_key="company_fundamentals",
+            attempt=1,
+            approved=True,
+        )
+
+        assert artifact.to_dict()["assurance_shadow"] is None
 
 
 # ===========================================================================
