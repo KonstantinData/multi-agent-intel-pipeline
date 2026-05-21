@@ -418,11 +418,12 @@ discoverable tools.
 
 - ADR-002: OpenTelemetry and complete usage telemetry on steps.
 - ADR-003: `RoleModelProfile` and `StepReasoningPolicy`.
-- ADR-004: Provider adapter boundary, with OpenAI as the first adapter.
-- ADR-005: MCP capability layer.
-- ADR-006: Long-term process memory retrieval on Postgres/pgvector.
-- ADR-007: Procedural skills as versioned task recipes.
-- ADR-008: Step-trace eval framework.
+- ADR-004: Progressive assurance shadow mode.
+- ADR-005: Provider adapter boundary, with OpenAI as the first adapter.
+- ADR-006: MCP capability layer.
+- ADR-007: Long-term process memory retrieval on Postgres/pgvector.
+- ADR-008: Procedural skills as versioned task recipes.
+- ADR-009: Step-trace eval framework.
 
 ## Consequences
 
