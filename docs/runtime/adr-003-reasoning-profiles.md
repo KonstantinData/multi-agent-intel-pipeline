@@ -259,7 +259,9 @@ ADR-003 remains `Draft`.
 Required follow-up before promotion:
 
 - Emit usage-bearing RuntimeSteps for AG2 adjudication/model-call turns,
-  especially Judge and `SynthesisJudge`.
+  especially Judge and `SynthesisJudge`. Completed for the observed
+  `SynthesisJudge` path by PR #95 and the SynthesisRuntime forwarding fix in
+  PR #96.
 - Capture provider usage for those turns and map reasoning/thinking tokens into
   `execution.usage.thinking_tokens` plus
   `execution.reasoning_realized.thinking_tokens`.
@@ -269,6 +271,82 @@ Required follow-up before promotion:
   telemetry can be trusted.
 - Re-run one controlled validation run after these fixes and promote ADR-003
   only if at least one high-effort reasoning-capable step has realized
+  reasoning metadata.
+
+### Validation Run 2 — 2026-05-20
+
+Run metadata:
+
+- `run_id`: `20260520T222636Z`
+- Company: Phoenix Contact GmbH & Co. KG
+- Domain: `phoenixcontact.com`
+- Industry class: electrical engineering / industrial automation
+- Storage profile: `local_dev`
+- RuntimeSteps: enabled
+- OTel flag: enabled, but local OTel SDK availability was not required for this
+  step-trace validation
+- Narrow reasoning-capable overrides: Judge roles, `SynthesisJudge`, and
+  `MeetingReadinessGate` profile set to `gpt-5-mini`; Researchers remained on
+  the existing non-reasoning profile
+- Code state: `main` after PR #95 and PR #96
+
+Run outcome:
+
+- Final status: `blocked_not_meeting_ready`
+- `step_trace.json` persisted with 53 steps
+- Usage-bearing steps: 10
+- AG2 usage-bearing steps: 1
+- The AG2 usage-bearing step was
+  `synthesis / SynthesisJudge / ag2.synthesis_judge_usage`
+- `SynthesisJudge` usage payload:
+  - provider: `openai`
+  - model: `gpt-5-mini`
+  - `llm_calls`: 1
+  - `prompt_tokens`: 1439
+  - `completion_tokens`: 1787
+  - `total_tokens`: 3226
+- High-effort planned steps: 2
+  - `ag2.synthesis_judge_usage`
+  - `meeting_readiness.evaluate`
+- `execution.reasoning_realized` steps: 0
+- `thinking_tokens` total: 0
+
+Answers to the validation questions:
+
+- `intent.reasoning_policy` now reaches a reasoning-capable AG2 adjudication
+  step.
+- AG2 usage emission now records the observed `SynthesisJudge` model call in
+  the persisted `step_trace.json`.
+- The previous `SynthesisRuntime.run(step_emitter=...)` integration failure is
+  resolved by PR #96.
+- The provider/AG2 path still does not expose `thinking_tokens` in the usage
+  summary, so `execution.reasoning_realized` cannot be populated.
+- `MeetingReadinessGate` remains deterministic and correctly has no realized
+  provider usage.
+- AG2 still emits zero-price warnings for dated model aliases, so cost telemetry
+  is still not reliable enough for budget tuning.
+
+Conclusion:
+
+Validation Run 2 confirms that the planned-policy path and AG2 usage-step
+emission path now work for `SynthesisJudge`. It still does **not** satisfy the
+ADR-003 promotion gate because no high-effort reasoning-capable step has
+realized reasoning metadata. ADR-003 remains `Draft`.
+
+Remaining follow-up before promotion:
+
+- Identify or implement a provider/API path that exposes reasoning token
+  counts for reasoning-capable model calls.
+- Extend the AG2 adapter or bypass path so those counts are mapped into
+  `execution.usage.thinking_tokens` and
+  `execution.reasoning_realized.thinking_tokens`.
+- Decide whether the validation criterion should require true provider
+  reasoning-token telemetry or accept usage-only telemetry for AG2 models that
+  do not expose it.
+- Resolve or suppress AG2 pricing warnings for dated model aliases so cost
+  telemetry can be trusted.
+- Re-run one controlled validation run after the reasoning-token telemetry path
+  exists and promote ADR-003 only if at least one high-effort step has realized
   reasoning metadata.
 
 ## Goals
@@ -331,6 +409,10 @@ Required follow-up before promotion:
   or should it remain deterministic with high reasoning only in adjacent
   synthesis/judge steps?
 - What cost ceiling per run is acceptable for high-effort reasoning?
+- Which OpenAI or AG2 integration path exposes reasoning-token telemetry for
+  reasoning-capable models in a stable machine-readable form?
+- Should the runtime bypass AG2 for high-leverage adjudication calls when AG2
+  cannot expose provider reasoning metadata?
 
 ## Consequences
 
