@@ -5,12 +5,17 @@ import json
 from pathlib import Path
 
 from src.memory.consolidation import consolidate_role_patterns
-from src.memory.policies import should_store_strategy
+from src.memory.policies import should_store_memory_pattern
 
 
-def backfill_long_term_memory_from_runs(*, memory_store, runs_dir: str | Path) -> int:
+def backfill_long_term_memory_from_runs(
+    *,
+    memory_store,
+    runs_dir: str | Path,
+    force: bool = False,
+) -> int:
     """Populate an empty long-term memory store from existing run artifacts."""
-    if memory_store.load():
+    if not force and hasattr(memory_store, "load") and memory_store.load():
         return 0
 
     inserted = 0
@@ -39,14 +44,6 @@ def backfill_long_term_memory_from_runs(*, memory_store, runs_dir: str | Path) -
             else {}
         )
         usable = bool(readiness.get("usable"))
-        if not should_store_strategy(
-            status=status,
-            usable=usable,
-            readiness_score=int(readiness.get("score", 0) or 0),
-            task_statuses=task_statuses if isinstance(task_statuses, dict) else {},
-        ):
-            continue
-
         patterns = consolidate_role_patterns(
             run_context=run_context,
             pipeline_data=pipeline_data,
@@ -54,7 +51,14 @@ def backfill_long_term_memory_from_runs(*, memory_store, runs_dir: str | Path) -
             usable=usable,
         )
         for pattern in patterns:
-            memory_store.upsert_strategy(pattern)
-            inserted += 1
+            if should_store_memory_pattern(
+                pattern=pattern,
+                status=status,
+                usable=usable,
+                readiness_score=int(readiness.get("score", 0) or 0),
+                task_statuses=task_statuses if isinstance(task_statuses, dict) else {},
+            ):
+                if memory_store.upsert_strategy(pattern):
+                    inserted += 1
 
     return inserted

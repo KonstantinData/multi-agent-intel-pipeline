@@ -466,13 +466,36 @@ def build_memory_context(
 
     if role_memory:
         successful_queries = []
-        for mem in role_memory[:3]:
+        source_strategies = []
+        evidence_patterns = []
+        task_recipes = []
+        critic_heuristics = []
+        for mem in role_memory[:8]:
+            mem_task_key = str(mem.get("task_key") or "")
+            if mem_task_key and mem_task_key != task_key:
+                continue
             # Prefer structural_queries (scrubbed); fall back to successful_queries
             # only for legacy compat, but skip entries that contain company names
             queries = mem.get("structural_queries") or mem.get("successful_queries", [])
             successful_queries.extend(queries[:5])
+            if isinstance(mem.get("source_strategy"), dict):
+                source_strategies.append(mem["source_strategy"])
+            if isinstance(mem.get("evidence_pattern"), dict):
+                evidence_patterns.append(mem["evidence_pattern"])
+            if isinstance(mem.get("task_recipe"), dict):
+                task_recipes.append(mem["task_recipe"])
+            if isinstance(mem.get("critic_acceptance_heuristic"), dict):
+                critic_heuristics.append(mem["critic_acceptance_heuristic"])
         if successful_queries:
             ctx["prior_successful_queries"] = dedup_list(successful_queries)[:10]
+        if source_strategies:
+            ctx["best_practice_source_strategy"] = source_strategies[:3]
+        if evidence_patterns:
+            ctx["best_practice_evidence_patterns"] = evidence_patterns[:3]
+        if task_recipes:
+            ctx["best_practice_task_recipes"] = task_recipes[:3]
+        if critic_heuristics:
+            ctx["critic_acceptance_heuristics"] = critic_heuristics[:3]
 
     return ctx
 

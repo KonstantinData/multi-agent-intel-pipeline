@@ -87,7 +87,7 @@ class LongTermMemoryStore(Protocol):
     ) -> list[dict[str, Any]]:
         ...
 
-    def upsert_strategy(self, pattern: dict[str, Any]) -> None:
+    def upsert_strategy(self, pattern: dict[str, Any]) -> bool:
         ...
 
     def healthcheck(self) -> StorageHealth:

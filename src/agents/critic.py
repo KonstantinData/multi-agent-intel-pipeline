@@ -103,6 +103,31 @@ def _evaluate_rule(rule: dict[str, Any], payload: dict[str, Any]) -> bool:
     return False
 
 
+def _select_critic_memory_guidance(
+    *,
+    task_key: str,
+    role_memory: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    guidance: list[dict[str, Any]] = []
+    for mem in (role_memory or [])[:5]:
+        mem_task_key = str(mem.get("task_key") or "")
+        if mem_task_key and mem_task_key != task_key:
+            continue
+        heuristic = mem.get("critic_acceptance_heuristic")
+        if not isinstance(heuristic, dict):
+            continue
+        guidance.append(
+            {
+                "task_key": mem_task_key or task_key,
+                "accepted_fields": list(heuristic.get("accepted_fields", []) or [])[:10],
+                "core_passed": int(heuristic.get("core_passed", 0) or 0),
+                "core_total": int(heuristic.get("core_total", 0) or 0),
+                "evidence_strength": str(heuristic.get("evidence_strength") or "unknown"),
+            }
+        )
+    return guidance[:3]
+
+
 # ---------------------------------------------------------------------------
 # CriticAgent
 # ---------------------------------------------------------------------------
@@ -221,6 +246,28 @@ class CriticAgent:
             }
             for rp in rejected_points
         ]
+        memory_guidance = _select_critic_memory_guidance(
+            task_key=task_key,
+            role_memory=role_memory,
+        )
+        revision_instructions = [
+            "Keep already accepted points stable.",
+            "Revise only the rejected or missing points.",
+            "Downgrade unsupported claims if stronger evidence cannot be found.",
+        ] if issues else []
+        if memory_guidance and issues:
+            accepted_field_targets = _dedup_safe(
+                [
+                    field
+                    for guidance in memory_guidance
+                    for field in guidance.get("accepted_fields", [])
+                ]
+            )[:10]
+            if accepted_field_targets:
+                revision_instructions.append(
+                    "Use prior accepted-task coverage as process guidance for fields: "
+                    + ", ".join(str(field) for field in accepted_field_targets)
+                )
 
         coding_brief = {
             "task_key": task_key,
@@ -251,14 +298,11 @@ class CriticAgent:
             "supporting_total": supporting_total,
             # Failed core rule messages become open_questions on degraded output
             "failed_rule_messages": failed_rule_messages,
-            "revision_instructions": [
-                "Keep already accepted points stable.",
-                "Revise only the rejected or missing points.",
-                "Downgrade unsupported claims if stronger evidence cannot be found.",
-            ] if issues else [],
+            "revision_instructions": revision_instructions,
             "feedback_to_worker": feedback_to_worker,
+            "memory_guidance": memory_guidance,
             "coding_brief": coding_brief,
             "field_issues": [],
             "objective": objective,
-            "role_memory_used": bool(role_memory),
+            "role_memory_used": bool(memory_guidance),
         }

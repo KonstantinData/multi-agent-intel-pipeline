@@ -356,6 +356,32 @@ class DepartmentLeadAgent:
             "policy_min_evidence_rules": dict(self.department_policy.min_evidence_rules),
         }
 
+    def _lead_best_practice_context(
+        self,
+        *,
+        assignments: list[Assignment],
+        role_memory: dict[str, list[dict[str, Any]]] | None,
+    ) -> list[dict[str, Any]]:
+        task_keys = {assignment.task_key for assignment in assignments}
+        context: list[dict[str, Any]] = []
+        for mem in (role_memory or {}).get(self.name, [])[:8]:
+            task_key = str(mem.get("task_key") or "")
+            if task_key and task_key not in task_keys:
+                continue
+            recipe = mem.get("task_recipe")
+            if not isinstance(recipe, dict):
+                continue
+            context.append(
+                {
+                    "task_key": task_key or str(recipe.get("task_key") or ""),
+                    "accepted_fields": list(recipe.get("accepted_fields", []) or [])[:8],
+                    "preferred_source_types": list(recipe.get("preferred_source_types", []) or [])[:6],
+                    "evidence_expectation": recipe.get("evidence_expectation", {}),
+                    "rationale": str(mem.get("rationale") or "")[:240],
+                }
+            )
+        return context[:5]
+
     def autogen_group_spec(self) -> dict[str, Any]:
         return {
             "framework": "AutoGen",
@@ -402,6 +428,12 @@ class DepartmentLeadAgent:
         )
 
         investigation_plan = self.build_investigation_plan(brief, assignments)
+        best_practice_memory = self._lead_best_practice_context(
+            assignments=assignments,
+            role_memory=role_memory,
+        )
+        if best_practice_memory:
+            investigation_plan["best_practice_memory"] = best_practice_memory
 
         # ── ConversableAgents ──────────────────────────────────────────────
         lead_ca = ConversableAgent(
@@ -1745,6 +1777,12 @@ class DepartmentLeadAgent:
             f"- {_e(str(field_name))}"
             for field_name in investigation_plan.get("policy_required_fields", [])[:8]
         ) or "- n/v"
+        best_practice_lines = "\n".join(
+            f"- task={_e(str(item.get('task_key', 'n/v')))}; "
+            f"accepted_fields={_e(str(item.get('accepted_fields', [])))}; "
+            f"sources={_e(str(item.get('preferred_source_types', [])))}"
+            for item in investigation_plan.get("best_practice_memory", [])[:5]
+        ) or "- n/v"
         return f"""You are {s_name}, the Lead of the {s_dept} in the Liquisto intelligence platform.
 
 ## Your contract (fixed by Supervisor)
@@ -1776,6 +1814,11 @@ The Supervisor sees only the contract handoff and the final package. It does NOT
 {required_field_lines}
 - Minimum evidence rules are checked on package finalization, not per turn.
 - If public information is exhausted, document the gap explicitly (for contacts: "keine freien Quellen").
+
+## Retrieved best-practice memory (guidance, not authority)
+Use these task recipes as prior process guidance when they match the assigned task.
+They are scrubbed process patterns from previously accepted tasks, not target-company facts.
+{best_practice_lines}
 
 ## Your group members
 - {s_researcher}: Runs web research. Calls run_research(task_key).

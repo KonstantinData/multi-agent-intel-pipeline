@@ -9,8 +9,9 @@ from typing import Any
 
 from src.storage.contracts import LongTermMemoryStore
 
-RETRIEVAL_SCHEMA_VERSION = "2026-05-12.1"
-RETRIEVAL_POLICY_VERSION = "2026-05-12.1"
+RETRIEVAL_SCHEMA_VERSION = "2026-05-21.1"
+SUPPORTED_RETRIEVAL_SCHEMA_VERSIONS = frozenset({"2026-05-12.1", RETRIEVAL_SCHEMA_VERSION})
+RETRIEVAL_POLICY_VERSION = "2026-05-21.1"
 DEFAULT_GENERAL_RETRIEVAL_LIMIT = 5
 DEFAULT_ROLE_RETRIEVAL_LIMIT = 3
 
@@ -125,8 +126,15 @@ def _content_text(item: dict[str, Any]) -> str:
         "pattern_scope",
         "industry_hint",
         "content_text",
+        "pattern_type",
+        "best_practice_type",
+        "task_key",
         "rationale",
         "structural_queries",
+        "source_strategy",
+        "evidence_pattern",
+        "task_recipe",
+        "critic_acceptance_heuristic",
         "common_defect_classes",
         "retry_trigger_patterns",
     ):
@@ -219,7 +227,7 @@ def _policy_rejection(context: RetrievalContext, item: dict[str, Any]) -> str:
     if context.role and item_scope and item_scope != context.pattern_scope:
         return "memory_scope_mismatch"
     schema_version = str(item.get("schema_version") or RETRIEVAL_SCHEMA_VERSION)
-    if schema_version != RETRIEVAL_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_RETRIEVAL_SCHEMA_VERSIONS:
         return "memory_schema_version_mismatch"
     return ""
 
@@ -257,6 +265,38 @@ def _enrich_pattern(
     return enriched
 
 
+def _select_diverse_patterns(
+    scored: list[tuple[float, str, dict[str, Any]]],
+    *,
+    limit: int,
+) -> list[tuple[float, str, dict[str, Any]]]:
+    """Prefer useful type diversity before filling remaining slots by score."""
+    selected: list[tuple[float, str, dict[str, Any]]] = []
+    selected_ids: set[str] = set()
+    seen_types: set[str] = set()
+
+    for row in scored:
+        _score, pattern_id, item = row
+        pattern_type = str(item.get("pattern_type") or item.get("best_practice_type") or "legacy")
+        if pattern_type in seen_types:
+            continue
+        selected.append(row)
+        selected_ids.add(pattern_id)
+        seen_types.add(pattern_type)
+        if len(selected) >= limit:
+            return selected
+
+    for row in scored:
+        _score, pattern_id, _item = row
+        if pattern_id in selected_ids:
+            continue
+        selected.append(row)
+        if len(selected) >= limit:
+            return selected
+
+    return selected
+
+
 def retrieve_strategy_batch(
     store: LongTermMemoryStore,
     *,
@@ -265,12 +305,13 @@ def retrieve_strategy_batch(
 ) -> RetrievalBatch:
     started = perf_counter()
     fallback_reason = "local_score_fallback_no_embedding"
+    candidate_limit = max(limit * 10, 25, limit)
     raw_candidates = store.retrieve(
         domain=context.normalized_domain,
         industry_hint=context.industry_hint,
         role=context.role,
         pattern_scope=context.pattern_scope,
-        limit=max(limit * 5, limit),
+        limit=candidate_limit,
     )
 
     rejected: list[dict[str, str]] = []
@@ -300,6 +341,7 @@ def retrieve_strategy_batch(
         scored.append((combined, _stable_pattern_id(item), item))
 
     scored.sort(key=lambda row: (-row[0], row[1]))
+    selected = _select_diverse_patterns(scored, limit=limit)
     patterns = [
         _enrich_pattern(
             context=context,
@@ -308,7 +350,7 @@ def retrieve_strategy_batch(
             rank=index + 1,
             fallback_reason=fallback_reason,
         )
-        for index, (score, _pattern_id, item) in enumerate(scored[:limit])
+        for index, (score, _pattern_id, item) in enumerate(selected)
     ]
     duration_ms = int((perf_counter() - started) * 1000)
     status = "ok"
@@ -328,10 +370,12 @@ def retrieve_strategy_batch(
         "query_summary": context.query_summary(),
         "result_count": len(patterns),
         "candidate_count": len(raw_candidates),
+        "candidate_limit": candidate_limit,
         "rejected_count": len(rejected),
         "rejections": rejected[:20],
         "duration_ms": duration_ms,
         "fallback_reason": fallback_reason,
+        "selection_strategy": "score_then_pattern_type_diversity",
     }
     return RetrievalBatch(patterns=patterns, snapshot=snapshot)
 

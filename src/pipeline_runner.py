@@ -28,7 +28,7 @@ from src.config import (
 from src.domain.intake import IntakeRequest, IntakeValidationError, SupervisorBrief
 from src.exporters.json_export import export_run
 from src.memory.consolidation import RETRIEVABLE_ROLE_ORDER, consolidate_role_patterns
-from src.memory.policies import should_store_strategy
+from src.memory.policies import should_store_memory_pattern
 from src.memory.retrieval import (
     DEFAULT_GENERAL_RETRIEVAL_LIMIT,
     DEFAULT_ROLE_RETRIEVAL_LIMIT,
@@ -2109,14 +2109,18 @@ def _assemble_report_and_export(
         status=finalization.status,
         usable=finalization.readiness["usable"],
     )
-    if role_patterns and should_store_strategy(
-        status=finalization.status,
-        usable=finalization.readiness["usable"],
-        readiness_score=finalization.readiness.get("score", 0),
-        task_statuses=dict(state.run_context.short_term_memory.task_statuses),
-    ):
+    stored_role_pattern_count = 0
+    if role_patterns:
         for pattern in role_patterns:
-            state.memory_store.upsert_strategy(pattern)
+            if should_store_memory_pattern(
+                pattern=pattern,
+                status=finalization.status,
+                usable=finalization.readiness["usable"],
+                readiness_score=finalization.readiness.get("score", 0),
+                task_statuses=dict(state.run_context.short_term_memory.task_statuses),
+            ):
+                if state.memory_store.upsert_strategy(pattern):
+                    stored_role_pattern_count += 1
     state.step_emitter.emit_narrated(
         phase="report_and_export",
         actor="PipelineRunner",
@@ -2127,7 +2131,8 @@ def _assemble_report_and_export(
         action_payload={
             "status": finalization.status,
             "role_pattern_count": len(role_patterns),
-            "stored_role_patterns": bool(role_patterns),
+            "stored_role_pattern_count": stored_role_pattern_count,
+            "stored_role_patterns": stored_role_pattern_count > 0,
         },
         state_transitions=[
             {"kind": "run_artifacts_ready_for_export", "status": finalization.status},

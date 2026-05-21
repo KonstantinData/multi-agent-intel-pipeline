@@ -26,7 +26,11 @@ from src.memory.consolidation import (
     consolidate_role_patterns,
 )
 from src.memory.long_term_store import FileLongTermMemoryStore
-from src.memory.policies import should_store_strategy
+from src.memory.policies import (
+    should_store_memory_pattern,
+    should_store_positive_task_pattern,
+    should_store_strategy,
+)
 from src.memory.retrieval import (
     DEFAULT_ROLE_RETRIEVAL_LIMIT,
     ROLE_PATTERN_SCOPES,
@@ -212,6 +216,67 @@ class TestConsolidationProcessSafety:
         )
         assert patterns == []
 
+    def test_consolidation_extracts_positive_patterns_from_blocked_accepted_tasks(self):
+        run_context = {
+            "run_id": "run-positive",
+            "intake": {"company_name": "ACME GmbH", "web_domain": "acme.de"},
+            "short_term_memory": {
+                "task_statuses": {"company_fundamentals": "accepted"},
+                "worker_reports": [
+                    {
+                        "worker": "CompanyResearcher",
+                        "task_key": "company_fundamentals",
+                        "objective": "Build verified company fundamentals for ACME GmbH.",
+                        "queries_used": ["ACME GmbH annual report manufacturing products"],
+                        "sources": [{"source_type": "owned_website"}, {"source_type": "registry"}],
+                        "evidence_packages": [
+                            {
+                                "claim_type": "fact",
+                                "confidence": "high",
+                                "source_quality": "high",
+                            }
+                        ],
+                    }
+                ],
+                "critic_reviews": {
+                    "company_fundamentals": {
+                        "approved": True,
+                        "accepted_points": ["company_name", "industry"],
+                        "core_passed": 2,
+                        "core_total": 2,
+                        "supporting_passed": 1,
+                        "supporting_total": 1,
+                        "evidence_strength": "strong",
+                    }
+                },
+                "sources": [],
+                "department_run_states": {},
+            },
+        }
+        patterns = consolidate_role_patterns(
+            run_context=run_context,
+            pipeline_data={
+                "company_profile": {
+                    "company_name": "ACME GmbH",
+                    "website": "acme.de",
+                    "industry": "Manufacturing",
+                }
+            },
+            status="blocked_not_meeting_ready",
+            usable=False,
+        )
+
+        pattern_types = {pattern["pattern_type"] for pattern in patterns}
+        assert {
+            "query_strategy",
+            "source_strategy",
+            "evidence_pattern",
+            "task_recipe",
+            "critic_acceptance_heuristic",
+        } <= pattern_types
+        assert all(pattern["admission_level"] == "task_positive" for pattern in patterns)
+        assert "acme" not in json.dumps(patterns, ensure_ascii=False).lower()
+
     def test_consolidation_extracts_critic_heuristics(self):
         run_context = {
             "short_term_memory": {
@@ -277,6 +342,37 @@ class TestMemoryPolicies:
         assert should_store_strategy(status="completed_but_not_usable", usable=False) is False
         assert should_store_strategy(status="failed", usable=False) is False
 
+    def test_should_store_positive_task_pattern_only_for_accepted_non_failed_tasks(self):
+        assert should_store_positive_task_pattern(
+            status="blocked_not_meeting_ready",
+            task_status="accepted",
+        )
+        assert not should_store_positive_task_pattern(status="failed", task_status="accepted")
+        assert not should_store_positive_task_pattern(
+            status="blocked_not_meeting_ready",
+            task_status="degraded",
+        )
+
+    def test_pattern_level_policy_preserves_full_run_gate(self):
+        assert should_store_memory_pattern(
+            pattern={"admission_level": "full_run"},
+            status="blocked_not_meeting_ready",
+            usable=False,
+            readiness_score=45,
+            task_statuses={"company_fundamentals": "accepted"},
+        ) is False
+        assert should_store_memory_pattern(
+            pattern={
+                "admission_level": "task_positive",
+                "task_key": "company_fundamentals",
+                "task_status": "accepted",
+            },
+            status="blocked_not_meeting_ready",
+            usable=False,
+            readiness_score=45,
+            task_statuses={"company_fundamentals": "accepted"},
+        ) is True
+
     def test_backfill_populates_empty_store_from_eligible_runs(self, tmp_path):
         runs_dir = tmp_path / "runs"
         run_dir = runs_dir / "20260329T193314Z"
@@ -321,6 +417,76 @@ class TestMemoryPolicies:
 
         assert inserted > 0
         assert memory_store.load()
+
+    def test_backfill_populates_task_positive_patterns_from_blocked_runs(self, tmp_path):
+        runs_dir = tmp_path / "runs"
+        run_dir = runs_dir / "20260521T081418Z"
+        run_dir.mkdir(parents=True)
+
+        (run_dir / "run_meta.json").write_text(
+            json.dumps({"status": "blocked_not_meeting_ready"}),
+            encoding="utf-8",
+        )
+        (run_dir / "pipeline_data.json").write_text(
+            json.dumps(
+                {
+                    "company_profile": {
+                        "company_name": "ACME GmbH",
+                        "website": "acme.de",
+                        "industry": "Manufacturing",
+                    },
+                    "research_readiness": {"usable": False, "score": 45},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_dir / "run_context.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "20260521T081418Z",
+                    "intake": {"company_name": "ACME GmbH", "web_domain": "acme.de"},
+                    "short_term_memory": {
+                        "task_statuses": {"company_fundamentals": "accepted"},
+                        "worker_reports": [
+                            {
+                                "worker": "CompanyResearcher",
+                                "task_key": "company_fundamentals",
+                                "objective": "Build verified company fundamentals for ACME GmbH.",
+                                "queries_used": ["ACME GmbH annual report manufacturing products"],
+                                "sources": [{"source_type": "owned_website"}],
+                                "evidence_packages": [
+                                    {
+                                        "claim_type": "fact",
+                                        "confidence": "high",
+                                        "source_quality": "high",
+                                    }
+                                ],
+                            }
+                        ],
+                        "sources": [],
+                        "critic_reviews": {
+                            "company_fundamentals": {
+                                "approved": True,
+                                "accepted_points": ["company_name"],
+                                "core_passed": 1,
+                                "core_total": 1,
+                                "supporting_passed": 0,
+                                "supporting_total": 0,
+                                "evidence_strength": "strong",
+                            }
+                        },
+                        "department_run_states": {},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        memory_store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        inserted = backfill_long_term_memory_from_runs(memory_store=memory_store, runs_dir=runs_dir)
+
+        assert inserted > 0
+        assert {item["admission_level"] for item in memory_store.load()} == {"task_positive"}
 
 
 # ===========================================================================
@@ -730,3 +896,70 @@ class TestContextualRetrieval:
         names = [item["name"] for item in retrieve_strategy_batch(store, context=context, limit=2).patterns]
 
         assert names == ["a-pattern", "b-pattern"]
+
+    def test_contextual_retrieval_prefers_pattern_type_diversity(self, tmp_path):
+        store = FileLongTermMemoryStore(tmp_path / "long_term_memory.json")
+        store.path.write_text(
+            json.dumps([
+                {
+                    "name": "a-query-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "pattern_type": "query_strategy",
+                    "structural_queries": ["{company} annual report product portfolio"],
+                    "score": 2.0,
+                },
+                {
+                    "name": "b-query-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "pattern_type": "query_strategy",
+                    "structural_queries": ["{company} inventory surplus signals"],
+                    "score": 2.0,
+                },
+                {
+                    "name": "c-query-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "pattern_type": "query_strategy",
+                    "structural_queries": ["{company} restructuring signals"],
+                    "score": 2.0,
+                },
+                {
+                    "name": "d-source-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "pattern_type": "source_strategy",
+                    "source_strategy": {"preferred_source_types": ["owned_website", "registry"]},
+                    "score": 1.0,
+                },
+                {
+                    "name": "e-evidence-pattern",
+                    "role": "CompanyResearcher",
+                    "pattern_scope": "researcher_strategy",
+                    "industry_hint": "Manufacturing",
+                    "pattern_type": "evidence_pattern",
+                    "evidence_pattern": {"confidence_counts": {"high": 2}},
+                    "score": 1.0,
+                },
+            ]),
+            encoding="utf-8",
+        )
+        context = RetrievalContext(
+            run_id="run",
+            normalized_domain="example.com",
+            industry_hint="Manufacturing",
+            role="CompanyResearcher",
+            target_scope="researcher_strategy",
+        )
+
+        batch = retrieve_strategy_batch(store, context=context, limit=3)
+
+        pattern_types = [item["pattern_type"] for item in batch.patterns]
+        assert pattern_types[0] == "query_strategy"
+        assert set(pattern_types) == {"query_strategy", "evidence_pattern", "source_strategy"}
+        assert batch.snapshot["selection_strategy"] == "score_then_pattern_type_diversity"
