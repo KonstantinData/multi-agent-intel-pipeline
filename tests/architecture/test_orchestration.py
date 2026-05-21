@@ -276,6 +276,39 @@ class TestCriticEvaluator:
         )
         assert not any("Worker field issue" in issue for issue in result["issues"])
 
+    def test_critic_surfaces_matching_memory_guidance_on_revision(self):
+        critic = CriticAgent("CompanyCritic")
+        rules = [
+            {
+                "check": "non_placeholder",
+                "field": "company_name",
+                "class": "core",
+                "message": "missing company_name",
+            }
+        ]
+        result = critic.review(
+            task_key="company_fundamentals",
+            section="company_profile",
+            objective="test",
+            payload={"company_name": "n/v"},
+            validation_rules=rules,
+            role_memory=[
+                {
+                    "task_key": "company_fundamentals",
+                    "critic_acceptance_heuristic": {
+                        "accepted_fields": ["company_name", "industry"],
+                        "core_passed": 2,
+                        "core_total": 2,
+                        "evidence_strength": "strong",
+                    },
+                }
+            ],
+        )
+
+        assert result["role_memory_used"] is True
+        assert result["memory_guidance"][0]["accepted_fields"] == ["company_name", "industry"]
+        assert any("prior accepted-task coverage" in item for item in result["revision_instructions"])
+
 
 # ===========================================================================
 # Judge three-outcome gate tests

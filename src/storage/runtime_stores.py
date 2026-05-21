@@ -97,7 +97,7 @@ class FailedLongTermMemoryStore:
     ) -> list[dict[str, Any]]:
         raise RuntimeError(self.reason)
 
-    def upsert_strategy(self, pattern: dict[str, Any]) -> None:
+    def upsert_strategy(self, pattern: dict[str, Any]) -> bool:
         raise RuntimeError(self.reason)
 
 
@@ -122,9 +122,16 @@ def _text_content_from_pattern(pattern: dict[str, Any]) -> str:
         "name",
         "role",
         "pattern_scope",
+        "pattern_type",
+        "best_practice_type",
+        "task_key",
         "industry_hint",
         "rationale",
         "structural_queries",
+        "source_strategy",
+        "evidence_pattern",
+        "task_recipe",
+        "critic_acceptance_heuristic",
         "common_defect_classes",
         "retry_trigger_patterns",
     ):
@@ -341,15 +348,15 @@ class PostgresLongTermMemoryStore:
             results.append(payload)
         return results
 
-    def upsert_strategy(self, pattern: dict[str, Any]) -> None:
+    def upsert_strategy(self, pattern: dict[str, Any]) -> bool:
         role = str(pattern.get("role") or "").strip()
         scope = str(pattern.get("pattern_scope") or "").strip()
         if not role or not scope:
-            return
+            return False
         industry_hint = str(pattern.get("industry_hint") or "").strip()
         score = float(pattern.get("score", 0.0) or 0.0)
         source_run_id = str(pattern.get("source_run_id") or "").strip() or None
-        schema_version = str(pattern.get("schema_version") or "2026-05-12.1")
+        schema_version = str(pattern.get("schema_version") or "2026-05-21.1")
         content_hash = _pattern_content_hash(pattern)
         content_text = _text_content_from_pattern(pattern)
         with _connect_pg(self.dsn) as conn:
@@ -389,6 +396,7 @@ class PostgresLongTermMemoryStore:
                     ),
                 )
             conn.commit()
+        return True
 
 
 def create_runtime_stores(

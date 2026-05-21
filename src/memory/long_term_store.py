@@ -92,7 +92,7 @@ class FileLongTermMemoryStore:
         scored.sort(key=lambda pair: (-pair[0], str(pair[1].get("name") or "")))
         return [item for _, item in scored[:limit]]
 
-    def upsert_strategy(self, pattern: dict[str, Any]) -> None:
+    def upsert_strategy(self, pattern: dict[str, Any]) -> bool:
         # Memory policy guard: reject patterns with company-specific domain
         if pattern.get("domain") or self._contains_case_specific_data(pattern):
             import logging
@@ -101,12 +101,13 @@ class FileLongTermMemoryStore:
                 "only scrubbed structural patterns may enter long-term memory",
                 pattern.get("name", "?"),
             )
-            return
+            return False
         with self._lock:
             items = self.load()
             existing_index = next((idx for idx, item in enumerate(items) if item.get("name") == pattern.get("name")), None)
             if existing_index is None:
                 items.append(pattern)
+                changed = True
             else:
                 # Score decay: reduce existing score by 10% so newer patterns
                 # from tighter rules can replace older ones even at equal score.
@@ -114,7 +115,11 @@ class FileLongTermMemoryStore:
                 decayed_score = float(existing.get("score", 0.0)) * 0.9
                 if float(pattern.get("score", 0.0)) >= decayed_score:
                     items[existing_index] = pattern
+                    changed = True
+                else:
+                    changed = False
             self.path.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
+            return changed
 
     def _contains_case_specific_data(self, value: Any) -> bool:
         if isinstance(value, dict):

@@ -167,6 +167,35 @@ class TestBuildMemoryContext:
         assert "prior_successful_queries" in ctx
         assert "query1" in ctx["prior_successful_queries"]
 
+    def test_injects_typed_best_practice_memory_for_matching_task(self):
+        ctx = build_memory_context(
+            task_key="peer_companies",
+            target_section="market_network",
+            current_sections={},
+            role_memory=[
+                {
+                    "task_key": "peer_companies",
+                    "structural_queries": ["{company} competitors product category"],
+                    "source_strategy": {"preferred_source_types": ["owned_website", "registry"]},
+                    "evidence_pattern": {"evidence_packet_count": 3},
+                    "task_recipe": {
+                        "task_key": "peer_companies",
+                        "accepted_fields": ["peer_competitors.companies"],
+                    },
+                }
+            ],
+        )
+
+        assert ctx["prior_successful_queries"] == ["{company} competitors product category"]
+        assert ctx["best_practice_source_strategy"][0]["preferred_source_types"] == [
+            "owned_website",
+            "registry",
+        ]
+        assert ctx["best_practice_evidence_patterns"][0]["evidence_packet_count"] == 3
+        assert ctx["best_practice_task_recipes"][0]["accepted_fields"] == [
+            "peer_competitors.companies"
+        ]
+
     def test_market_situation_includes_company_profile(self):
         ctx = build_memory_context(
             task_key="market_situation",
