@@ -58,6 +58,6 @@ jobs:
           path: scorecard-results.sarif
           if-no-files-found: error
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
         with:
           sarif_file: scorecard-results.sarif
